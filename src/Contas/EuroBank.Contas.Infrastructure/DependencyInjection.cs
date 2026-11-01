@@ -18,13 +18,11 @@ public static class DependencyInjection
     {
         services.AddOptions<OpcoesOutbox>().BindConfiguration(OpcoesOutbox.Secao);
         services.AddSingleton<MapeadorMensagensOutbox>();
-        services.AddSingleton<InterceptorOutbox>();
 
         // A connection string é lida quando o DbContext é criado, para os testes poderem sobrescrevê-la.
         services.AddDbContext<ContasDbContext>((provedor, opcoes) => opcoes
             .UseNpgsql(provedor.GetRequiredService<IConfiguration>().GetConnectionString("Contas")
-                ?? throw new InvalidOperationException("ConnectionStrings:Contas não configurada."))
-            .AddInterceptors(provedor.GetRequiredService<InterceptorOutbox>()));
+                ?? throw new InvalidOperationException("ConnectionStrings:Contas não configurada.")));
 
         services.AddScoped<IRepositorioContas, RepositorioContas>();
         services.AddScoped<IGeradorIban, GeradorIban>();

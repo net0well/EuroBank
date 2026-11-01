@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using EuroBank.Contas.Infrastructure.Outbox;
 using EuroBank.Shared.Domain;
 using EuroBank.Shared.Exceptions;
@@ -6,20 +7,42 @@ using Microsoft.Extensions.Options;
 
 namespace EuroBank.Contas.Infrastructure.Persistence;
 
-public sealed class UnidadeDeTrabalho(ContasDbContext contexto, IOptions<OpcoesOutbox> opcoes) : IUnidadeDeTrabalho
+/// <summary>
+/// Grava, numa única transação, as alterações dos agregados e as linhas da outbox com os eventos deles.
+/// Ou os dois existem, ou nenhum existe: é isso que torna o outbox confiável.
+/// </summary>
+/// <remarks>
+/// As linhas da outbox são inseridas uma a uma, na ordem em que os eventos aconteceram, e não pelo
+/// SaveChanges: o EF Core reordena os INSERTs de um mesmo SaveChanges (pela chave), e o Debezium publica na
+/// ordem do WAL. Sem isso, um DepositoRealizado poderia chegar ao Kafka antes do ContaAberta da mesma conta.
+/// </remarks>
+public sealed class UnidadeDeTrabalho(
+    ContasDbContext contexto,
+    MapeadorMensagensOutbox mapeador,
+    IOptions<OpcoesOutbox> opcoes) : IUnidadeDeTrabalho
 {
     public async Task SalvarAsync(CancellationToken cancellationToken)
     {
+        var mensagens = ColetarMensagens();
+
         try
         {
-            if (opcoes.Value.ApagarAposGravar)
+            await using var transacao = await contexto.Database.BeginTransactionAsync(cancellationToken);
+
+            await contexto.SaveChangesAsync(cancellationToken);
+            foreach (var mensagem in mensagens)
             {
-                await SalvarEApagarOutboxAsync(cancellationToken);
+                await InserirNaOutboxAsync(mensagem, cancellationToken);
             }
-            else
+
+            if (opcoes.Value.ApagarAposGravar && mensagens.Count > 0)
             {
-                await contexto.SaveChangesAsync(cancellationToken);
+                // O INSERT já está no WAL: o Debezium publica mesmo com a linha apagada (o DELETE é ignorado).
+                var ids = mensagens.Select(mensagem => mensagem.Id).ToArray();
+                await contexto.Database.ExecuteSqlAsync($"DELETE FROM outbox WHERE id = ANY({ids})", cancellationToken);
             }
+
+            await transacao.CommitAsync(cancellationToken);
         }
         catch (DbUpdateConcurrencyException)
         {
@@ -27,28 +50,28 @@ public sealed class UnidadeDeTrabalho(ContasDbContext contexto, IOptions<OpcoesO
         }
     }
 
-    /// <summary>
-    /// INSERT e DELETE da outbox na mesma transação: a tabela fica vazia, mas o INSERT já está no WAL e o
-    /// Debezium publica o evento do mesmo jeito (o DELETE é ignorado pelo Outbox Event Router).
-    /// </summary>
-    private async Task SalvarEApagarOutboxAsync(CancellationToken cancellationToken)
+    /// <summary>Transforma os eventos de domínio dos agregados rastreados em mensagens, na ordem em que ocorreram.</summary>
+    private List<MensagemOutbox> ColetarMensagens()
     {
-        await using var transacao = await contexto.Database.BeginTransactionAsync(cancellationToken);
+        // Activity.Current é a requisição HTTP em andamento; o Id no formato W3C é o traceparent.
+        var traceparent = Activity.Current?.Id;
+        var mensagens = new List<MensagemOutbox>();
 
-        await contexto.SaveChangesAsync(cancellationToken);
-
-        var entradas = contexto.ChangeTracker.Entries<MensagemOutbox>().ToList();
-        var ids = entradas.Select(entrada => entrada.Entity.Id).ToList();
-        if (ids.Count > 0)
+        foreach (var agregado in contexto.ChangeTracker.Entries<IRaizDeAgregado>().Select(entrada => entrada.Entity))
         {
-            await contexto.Outbox.Where(mensagem => ids.Contains(mensagem.Id)).ExecuteDeleteAsync(cancellationToken);
+            mensagens.AddRange(agregado.EventosDominio.Select(evento => mapeador.Mapear(evento, traceparent)));
+            agregado.LimparEventos();
         }
 
-        await transacao.CommitAsync(cancellationToken);
-
-        foreach (var entrada in entradas)
-        {
-            entrada.State = EntityState.Detached;
-        }
+        return mensagens;
     }
+
+    private Task<int> InserirNaOutboxAsync(MensagemOutbox mensagem, CancellationToken cancellationToken) =>
+        contexto.Database.ExecuteSqlAsync(
+            $"""
+            INSERT INTO outbox (id, tipo_agregado, id_agregado, tipo_evento, payload, ocorrido_em, traceparent)
+            VALUES ({mensagem.Id}, {mensagem.TipoAgregado}, {mensagem.IdAgregado}, {mensagem.TipoEvento},
+                    CAST({mensagem.Payload} AS jsonb), {mensagem.OcorridoEm}, {mensagem.Traceparent})
+            """,
+            cancellationToken);
 }

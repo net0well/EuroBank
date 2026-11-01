@@ -111,6 +111,39 @@ public sealed class OutboxTestes(PostgresFixture banco)
         (await leitura.Outbox.AnyAsync(m => m.IdAgregado == conta.Id.ToString(), Ct)).ShouldBeFalse();
     }
 
+    [Fact]
+    public async Task VariosEventosNoMesmoSalvamento_SaoInseridosNaOrdemEmQueAconteceram()
+    {
+        // O Debezium publica na ordem do WAL; se o INSERT do depósito vier antes do ContaAberta, o Extrato
+        // recebe o depósito de uma conta que ainda não conhece.
+        var contas = new List<Conta>();
+        await using (var cenario = new CenarioPersistencia(banco))
+        {
+            for (var i = 0; i < 20; i++)
+            {
+                var conta = Conta.Abrir(await cenario.GeradorIban.GerarAsync(Ct), Titular.Criar($"Ordem {i}"), Agora);
+                conta.Depositar(Dinheiro.De(10m), Agora);
+                conta.Sacar(Dinheiro.De(1m), Agora);
+                cenario.Repositorio.Adicionar(conta);
+                contas.Add(conta);
+            }
+
+            await cenario.UnidadeDeTrabalho.SalvarAsync(Ct);
+        }
+
+        await using var leitura = banco.CriarContexto();
+        foreach (var conta in contas)
+        {
+            var tipos = await leitura.Outbox
+                .Where(m => m.IdAgregado == conta.Id.ToString())
+                .OrderBy(m => m.Sequencia)
+                .Select(m => m.TipoEvento)
+                .ToListAsync(Ct);
+
+            tipos.ShouldBe(["ContaAberta", "DepositoRealizado", "SaqueRealizado"]);
+        }
+    }
+
     private async Task<Conta> CriarContaAsync(string titular, decimal saldo = 0m)
     {
         await using var cenario = new CenarioPersistencia(banco);

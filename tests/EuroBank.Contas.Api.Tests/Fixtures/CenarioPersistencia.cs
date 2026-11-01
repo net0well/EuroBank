@@ -14,7 +14,9 @@ public sealed class CenarioPersistencia : IAsyncDisposable
         Repositorio = new RepositorioContas(Contexto);
         GeradorIban = new GeradorIban(Contexto);
         UnidadeDeTrabalho = new UnidadeDeTrabalho(
-            Contexto, Options.Create(new OpcoesOutbox { ApagarAposGravar = apagarOutboxAposGravar }));
+            Contexto,
+            new MapeadorMensagensOutbox(),
+            Options.Create(new OpcoesOutbox { ApagarAposGravar = apagarOutboxAposGravar }));
     }
 
     public ContasDbContext Contexto { get; }

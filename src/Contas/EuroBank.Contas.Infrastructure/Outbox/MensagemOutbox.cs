@@ -44,4 +44,10 @@ public sealed class MensagemOutbox
 
     /// <summary>Contexto W3C da requisição que gerou o evento, para o trace continuar no Extrato.</summary>
     public string? Traceparent { get; private set; }
+
+    /// <summary>
+    /// Ordem física de inserção (identity gerada pelo banco). É a ordem do WAL, logo a ordem em que o
+    /// Debezium publica; serve para conferir e inspecionar essa ordem.
+    /// </summary>
+    public long Sequencia { get; private set; }
 }

@@ -91,6 +91,13 @@ namespace EuroBank.Contas.Infrastructure.Persistence.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("payload");
 
+                    b.Property<long>("Sequencia")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("sequencia");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<long>("Sequencia"));
+
                     b.Property<string>("TipoAgregado")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -109,6 +116,9 @@ namespace EuroBank.Contas.Infrastructure.Persistence.Migrations
                         .HasColumnName("traceparent");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("Sequencia")
+                        .IsUnique();
 
                     b.ToTable("outbox", (string)null);
                 });

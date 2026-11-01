@@ -1,4 +1,3 @@
-using EuroBank.Contas.Infrastructure.Outbox;
 using EuroBank.Contas.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -42,7 +41,6 @@ public sealed class PostgresFixture : IAsyncLifetime
     public ContasDbContext CriarContexto(string? connectionString = null) =>
         new(new DbContextOptionsBuilder<ContasDbContext>()
             .UseNpgsql(connectionString ?? ConnectionString)
-            .AddInterceptors(new InterceptorOutbox(new MapeadorMensagensOutbox()))
             .Options);
 
     /// <summary>Cria um database vazio no mesmo container e devolve a connection string dele.</summary>

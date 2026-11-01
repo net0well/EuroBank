@@ -22,5 +22,9 @@ public sealed class MensagemOutboxConfiguration : IEntityTypeConfiguration<Mensa
         builder.Property(mensagem => mensagem.Payload).HasColumnName("payload").HasColumnType("jsonb");
         builder.Property(mensagem => mensagem.OcorridoEm).HasColumnName("ocorrido_em");
         builder.Property(mensagem => mensagem.Traceparent).HasColumnName("traceparent").HasMaxLength(55);
+        builder.Property(mensagem => mensagem.Sequencia)
+            .HasColumnName("sequencia")
+            .UseIdentityAlwaysColumn();
+        builder.HasIndex(mensagem => mensagem.Sequencia).IsUnique();
     }
 }
