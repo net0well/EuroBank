@@ -4,7 +4,7 @@ namespace EuroBank.Shared.Domain;
 /// Raiz de agregado: único ponto de entrada do agregado e responsável por acumular os eventos de domínio
 /// gerados pelas operações. A infraestrutura lê esses eventos no SaveChanges e os grava na outbox.
 /// </summary>
-public abstract class RaizDeAgregado<TId>
+public abstract class RaizDeAgregado<TId> : IRaizDeAgregado
     where TId : struct
 {
     private readonly List<IEventoDominio> _eventosDominio = [];
