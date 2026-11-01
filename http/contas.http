@@ -1,0 +1,68 @@
+### Roteiro da API de Contas (VS Code REST Client, Rider ou Visual Studio)
+### Depois de cada operação, veja as mensagens no Kafbat UI (http://localhost:8080):
+###   eurobank.contas.eventos     -> outbox (evento de integração, headers id/tipo/traceparent)
+###   eurobank.cdc.public.contas  -> CDC bruto da tabela contas (before/after)
+
+@api = http://localhost:5100
+
+### Abrir conta
+# @name abrir
+POST {{api}}/contas
+Content-Type: application/json
+
+{ "titular": "Diana" }
+
+###
+@contaId = {{abrir.response.body.id}}
+
+### Depositar
+POST {{api}}/contas/{{contaId}}/depositos
+Content-Type: application/json
+
+{ "valor": 150.00 }
+
+### Sacar
+POST {{api}}/contas/{{contaId}}/saques
+Content-Type: application/json
+
+{ "valor": 20.00 }
+
+### Listar contas (pegue o IBAN de outra conta para transferir)
+# @name listar
+GET {{api}}/contas?pagina=1&tamanho=10
+
+###
+@ibanDestino = {{listar.response.body.itens[1].iban}}
+
+### Transferir para outra conta pelo IBAN
+POST {{api}}/contas/{{contaId}}/transferencias
+Content-Type: application/json
+
+{ "ibanDestino": "{{ibanDestino}}", "valor": 30.00 }
+
+### Consultar a conta
+GET {{api}}/contas/{{contaId}}
+
+### Bloquear (passa a aceitar só créditos)
+POST {{api}}/contas/{{contaId}}/bloqueio
+
+### Saque com a conta bloqueada (422)
+POST {{api}}/contas/{{contaId}}/saques
+Content-Type: application/json
+
+{ "valor": 1.00 }
+
+### Desbloquear
+POST {{api}}/contas/{{contaId}}/desbloqueio
+
+### Saque acima do saldo (422 saldo_insuficiente)
+POST {{api}}/contas/{{contaId}}/saques
+Content-Type: application/json
+
+{ "valor": 99999.00 }
+
+### Valor com três casas (400 valor_invalido)
+POST {{api}}/contas/{{contaId}}/depositos
+Content-Type: application/json
+
+{ "valor": 10.555 }

@@ -9,7 +9,7 @@ public sealed class ContasDbContextFactory : IDesignTimeDbContextFactory<ContasD
     public ContasDbContext CreateDbContext(string[] args)
     {
         var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__Contas")
-            ?? "Host=localhost;Port=5432;Database=eurobank_contas;Username=eurobank;Password=eurobank";
+            ?? "Host=localhost;Port=5434;Database=eurobank_contas;Username=eurobank;Password=eurobank";
 
         return new ContasDbContext(new DbContextOptionsBuilder<ContasDbContext>().UseNpgsql(connectionString).Options);
     }

@@ -1,0 +1,20 @@
+{
+  "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+  "tasks.max": "1",
+
+  "database.hostname": "postgres",
+  "database.port": "5432",
+  "database.user": "eurobank",
+  "database.password": "eurobank",
+  "database.dbname": "eurobank_contas",
+
+  "topic.prefix": "eurobank.cdc",
+  "plugin.name": "pgoutput",
+  "slot.name": "slot_cdc",
+  "publication.name": "pub_cdc",
+  "publication.autocreate.mode": "all_tables",
+  "table.include.list": "public.contas",
+  "snapshot.mode": "initial",
+
+  "decimal.handling.mode": "string"
+}
