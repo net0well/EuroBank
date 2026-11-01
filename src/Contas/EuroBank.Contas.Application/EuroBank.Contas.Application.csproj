@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\EuroBank.Contas.Domain\EuroBank.Contas.Domain.csproj" />
+  </ItemGroup>
+</Project>

@@ -2,21 +2,25 @@
   <Folder Name="/src/" />
   <Folder Name="/src/Contas/">
     <Project Path="src/Contas/EuroBank.Contas.Api/EuroBank.Contas.Api.csproj" />
-    <Project Path="src/Contas/EuroBank.Contas.Aplicacao/EuroBank.Contas.Aplicacao.csproj" />
-    <Project Path="src/Contas/EuroBank.Contas.Dominio/EuroBank.Contas.Dominio.csproj" />
-    <Project Path="src/Contas/EuroBank.Contas.Infraestrutura/EuroBank.Contas.Infraestrutura.csproj" />
+    <Project Path="src/Contas/EuroBank.Contas.Application/EuroBank.Contas.Application.csproj" />
+    <Project Path="src/Contas/EuroBank.Contas.Domain/EuroBank.Contas.Domain.csproj" />
+    <Project Path="src/Contas/EuroBank.Contas.Infrastructure/EuroBank.Contas.Infrastructure.csproj" />
   </Folder>
   <Folder Name="/src/Extrato/">
-    <Project Path="src/Extrato/EuroBank.Extrato.Aplicacao/EuroBank.Extrato.Aplicacao.csproj" />
-    <Project Path="src/Extrato/EuroBank.Extrato.Dominio/EuroBank.Extrato.Dominio.csproj" />
-    <Project Path="src/Extrato/EuroBank.Extrato.Infraestrutura/EuroBank.Extrato.Infraestrutura.csproj" />
+    <Project Path="src/Extrato/EuroBank.Extrato.Application/EuroBank.Extrato.Application.csproj" />
+    <Project Path="src/Extrato/EuroBank.Extrato.Domain/EuroBank.Extrato.Domain.csproj" />
+    <Project Path="src/Extrato/EuroBank.Extrato.Infrastructure/EuroBank.Extrato.Infrastructure.csproj" />
     <Project Path="src/Extrato/EuroBank.Extrato.Worker/EuroBank.Extrato.Worker.csproj" />
   </Folder>
+  <Folder Name="/src/Shared/">
+    <Project Path="src/Shared/EuroBank.Shared/EuroBank.Shared.csproj" />
+  </Folder>
   <Folder Name="/tests/">
-    <Project Path="tests/EuroBank.Contas.Api.Testes/EuroBank.Contas.Api.Testes.csproj" />
-    <Project Path="tests/EuroBank.Contas.Dominio.Testes/EuroBank.Contas.Dominio.Testes.csproj" />
-    <Project Path="tests/EuroBank.E2E.Testes/EuroBank.E2E.Testes.csproj" />
-    <Project Path="tests/EuroBank.Extrato.Dominio.Testes/EuroBank.Extrato.Dominio.Testes.csproj" />
-    <Project Path="tests/EuroBank.Extrato.Worker.Testes/EuroBank.Extrato.Worker.Testes.csproj" />
+    <Project Path="tests/EuroBank.Contas.Api.Tests/EuroBank.Contas.Api.Tests.csproj" />
+    <Project Path="tests/EuroBank.Contas.Domain.Tests/EuroBank.Contas.Domain.Tests.csproj" />
+    <Project Path="tests/EuroBank.E2E.Tests/EuroBank.E2E.Tests.csproj" />
+    <Project Path="tests/EuroBank.Extrato.Domain.Tests/EuroBank.Extrato.Domain.Tests.csproj" />
+    <Project Path="tests/EuroBank.Extrato.Worker.Tests/EuroBank.Extrato.Worker.Tests.csproj" />
+    <Project Path="tests/EuroBank.Shared.Tests/EuroBank.Shared.Tests.csproj" />
   </Folder>
 </Solution>

@@ -1,6 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
-  <ItemGroup>
-    <ProjectReference Include="..\..\src\Extrato\EuroBank.Extrato.Dominio\EuroBank.Extrato.Dominio.csproj" />
-  </ItemGroup>
-</Project>
