@@ -6,6 +6,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="WolverineFx.RuntimeCompilation" />
     <PackageReference Include="Swashbuckle.AspNetCore" />
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" />

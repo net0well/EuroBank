@@ -29,18 +29,18 @@ public sealed partial record Iban
     }
 
     /// <summary>Lê um IBAN informado pelo cliente (aceita espaços e minúsculas).</summary>
-    public static Iban Criar(string valor)
+    public static Iban Criar(string? valor)
     {
         var normalizado = Normalizar(valor);
         if (!EhValidoNormalizado(normalizado))
         {
-            throw new ExcecaoIbanInvalido(valor);
+            throw new ExcecaoIbanInvalido(valor ?? string.Empty);
         }
 
         return new Iban(normalizado);
     }
 
-    public static bool EhValido(string valor) => EhValidoNormalizado(Normalizar(valor));
+    public static bool EhValido(string? valor) => EhValidoNormalizado(Normalizar(valor));
 
     public override string ToString() => Valor;
 

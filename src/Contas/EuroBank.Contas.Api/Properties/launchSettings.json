@@ -1,12 +1,15 @@
 {
+  "$schema": "https://json.schemastore.org/launchsettings.json",
   "profiles": {
-    "EuroBank.Contas.Api": {
+    "http": {
       "commandName": "Project",
       "launchBrowser": true,
+      "launchUrl": "swagger",
+      "applicationUrl": "http://localhost:5100",
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
-      },
-      "applicationUrl": "https://localhost:65189;http://localhost:65190"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4317"
+      }
     }
   }
 }
