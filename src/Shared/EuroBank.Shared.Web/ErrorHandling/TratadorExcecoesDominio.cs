@@ -1,7 +1,8 @@
 using EuroBank.Shared.Exceptions;
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.Http;
 
-namespace EuroBank.Contas.Api.ErrorHandling;
+namespace EuroBank.Shared.Web.ErrorHandling;
 
 /// <summary>
 /// Converte exceções de domínio em ProblemDetails (RFC 9457): validação 400, não encontrado 404,

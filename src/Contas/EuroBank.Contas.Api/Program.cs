@@ -1,11 +1,11 @@
 using EuroBank.Contas.Api.Endpoints;
-using EuroBank.Contas.Api.ErrorHandling;
-using EuroBank.Contas.Api.Extensions;
 using EuroBank.Contas.Application;
 using EuroBank.Contas.Application.Handlers;
 using EuroBank.Contas.Application.Services;
 using EuroBank.Contas.Infrastructure;
 using EuroBank.Contas.Infrastructure.Persistence;
+using EuroBank.Shared.Web.ErrorHandling;
+using EuroBank.Shared.Web.Extensions;
 using JasperFx.CodeGeneration.Model;
 using Microsoft.EntityFrameworkCore;
 using Wolverine;

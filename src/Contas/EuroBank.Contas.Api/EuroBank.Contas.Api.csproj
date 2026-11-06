@@ -3,17 +3,13 @@
   <ItemGroup>
     <ProjectReference Include="..\EuroBank.Contas.Application\EuroBank.Contas.Application.csproj" />
     <ProjectReference Include="..\EuroBank.Contas.Infrastructure\EuroBank.Contas.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Shared\EuroBank.Shared.Web\EuroBank.Shared.Web.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="WolverineFx" />
     <PackageReference Include="WolverineFx.RuntimeCompilation" />
     <PackageReference Include="Swashbuckle.AspNetCore" />
-    <PackageReference Include="Serilog.AspNetCore" />
-    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
-    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
-    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
-    <PackageReference Include="Npgsql.OpenTelemetry" />
     <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
   </ItemGroup>

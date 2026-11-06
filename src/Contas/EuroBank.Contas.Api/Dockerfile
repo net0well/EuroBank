@@ -7,6 +7,7 @@ WORKDIR /src
 # Restaura primeiro só com os .csproj, para aproveitar o cache de camadas.
 COPY Directory.Build.props Directory.Packages.props ./
 COPY src/Shared/EuroBank.Shared/EuroBank.Shared.csproj src/Shared/EuroBank.Shared/
+COPY src/Shared/EuroBank.Shared.Web/EuroBank.Shared.Web.csproj src/Shared/EuroBank.Shared.Web/
 COPY src/Contas/EuroBank.Contas.Domain/EuroBank.Contas.Domain.csproj src/Contas/EuroBank.Contas.Domain/
 COPY src/Contas/EuroBank.Contas.Application/EuroBank.Contas.Application.csproj src/Contas/EuroBank.Contas.Application/
 COPY src/Contas/EuroBank.Contas.Infrastructure/EuroBank.Contas.Infrastructure.csproj src/Contas/EuroBank.Contas.Infrastructure/
