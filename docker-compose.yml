@@ -152,6 +152,8 @@ services:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_HTTP_PORTS: "8080"
       ConnectionStrings__Contas: "Host=postgres;Port=5432;Database=eurobank_contas;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      # true: insere e apaga a linha da outbox na mesma transação (o evento sai mesmo assim, pelo WAL).
+      Outbox__ApagarAposGravar: ${OUTBOX_APAGAR_APOS_GRAVAR:-false}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
     healthcheck:
       test: ["CMD-SHELL", "curl -fs http://localhost:8080/health > /dev/null"]
