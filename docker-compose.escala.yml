@@ -1,0 +1,7 @@
+# Override para o exercício de escala do Extrato (3 instâncias no mesmo consumer group):
+#   docker compose -f docker-compose.yml -f docker-compose.escala.yml up -d --scale extrato-worker=3
+# Cada instância recebe uma porta livre da faixa; veja qual com: docker compose port --index 2 extrato-worker 8080
+services:
+  extrato-worker:
+    ports: !override
+      - "5200-5202:8080"
