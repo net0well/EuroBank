@@ -1,5 +1,5 @@
-using EuroBank.Shared.ValueObjects;
 using EuroBank.Shared.Exceptions;
+using EuroBank.Shared.ValueObjects;
 
 namespace EuroBank.Contas.Domain.Exceptions;
 

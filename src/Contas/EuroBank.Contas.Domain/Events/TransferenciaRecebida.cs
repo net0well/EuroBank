@@ -1,5 +1,5 @@
-using EuroBank.Shared.ValueObjects;
 using EuroBank.Contas.Domain.ValueObjects;
+using EuroBank.Shared.ValueObjects;
 
 namespace EuroBank.Contas.Domain.Events;
 
