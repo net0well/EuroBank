@@ -1,0 +1,20 @@
+### Roteiro do Extrato (projeção montada a partir dos eventos do Kafka)
+### Pegue o id de uma conta em contas.http (GET /contas) e cole abaixo.
+
+@extrato = http://localhost:5200
+@contaId = cole-aqui-o-id-da-conta
+
+### Extrato completo (primeira página, 50 lançamentos)
+GET {{extrato}}/extratos/{{contaId}}
+
+### Paginado: 2 lançamentos por página
+GET {{extrato}}/extratos/{{contaId}}?pagina=1&tamanho=2
+
+### Segunda página
+GET {{extrato}}/extratos/{{contaId}}?pagina=2&tamanho=2
+
+### Conta sem extrato (404 extrato_nao_encontrado)
+GET {{extrato}}/extratos/00000000-0000-0000-0000-000000000000
+
+### Paginação inválida (400 paginacao_invalida)
+GET {{extrato}}/extratos/{{contaId}}?tamanho=500
