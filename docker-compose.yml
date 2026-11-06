@@ -185,5 +185,26 @@ services:
       timeout: 5s
       retries: 30
 
+  # Gerador de carga sob demanda (não sobe no "up"):
+  #   docker compose --profile carga run --rm k6
+  #   K6_VUS=20 K6_DURACAO=2m docker compose --profile carga run --rm k6
+  k6:
+    image: grafana/k6:2.3.0
+    profiles: ["carga"]
+    depends_on:
+      contas-api:
+        condition: service_healthy
+      extrato-worker:
+        condition: service_healthy
+    environment:
+      API_CONTAS: http://contas-api:8080
+      API_EXTRATO: http://extrato-worker:8080
+      VUS: ${K6_VUS:-10}
+      DURACAO: ${K6_DURACAO:-1m}
+      CONTAS: ${K6_CONTAS:-10}
+    volumes:
+      - ./infra/k6:/scripts:ro
+    command: ["run", "/scripts/carga.js"]
+
 volumes:
   postgres-dados:
