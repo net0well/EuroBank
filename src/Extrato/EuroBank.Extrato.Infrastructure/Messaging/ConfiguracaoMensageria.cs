@@ -45,6 +45,9 @@ public static class ConfiguracaoMensageria
         opcoes.PersistMessagesWithPostgresql(connectionString, "wolverine");
         opcoes.Durability.KeepAfterMessageHandling = RetencaoInbox;
 
+        // A verificação periódica de nós do Wolverine geraria um trace a cada poucos segundos no Jaeger.
+        opcoes.Durability.NodeAssignmentHealthCheckTracingEnabled = false;
+
         opcoes.UseKafka(kafka.BootstrapServers)
             .ConfigureConsumers(consumidor =>
             {

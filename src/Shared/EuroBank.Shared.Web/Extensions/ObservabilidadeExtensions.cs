@@ -1,3 +1,4 @@
+using EuroBank.Shared.Web.Observability;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -27,6 +28,7 @@ public static class ObservabilidadeExtensions
         builder.Services.AddOpenTelemetry()
             .ConfigureResource(recurso => recurso.AddService(nomeServico))
             .WithTracing(tracing => tracing
+                .SetSampler(new AmostradorSemChamadasAvulsas())
                 .AddAspNetCoreInstrumentation(opcoes => opcoes.Filter = contexto =>
                     !contexto.Request.Path.StartsWithSegments("/health", StringComparison.OrdinalIgnoreCase))
                 .AddNpgsql()
