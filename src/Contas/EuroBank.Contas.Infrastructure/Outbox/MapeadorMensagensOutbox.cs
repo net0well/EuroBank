@@ -12,8 +12,8 @@ namespace EuroBank.Contas.Infrastructure.Outbox;
 /// </summary>
 public sealed class MapeadorMensagensOutbox : IMapeadorMensagensOutbox
 {
-    /// <summary>Valor de tipo_agregado; o Debezium roteia para o tópico eurobank.contas.eventos.</summary>
-    public const string TipoAgregado = "contas";
+    /// <summary>Valor de tipo_agregado dos eventos de conta; o Debezium roteia para eurobank.contas.eventos.</summary>
+    public const string TipoAgregado = "contas.eventos";
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 

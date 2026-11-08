@@ -34,7 +34,7 @@ public sealed class OutboxTestes(PostgresFixture banco)
 
         var mensagem = (await leitura.Outbox.Where(m => m.IdAgregado == conta.Id.ToString()).ToListAsync(Ct))
             .ShouldHaveSingleItem();
-        mensagem.TipoAgregado.ShouldBe("contas");
+        mensagem.TipoAgregado.ShouldBe("contas.eventos");
         mensagem.TipoEvento.ShouldBe("ContaAberta");
         mensagem.Traceparent.ShouldBe(atividade.Id);
 
