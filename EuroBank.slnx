@@ -5,6 +5,7 @@
     <Project Path="src/Contas/EuroBank.Contas.Application/EuroBank.Contas.Application.csproj" />
     <Project Path="src/Contas/EuroBank.Contas.Domain/EuroBank.Contas.Domain.csproj" />
     <Project Path="src/Contas/EuroBank.Contas.Infrastructure/EuroBank.Contas.Infrastructure.csproj" />
+    <Project Path="src/Contas/EuroBank.Contas.Worker/EuroBank.Contas.Worker.csproj" />
   </Folder>
   <Folder Name="/src/Extrato/">
     <Project Path="src/Extrato/EuroBank.Extrato.Application/EuroBank.Extrato.Application.csproj" />
@@ -21,6 +22,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/EuroBank.Contas.Api.Tests/EuroBank.Contas.Api.Tests.csproj" />
     <Project Path="tests/EuroBank.Contas.Domain.Tests/EuroBank.Contas.Domain.Tests.csproj" />
+    <Project Path="tests/EuroBank.Contas.Worker.Tests/EuroBank.Contas.Worker.Tests.csproj" />
     <Project Path="tests/EuroBank.E2E.Tests/EuroBank.E2E.Tests.csproj" />
     <Project Path="tests/EuroBank.Extrato.Domain.Tests/EuroBank.Extrato.Domain.Tests.csproj" />
     <Project Path="tests/EuroBank.Extrato.Worker.Tests/EuroBank.Extrato.Worker.Tests.csproj" />
