@@ -1,10 +1,11 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
-using EuroBank.Extrato.Application.Exceptions;
 using EuroBank.Extrato.Application.TransferObjects;
 using EuroBank.Extrato.Domain.Exceptions;
 using EuroBank.Extrato.Worker.Tests.Fixtures;
+using EuroBank.Shared.Exceptions;
+using EuroBank.Shared.TransferObjects;
 
 namespace EuroBank.Extrato.Worker.Tests.Handlers;
 

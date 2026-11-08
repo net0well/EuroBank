@@ -1,12 +1,12 @@
-using EuroBank.Contas.Infrastructure.Outbox;
+
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
-namespace EuroBank.Contas.Infrastructure.Persistence.Configurations;
+namespace EuroBank.Shared.Persistence.Outbox;
 
 /// <summary>
 /// Tabela outbox. Os nomes das colunas são referenciados na configuração do Outbox Event Router do Debezium
-/// (infra/connect/conectores/eurobank-contas-outbox.json).
+/// (infra/connect/conectores/*-outbox.json). A mesma tabela existe no banco de cada contexto que publica eventos.
 /// </summary>
 public sealed class MensagemOutboxConfiguration : IEntityTypeConfiguration<MensagemOutbox>
 {

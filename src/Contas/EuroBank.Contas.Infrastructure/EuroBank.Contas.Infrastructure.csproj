@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\EuroBank.Contas.Application\EuroBank.Contas.Application.csproj" />
+    <ProjectReference Include="..\..\Shared\EuroBank.Shared.Persistence\EuroBank.Shared.Persistence.csproj" />
   </ItemGroup>
 
   <ItemGroup>

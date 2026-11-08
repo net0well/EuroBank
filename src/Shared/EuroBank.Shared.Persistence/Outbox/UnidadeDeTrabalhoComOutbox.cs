@@ -1,11 +1,10 @@
 using System.Diagnostics;
-using EuroBank.Contas.Infrastructure.Outbox;
 using EuroBank.Shared.Domain;
 using EuroBank.Shared.Exceptions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
-namespace EuroBank.Contas.Infrastructure.Persistence;
+namespace EuroBank.Shared.Persistence.Outbox;
 
 /// <summary>
 /// Grava, numa única transação, as alterações dos agregados e as linhas da outbox com os eventos deles.
@@ -15,11 +14,13 @@ namespace EuroBank.Contas.Infrastructure.Persistence;
 /// As linhas da outbox são inseridas uma a uma, na ordem em que os eventos aconteceram, e não pelo
 /// SaveChanges: o EF Core reordena os INSERTs de um mesmo SaveChanges (pela chave), e o Debezium publica na
 /// ordem do WAL. Sem isso, um DepositoRealizado poderia chegar ao Kafka antes do ContaAberta da mesma conta.
+/// O DbContext precisa mapear <see cref="MensagemOutbox"/> com <see cref="MensagemOutboxConfiguration"/>.
 /// </remarks>
-public sealed class UnidadeDeTrabalho(
-    ContasDbContext contexto,
-    MapeadorMensagensOutbox mapeador,
+public sealed class UnidadeDeTrabalhoComOutbox<TContexto>(
+    TContexto contexto,
+    IMapeadorMensagensOutbox mapeador,
     IOptions<OpcoesOutbox> opcoes) : IUnidadeDeTrabalho
+    where TContexto : DbContext
 {
     public async Task SalvarAsync(CancellationToken cancellationToken)
     {

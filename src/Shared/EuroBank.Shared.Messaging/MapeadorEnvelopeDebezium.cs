@@ -1,35 +1,27 @@
 using System.Text;
 using System.Text.Json;
 using Confluent.Kafka;
-using EuroBank.Extrato.Application.TransferObjects;
+using EuroBank.Shared.TransferObjects;
 using Wolverine;
 using Wolverine.Kafka;
 using Wolverine.Util;
 
-namespace EuroBank.Extrato.Infrastructure.Messaging;
+namespace EuroBank.Shared.Messaging;
 
 /// <summary>
 /// Traduz as mensagens que o Outbox Event Router do Debezium publica em envelopes do Wolverine:
 /// <list type="bullet">
 /// <item>header <c>tipo</c>: escolhe o tipo .NET da mensagem e, com ele, o manipulador;</item>
 /// <item>header <c>id</c> (id do evento na outbox): vira o id do envelope, chave de deduplicação da inbox durável;</item>
-/// <item>header <c>traceparent</c>: vira o pai da Activity, continuando o trace iniciado na API de Contas;</item>
-/// <item>corpo: o JSON do evento, desserializado no DTO do Extrato.</item>
+/// <item>header <c>traceparent</c>: vira o pai da Activity, continuando o trace iniciado por quem publicou;</item>
+/// <item>corpo: o JSON do evento, desserializado no DTO do consumidor.</item>
 /// </list>
+/// Cada consumidor informa a própria tabela "tipo publicado para tipo .NET" (tolerant reader).
 /// </summary>
-public sealed class MapeadorEnvelopeDebezium : IKafkaEnvelopeMapper
+public sealed class MapeadorEnvelopeDebezium(IReadOnlyDictionary<string, Type> tiposPorEvento) : IKafkaEnvelopeMapper
 {
-    private static readonly Dictionary<string, string> TiposPorEvento = new(StringComparer.Ordinal)
-    {
-        ["ContaAberta"] = typeof(EventoContaAberta).ToMessageTypeName(),
-        ["DepositoRealizado"] = typeof(EventoDepositoRealizado).ToMessageTypeName(),
-        ["SaqueRealizado"] = typeof(EventoSaqueRealizado).ToMessageTypeName(),
-        ["TransferenciaEnviada"] = typeof(EventoTransferenciaEnviada).ToMessageTypeName(),
-        ["TransferenciaRecebida"] = typeof(EventoTransferenciaRecebida).ToMessageTypeName(),
-        ["ContaBloqueada"] = typeof(EventoContaBloqueada).ToMessageTypeName(),
-        ["ContaDesbloqueada"] = typeof(EventoContaDesbloqueada).ToMessageTypeName(),
-        ["ContaEncerrada"] = typeof(EventoContaEncerrada).ToMessageTypeName(),
-    };
+    private readonly Dictionary<string, string> _tiposPorEvento = tiposPorEvento.ToDictionary(
+        par => par.Key, par => par.Value.ToMessageTypeName(), StringComparer.Ordinal);
 
     public void MapIncomingToEnvelope(Envelope envelope, Message<string, byte[]> incoming)
     {
@@ -54,7 +46,7 @@ public sealed class MapeadorEnvelopeDebezium : IKafkaEnvelopeMapper
         {
             Substituir(envelope, new MensagemInvalida("mensagem sem o header tipo"));
         }
-        else if (TiposPorEvento.TryGetValue(tipo, out var tipoMensagem))
+        else if (_tiposPorEvento.TryGetValue(tipo, out var tipoMensagem))
         {
             envelope.MessageType = tipoMensagem;
         }

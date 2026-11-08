@@ -2,13 +2,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\EuroBank.Extrato.Application\EuroBank.Extrato.Application.csproj" />
+    <ProjectReference Include="..\..\Shared\EuroBank.Shared.Messaging\EuroBank.Shared.Messaging.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
-    <PackageReference Include="WolverineFx.Kafka" />
-    <PackageReference Include="WolverineFx.Postgresql" />
   </ItemGroup>
 </Project>

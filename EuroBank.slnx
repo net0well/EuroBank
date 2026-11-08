@@ -13,6 +13,8 @@
     <Project Path="src/Extrato/EuroBank.Extrato.Worker/EuroBank.Extrato.Worker.csproj" />
   </Folder>
   <Folder Name="/src/Shared/">
+    <Project Path="src/Shared/EuroBank.Shared.Messaging/EuroBank.Shared.Messaging.csproj" />
+    <Project Path="src/Shared/EuroBank.Shared.Persistence/EuroBank.Shared.Persistence.csproj" />
     <Project Path="src/Shared/EuroBank.Shared.Web/EuroBank.Shared.Web.csproj" />
     <Project Path="src/Shared/EuroBank.Shared/EuroBank.Shared.csproj" />
   </Folder>

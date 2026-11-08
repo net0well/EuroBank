@@ -165,6 +165,8 @@ Para recomeçar do zero (apaga os dados do laboratório): `docker compose down -
 ```
 src/
   Shared/   EuroBank.Shared (blocos de domínio, Dinheiro, Paginacao)
+            EuroBank.Shared.Persistence (outbox genérica com escrita ordenada)
+            EuroBank.Shared.Messaging (mapeador do Debezium e convenções do Wolverine)
             EuroBank.Shared.Web (Serilog, OpenTelemetry, erros em ProblemDetails)
   Contas/   Domain | Application | Infrastructure | Api
   Extrato/  Domain | Application | Infrastructure | Worker
@@ -180,13 +182,13 @@ referenciam um ao outro: o Extrato tem os próprios DTOs para os eventos que con
 Pontos do código que valem a leitura:
 
 - `src/Contas/EuroBank.Contas.Domain/Entities/Conta.cs`: o agregado decide qual evento acontece.
-- `src/Contas/EuroBank.Contas.Infrastructure/Persistence/UnidadeDeTrabalho.cs`: estado e outbox na mesma
+- `src/Shared/EuroBank.Shared.Persistence/Outbox/UnidadeDeTrabalhoComOutbox.cs`: estado e outbox na mesma
   transação, com as linhas inseridas na ordem dos eventos.
 - `infra/connect/conectores/eurobank-contas-outbox.json`: como cada coluna da outbox vira tópico, chave, header
   ou corpo da mensagem.
-- `src/Extrato/EuroBank.Extrato.Infrastructure/Messaging/MapeadorEnvelopeDebezium.cs`: como o Wolverine lê os
+- `src/Shared/EuroBank.Shared.Messaging/MapeadorEnvelopeDebezium.cs`: como o Wolverine lê os
   headers do Debezium.
-- `src/Extrato/EuroBank.Extrato.Infrastructure/Messaging/ConfiguracaoMensageria.cs`: inbox durável, ordem por
+- `src/Shared/EuroBank.Shared.Messaging/WolverineExtensions.cs`: inbox durável, ordem por
   conta, retry e dead letter.
 - `src/Extrato/EuroBank.Extrato.Domain/Entities/ExtratoConta.cs`: a regra de versão que torna a projeção
   idempotente.

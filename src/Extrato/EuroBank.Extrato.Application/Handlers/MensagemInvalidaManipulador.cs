@@ -1,5 +1,5 @@
-using EuroBank.Extrato.Application.Exceptions;
-using EuroBank.Extrato.Application.TransferObjects;
+using EuroBank.Shared.Exceptions;
+using EuroBank.Shared.TransferObjects;
 
 namespace EuroBank.Extrato.Application.Handlers;
 

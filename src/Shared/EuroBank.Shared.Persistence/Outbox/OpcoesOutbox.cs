@@ -1,4 +1,4 @@
-namespace EuroBank.Contas.Infrastructure.Outbox;
+namespace EuroBank.Shared.Persistence.Outbox;
 
 /// <summary>Configuração da seção "Outbox" do appsettings.</summary>
 public sealed class OpcoesOutbox

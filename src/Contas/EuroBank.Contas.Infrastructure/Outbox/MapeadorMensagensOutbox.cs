@@ -2,6 +2,7 @@ using System.Text.Json;
 using EuroBank.Contas.Domain.Events;
 using EuroBank.Contas.Infrastructure.Outbox.TransferObjects;
 using EuroBank.Shared.Domain;
+using EuroBank.Shared.Persistence.Outbox;
 
 namespace EuroBank.Contas.Infrastructure.Outbox;
 
@@ -9,7 +10,7 @@ namespace EuroBank.Contas.Infrastructure.Outbox;
 /// Converte eventos de domínio em linhas da outbox. O mapeamento é explícito: o payload publicado é um contrato
 /// de integração, independente da forma interna dos eventos de domínio.
 /// </summary>
-public sealed class MapeadorMensagensOutbox
+public sealed class MapeadorMensagensOutbox : IMapeadorMensagensOutbox
 {
     /// <summary>Valor de tipo_agregado; o Debezium roteia para o tópico eurobank.contas.eventos.</summary>
     public const string TipoAgregado = "contas";

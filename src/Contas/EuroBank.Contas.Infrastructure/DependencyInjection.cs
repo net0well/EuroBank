@@ -6,6 +6,7 @@ using EuroBank.Contas.Infrastructure.Persistence;
 using EuroBank.Contas.Infrastructure.Persistence.Queries;
 using EuroBank.Contas.Infrastructure.Persistence.Repositories;
 using EuroBank.Shared.Domain;
+using EuroBank.Shared.Persistence.Outbox;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,7 +18,7 @@ public static class DependencyInjection
     public static IServiceCollection AdicionarInfraestruturaContas(this IServiceCollection services)
     {
         services.AddOptions<OpcoesOutbox>().BindConfiguration(OpcoesOutbox.Secao);
-        services.AddSingleton<MapeadorMensagensOutbox>();
+        services.AddSingleton<IMapeadorMensagensOutbox, MapeadorMensagensOutbox>();
 
         // A connection string é lida quando o DbContext é criado, para os testes poderem sobrescrevê-la.
         services.AddDbContext<ContasDbContext>((provedor, opcoes) => opcoes
@@ -26,7 +27,7 @@ public static class DependencyInjection
 
         services.AddScoped<IRepositorioContas, RepositorioContas>();
         services.AddScoped<IGeradorIban, GeradorIban>();
-        services.AddScoped<IUnidadeDeTrabalho, UnidadeDeTrabalho>();
+        services.AddScoped<IUnidadeDeTrabalho, UnidadeDeTrabalhoComOutbox<ContasDbContext>>();
         services.AddScoped<IConsultaContas, ConsultaContas>();
         return services;
     }

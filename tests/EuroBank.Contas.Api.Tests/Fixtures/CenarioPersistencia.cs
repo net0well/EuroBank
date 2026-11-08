@@ -1,6 +1,7 @@
 using EuroBank.Contas.Infrastructure.Outbox;
 using EuroBank.Contas.Infrastructure.Persistence;
 using EuroBank.Contas.Infrastructure.Persistence.Repositories;
+using EuroBank.Shared.Persistence.Outbox;
 using Microsoft.Extensions.Options;
 
 namespace EuroBank.Contas.Api.Tests.Fixtures;
@@ -13,7 +14,7 @@ public sealed class CenarioPersistencia : IAsyncDisposable
         Contexto = banco.CriarContexto();
         Repositorio = new RepositorioContas(Contexto);
         GeradorIban = new GeradorIban(Contexto);
-        UnidadeDeTrabalho = new UnidadeDeTrabalho(
+        UnidadeDeTrabalho = new UnidadeDeTrabalhoComOutbox<ContasDbContext>(
             Contexto,
             new MapeadorMensagensOutbox(),
             Options.Create(new OpcoesOutbox { ApagarAposGravar = apagarOutboxAposGravar }));
@@ -25,7 +26,7 @@ public sealed class CenarioPersistencia : IAsyncDisposable
 
     public GeradorIban GeradorIban { get; }
 
-    public UnidadeDeTrabalho UnidadeDeTrabalho { get; }
+    public UnidadeDeTrabalhoComOutbox<ContasDbContext> UnidadeDeTrabalho { get; }
 
     public ValueTask DisposeAsync() => Contexto.DisposeAsync();
 }

@@ -1,8 +1,8 @@
-namespace EuroBank.Contas.Infrastructure.Outbox;
+namespace EuroBank.Shared.Persistence.Outbox;
 
 /// <summary>
 /// Linha da tabela outbox. É gravada na mesma transação da alteração da conta; o Debezium lê o INSERT no WAL
-/// e o Outbox Event Router publica o <see cref="Payload"/> no tópico eurobank.{TipoAgregado}.eventos, com
+/// e o Outbox Event Router publica o <see cref="Payload"/> no tópico roteado por <see cref="TipoAgregado"/>, com
 /// chave <see cref="IdAgregado"/> e os headers id, tipo e traceparent.
 /// </summary>
 public sealed class MensagemOutbox
@@ -28,10 +28,10 @@ public sealed class MensagemOutbox
     /// <summary>Id do evento; vira o header "id" da mensagem e é a chave de deduplicação no Extrato.</summary>
     public Guid Id { get; private set; }
 
-    /// <summary>Define o tópico de destino (eurobank.contas.eventos).</summary>
+    /// <summary>Define o tópico de destino (ex.: contas.eventos vira eurobank.contas.eventos).</summary>
     public string TipoAgregado { get; private set; }
 
-    /// <summary>Id da conta; vira a chave da mensagem, garantindo ordem por conta na partição.</summary>
+    /// <summary>Id do agregado; vira a chave da mensagem, garantindo ordem por agregado na partição.</summary>
     public string IdAgregado { get; private set; }
 
     /// <summary>Nome do evento (ex.: DepositoRealizado); vira o header "tipo".</summary>

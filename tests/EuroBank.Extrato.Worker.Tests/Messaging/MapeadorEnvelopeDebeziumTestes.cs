@@ -3,6 +3,8 @@ using System.Text.Json;
 using Confluent.Kafka;
 using EuroBank.Extrato.Application.TransferObjects;
 using EuroBank.Extrato.Infrastructure.Messaging;
+using EuroBank.Shared.Messaging;
+using EuroBank.Shared.TransferObjects;
 using Wolverine;
 using Wolverine.Util;
 
@@ -10,7 +12,7 @@ namespace EuroBank.Extrato.Worker.Tests.Messaging;
 
 public sealed class MapeadorEnvelopeDebeziumTestes
 {
-    private readonly MapeadorEnvelopeDebezium _mapeador = new();
+    private readonly MapeadorEnvelopeDebezium _mapeador = new(TiposEventosContas.Mapa);
 
     private static Message<string, byte[]> Mensagem(string? tipo, string? id = null, string? traceparent = null)
     {
