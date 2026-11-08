@@ -152,6 +152,7 @@ services:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_HTTP_PORTS: "8080"
       ConnectionStrings__Contas: "Host=postgres;Port=5432;Database=eurobank_contas;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      Seguranca__ApiKey: ${CONTAS_API_KEY}
       # true: insere e apaga a linha da outbox na mesma transação (o evento sai mesmo assim, pelo WAL).
       Outbox__ApagarAposGravar: ${OUTBOX_APAGAR_APOS_GRAVAR:-false}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
@@ -179,6 +180,7 @@ services:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_HTTP_PORTS: "8080"
       ConnectionStrings__Extrato: "Host=postgres;Port=5432;Database=eurobank_extrato;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      Seguranca__ApiKey: ${EXTRATO_API_KEY}
       Kafka__BootstrapServers: kafka:29092
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
     healthcheck:
@@ -201,6 +203,8 @@ services:
     environment:
       API_CONTAS: http://contas-api:8080
       API_EXTRATO: http://extrato-worker:8080
+      API_KEY_CONTAS: ${CONTAS_API_KEY}
+      API_KEY_EXTRATO: ${EXTRATO_API_KEY}
       VUS: ${K6_VUS:-10}
       DURACAO: ${K6_DURACAO:-1m}
       CONTAS: ${K6_CONTAS:-10}

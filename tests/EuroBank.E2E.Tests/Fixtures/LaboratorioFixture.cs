@@ -111,9 +111,11 @@ public sealed class LaboratorioFixture : IAsyncLifetime
         {
             builder.UseEnvironment("Development");
             builder.UseSetting("ConnectionStrings:Contas", ConnectionStringContas);
+            builder.UseSetting("Seguranca:ApiKey", "chave-e2e-contas");
             builder.UseSetting("OTEL_SDK_DISABLED", "true");
         });
         Contas = _contas.CreateClient();
+        Contas.DefaultRequestHeaders.Add("X-Api-Key", "chave-e2e-contas");
 
         _extrato = new WebApplicationFactory<MarcadorExtratoWorker>().WithWebHostBuilder(builder =>
         {
@@ -121,9 +123,11 @@ public sealed class LaboratorioFixture : IAsyncLifetime
             builder.UseSetting("ConnectionStrings:Extrato", ConnectionStringExtrato);
             builder.UseSetting("Kafka:BootstrapServers", BootstrapKafka);
             builder.UseSetting("Kafka:GrupoConsumidor", $"eurobank-extrato-e2e-{Guid.NewGuid():N}");
+            builder.UseSetting("Seguranca:ApiKey", "chave-e2e-extrato");
             builder.UseSetting("OTEL_SDK_DISABLED", "true");
         });
         Extrato = _extrato.CreateClient();
+        Extrato.DefaultRequestHeaders.Add("X-Api-Key", "chave-e2e-extrato");
     }
 
     /// <summary>Para o Kafka Connect (o replication slot passa a segurar o WAL).</summary>

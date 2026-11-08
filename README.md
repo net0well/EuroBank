@@ -156,6 +156,10 @@ worker do Extrato.
 
 As credenciais existem só para o ambiente local do laboratório.
 
+As rotas de negócio exigem o header `X-Api-Key`, com uma chave por API, definidas no `.env`
+(`CONTAS_API_KEY`, `EXTRATO_API_KEY`). Sem a chave, a resposta é 401. O `/health` e o Swagger ficam abertos; no
+Swagger, use o botão Authorize. Os roteiros `.http` e o k6 já enviam as chaves de laboratório.
+
 Roteiros de requisições prontos: [`http/contas.http`](http/contas.http) e [`http/extrato.http`](http/extrato.http).
 
 Para recomeçar do zero (apaga os dados do laboratório): `docker compose down -v`.

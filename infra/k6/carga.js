@@ -15,6 +15,8 @@ const API_CONTAS = __ENV.API_CONTAS || 'http://localhost:5100';
 const API_EXTRATO = __ENV.API_EXTRATO || 'http://localhost:5200';
 const CONTAS = Number(__ENV.CONTAS || 10);
 const ESPERA_CONVERGENCIA_S = Number(__ENV.ESPERA_CONVERGENCIA_S || 90);
+const CHAVE_CONTAS = { 'X-Api-Key': __ENV.API_KEY_CONTAS || 'contas-lab-key' };
+const CHAVE_EXTRATO = { 'X-Api-Key': __ENV.API_KEY_EXTRATO || 'extrato-lab-key' };
 
 const divergencias = new Counter('contas_divergentes');
 
@@ -31,7 +33,7 @@ export const options = {
   },
 };
 
-const json = { headers: { 'Content-Type': 'application/json' } };
+const json = { headers: { 'Content-Type': 'application/json', ...CHAVE_CONTAS } };
 
 function valorAleatorio(maximo) {
   return Math.round((1 + Math.random() * (maximo - 1)) * 100) / 100;
@@ -86,8 +88,8 @@ export function teardown(dados) {
   }
 
   for (const conta of pendentes) {
-    const contas = http.get(`${API_CONTAS}/contas/${conta.id}`).json();
-    const extrato = http.get(`${API_EXTRATO}/extratos/${conta.id}?tamanho=1`).json();
+    const contas = http.get(`${API_CONTAS}/contas/${conta.id}`, { headers: CHAVE_CONTAS }).json();
+    const extrato = http.get(`${API_EXTRATO}/extratos/${conta.id}?tamanho=1`, { headers: CHAVE_EXTRATO }).json();
     console.error(`Divergente ${conta.id}: Contas saldo=${contas.saldo} v${contas.versao}; ` +
       `Extrato saldo=${extrato.saldoAtual} v${extrato.ultimaVersao}`);
     divergencias.add(1);
@@ -98,8 +100,8 @@ export function teardown(dados) {
 }
 
 function convergiu(conta) {
-  const contas = http.get(`${API_CONTAS}/contas/${conta.id}`);
-  const extrato = http.get(`${API_EXTRATO}/extratos/${conta.id}?tamanho=1`, { responseCallback: http.expectedStatuses(200, 404) });
+  const contas = http.get(`${API_CONTAS}/contas/${conta.id}`, { headers: CHAVE_CONTAS });
+  const extrato = http.get(`${API_EXTRATO}/extratos/${conta.id}?tamanho=1`, { headers: CHAVE_EXTRATO, responseCallback: http.expectedStatuses(200, 404) });
   if (contas.status !== 200 || extrato.status !== 200) {
     return false;
   }
