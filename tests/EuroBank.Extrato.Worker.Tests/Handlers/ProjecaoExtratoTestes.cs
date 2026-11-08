@@ -56,6 +56,25 @@ public sealed class ProjecaoExtratoTestes(ExtratoWorkerFixture worker)
     }
 
     [Fact]
+    public async Task TransferenciaExternaEEstorno_AparecemNoExtratoComTarifa()
+    {
+        var contaId = await AbrirAsync();
+        var transferenciaId = Guid.CreateVersion7();
+        await worker.EntregarAsync(new EventoDepositoRealizado(contaId, 1000m, 1000m, 2, Agora));
+
+        await worker.EntregarAsync(new EventoTransferenciaExternaEnviada(
+            contaId, transferenciaId, "DE89370400440532013000", "Bruno", null, 100m, 2.50m, 897.50m, 3, Agora));
+        (await ObterAsync(contaId))!.Lancamentos[0].Tarifa.ShouldBe(2.50m);
+        await worker.EntregarAsync(new EventoEstornoTransferencia(contaId, transferenciaId, "Bruno", 102.50m, 1000m, 4, Agora));
+
+        var extrato = (await ObterAsync(contaId))!;
+        extrato.SaldoAtual.ShouldBe(1000m);
+        extrato.Lancamentos.Select(l => l.Tipo).ShouldBe(["EstornoTransferencia", "TransferenciaExternaEnviada", "Deposito"]);
+        extrato.Lancamentos[0].Tarifa.ShouldBeNull();
+        extrato.Lancamentos[1].Descricao.ShouldBe("Transferência para Bruno (DE89370400440532013000)");
+    }
+
+    [Fact]
     public async Task EventoRepetido_NaoAlteraOSaldoNemDuplicaLancamento()
     {
         var contaId = await AbrirAsync();
@@ -166,5 +185,5 @@ public sealed class ProjecaoExtratoTestes(ExtratoWorkerFixture worker)
         List<LancamentoResposta> Lancamentos);
 
     private sealed record LancamentoResposta(
-        string Tipo, decimal Valor, decimal SaldoApos, int Versao, DateTimeOffset OcorridoEm, string Descricao);
+        string Tipo, decimal Valor, decimal? Tarifa, decimal SaldoApos, int Versao, DateTimeOffset OcorridoEm, string Descricao);
 }

@@ -44,6 +44,25 @@ public sealed class MapeadorMensagensOutbox : IMapeadorMensagensOutbox
         ContaBloqueada e => Criar(e, traceparent, new AlteracaoStatusMensagem(e.ContaId.Valor, e.Versao, e.OcorridoEm)),
         ContaDesbloqueada e => Criar(e, traceparent, new AlteracaoStatusMensagem(e.ContaId.Valor, e.Versao, e.OcorridoEm)),
         ContaEncerrada e => Criar(e, traceparent, new AlteracaoStatusMensagem(e.ContaId.Valor, e.Versao, e.OcorridoEm)),
+        TransferenciaExternaEnviada e => Criar(e, traceparent, new TransferenciaExternaEnviadaMensagem(
+            e.ContaId.Valor,
+            e.TransferenciaId,
+            e.IbanDestino,
+            e.NomeBeneficiario,
+            e.Descricao,
+            e.Valor.ToString(),
+            e.Tarifa.ToString(),
+            e.SaldoApos.ToString(),
+            e.Versao,
+            e.OcorridoEm)),
+        EstornoTransferencia e => Criar(e, traceparent, new EstornoTransferenciaMensagem(
+            e.ContaId.Valor,
+            e.TransferenciaId,
+            e.NomeBeneficiario,
+            e.Valor.ToString(),
+            e.SaldoApos.ToString(),
+            e.Versao,
+            e.OcorridoEm)),
         _ => throw new InvalidOperationException($"O evento {evento.GetType().Name} não tem mapeamento para a outbox."),
     };
 

@@ -18,5 +18,7 @@ public static class TiposEventosContas
         ["ContaBloqueada"] = typeof(EventoContaBloqueada),
         ["ContaDesbloqueada"] = typeof(EventoContaDesbloqueada),
         ["ContaEncerrada"] = typeof(EventoContaEncerrada),
+        ["TransferenciaExternaEnviada"] = typeof(EventoTransferenciaExternaEnviada),
+        ["EstornoTransferencia"] = typeof(EventoEstornoTransferencia),
     };
 }

@@ -36,6 +36,10 @@ public sealed class PostgresFixture : IAsyncLifetime
 
         ConnectionStringApi = await CriarBancoVazioAsync();
         Api = new ContasApiFactory(ConnectionStringApi);
+
+        // Sobe a API já aqui: a WebApplicationFactory não é segura para a primeira subida em paralelo, e várias
+        // classes de teste a usam ao mesmo tempo (duas subidas rodariam as migrations simultaneamente).
+        using var _ = Api.CreateClient();
     }
 
     public ContasDbContext CriarContexto(string? connectionString = null) =>

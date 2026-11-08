@@ -19,12 +19,17 @@ namespace EuroBank.Shared.Persistence.Outbox;
 public sealed class UnidadeDeTrabalhoComOutbox<TContexto>(
     TContexto contexto,
     IMapeadorMensagensOutbox mapeador,
+    IFilaOutbox fila,
     IOptions<OpcoesOutbox> opcoes) : IUnidadeDeTrabalho
     where TContexto : DbContext
 {
     public async Task SalvarAsync(CancellationToken cancellationToken)
     {
+        // Primeiro os eventos dos agregados, depois as mensagens avulsas (respostas de saga, comandos),
+        // na ordem em que foram enfileiradas. A fila é esvaziada mesmo se a gravação falhar, para um retry
+        // não duplicar mensagens.
         var mensagens = ColetarMensagens();
+        mensagens.AddRange(fila.Retirar());
 
         try
         {

@@ -18,7 +18,8 @@ public sealed class Lancamento
         int versao,
         DateTimeOffset ocorridoEm,
         string descricao,
-        Guid? transferenciaId)
+        Guid? transferenciaId,
+        Dinheiro? tarifa = null)
     {
         Id = Guid.CreateVersion7();
         Tipo = tipo;
@@ -28,7 +29,11 @@ public sealed class Lancamento
         OcorridoEm = ocorridoEm;
         Descricao = descricao;
         TransferenciaId = transferenciaId;
+        Tarifa = tarifa;
     }
+
+    /// <summary>Tarifa cobrada junto com o lançamento (só nas transferências externas).</summary>
+    public Dinheiro? Tarifa { get; private set; }
 
     public Guid Id { get; private set; }
 

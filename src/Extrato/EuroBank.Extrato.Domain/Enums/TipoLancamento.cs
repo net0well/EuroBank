@@ -6,4 +6,6 @@ public enum TipoLancamento
     Saque = 2,
     TransferenciaEnviada = 3,
     TransferenciaRecebida = 4,
+    TransferenciaExternaEnviada = 5,
+    EstornoTransferencia = 6,
 }

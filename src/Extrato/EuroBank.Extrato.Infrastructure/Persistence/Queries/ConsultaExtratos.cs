@@ -42,6 +42,7 @@ public sealed class ConsultaExtratos(ExtratoDbContext contexto) : IConsultaExtra
             pagina.Select(lancamento => new LancamentoDto(
                     lancamento.Tipo.ToString(),
                     lancamento.Valor.Valor,
+                    lancamento.Tarifa?.Valor,
                     lancamento.SaldoApos.Valor,
                     lancamento.Versao,
                     lancamento.OcorridoEm,

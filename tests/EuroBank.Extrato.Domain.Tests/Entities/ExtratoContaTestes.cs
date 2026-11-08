@@ -68,6 +68,32 @@ public sealed class ExtratoContaTestes
     }
 
     [Fact]
+    public void TransferenciaExternaEEstorno_CriamLancamentosComTarifaEDescricao()
+    {
+        var extrato = NovoExtrato();
+        var transferenciaId = Guid.CreateVersion7();
+        extrato.RegistrarDeposito(2, Dinheiro.De(1000m), Dinheiro.De(1000m), Agora);
+
+        extrato.RegistrarTransferenciaExternaEnviada(
+            3, transferenciaId, "DE89370400440532013000", "Bruno Silva", "Aluguel",
+            Dinheiro.De(100m), Dinheiro.De(2.50m), Dinheiro.De(897.50m), Agora);
+        extrato.RegistrarEstornoTransferencia(4, transferenciaId, "Bruno Silva", Dinheiro.De(102.50m), Dinheiro.De(1000m), Agora);
+
+        extrato.SaldoAtual.ShouldBe(Dinheiro.De(1000m));
+        var enviada = extrato.Lancamentos[1];
+        enviada.Tipo.ShouldBe(TipoLancamento.TransferenciaExternaEnviada);
+        enviada.Valor.ShouldBe(Dinheiro.De(100m));
+        enviada.Tarifa.ShouldBe(Dinheiro.De(2.50m));
+        enviada.TransferenciaId.ShouldBe(transferenciaId);
+        enviada.Descricao.ShouldBe("Transferência para Bruno Silva (DE89370400440532013000): Aluguel");
+        var estorno = extrato.Lancamentos[2];
+        estorno.Tipo.ShouldBe(TipoLancamento.EstornoTransferencia);
+        estorno.Valor.ShouldBe(Dinheiro.De(102.50m));
+        estorno.Tarifa.ShouldBeNull();
+        estorno.Descricao.ShouldBe("Estorno da transferência para Bruno Silva");
+    }
+
+    [Fact]
     public void EventoComVersaoJaAplicada_EIgnoradoESaldoNaoMuda()
     {
         var extrato = NovoExtrato();

@@ -27,7 +27,9 @@ public static class DependencyInjection
 
         services.AddScoped<IRepositorioContas, RepositorioContas>();
         services.AddScoped<IGeradorIban, GeradorIban>();
+        services.AddScoped<IFilaOutbox, FilaOutbox>();
         services.AddScoped<IUnidadeDeTrabalho, UnidadeDeTrabalhoComOutbox<ContasDbContext>>();
+        services.AddScoped<IRespostasSaga, RespostasSagaOutbox>();
         services.AddScoped<IConsultaContas, ConsultaContas>();
         return services;
     }

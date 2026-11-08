@@ -90,6 +90,11 @@ namespace EuroBank.Extrato.Infrastructure.Persistence.Migrations
                         .HasColumnType("numeric(18,2)")
                         .HasColumnName("saldo_apos");
 
+                    b.Property<decimal?>("Tarifa")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("tarifa");
+
                     b.Property<string>("Tipo")
                         .IsRequired()
                         .HasMaxLength(30)
