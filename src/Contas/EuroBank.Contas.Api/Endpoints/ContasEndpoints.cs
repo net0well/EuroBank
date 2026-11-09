@@ -16,7 +16,7 @@ public static class ContasEndpoints
 
         grupo.MapPost("", AbrirAsync)
             .WithName("AbrirConta")
-            .WithSummary("Abre uma conta ativa com saldo zero")
+            .WithSummary("Abre uma conta ativa com saldo zero, na moeda escolhida (padrão EUR)")
             .ProducesProblem(StatusCodes.Status400BadRequest);
 
         grupo.MapGet("", ListarAsync)
@@ -61,7 +61,7 @@ public static class ContasEndpoints
     private static async Task<IResult> AbrirAsync(
         AbrirContaRequisicao requisicao, IMessageBus barramento, CancellationToken cancellationToken)
     {
-        var conta = await barramento.InvokeAsync<ContaDto>(new AbrirConta(requisicao.Titular), cancellationToken);
+        var conta = await barramento.InvokeAsync<ContaDto>(new AbrirConta(requisicao.Titular, requisicao.Moeda), cancellationToken);
         return TypedResults.Created($"/contas/{conta.Id}", conta);
     }
 

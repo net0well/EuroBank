@@ -1,6 +1,5 @@
 using EuroBank.Contas.Application.TransferObjects;
 using EuroBank.Contas.Domain.Entities;
-using EuroBank.Shared.ValueObjects;
 
 namespace EuroBank.Contas.Application.Mappers;
 
@@ -11,7 +10,7 @@ public static class ContaMapeador
         conta.Iban.Valor,
         conta.Titular.Nome,
         conta.Saldo.Valor,
-        Dinheiro.Moeda,
+        conta.Moeda.ToString(),
         conta.Status.ToString(),
         conta.Versao,
         conta.AbertaEm);

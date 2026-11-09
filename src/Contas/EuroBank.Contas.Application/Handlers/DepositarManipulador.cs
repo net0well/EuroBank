@@ -15,8 +15,8 @@ public sealed class DepositarManipulador(
 {
     public async Task<ContaDto> Handle(Depositar comando, CancellationToken cancellationToken)
     {
-        var valor = Dinheiro.De(comando.Valor);
         var conta = await repositorio.ObterOuFalharAsync(comando.ContaId, cancellationToken);
+        var valor = Dinheiro.De(comando.Valor, conta.Moeda);
 
         conta.Depositar(valor, relogio.GetUtcNow());
 

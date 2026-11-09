@@ -11,9 +11,9 @@ public sealed class ClienteContas(HttpClient http)
 
     public HttpClient Http { get; } = http;
 
-    public async Task<ContaResposta> AbrirAsync(string titular = "Titular de teste", decimal depositoInicial = 0m)
+    public async Task<ContaResposta> AbrirAsync(string titular = "Titular de teste", decimal depositoInicial = 0m, string? moeda = null)
     {
-        var resposta = await Http.PostAsJsonAsync("/contas", new { titular }, Ct);
+        var resposta = await Http.PostAsJsonAsync("/contas", new { titular, moeda }, Ct);
         resposta.StatusCode.ShouldBe(HttpStatusCode.Created);
         var conta = (await resposta.Content.ReadFromJsonAsync<ContaResposta>(Ct))!;
         if (depositoInicial > 0)

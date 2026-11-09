@@ -10,4 +10,7 @@ public enum StatusTransferenciaDaConta
 
     /// <summary>Compensada: valor e tarifa voltaram para a conta.</summary>
     Estornada = 3,
+
+    /// <summary>Crédito recebido de uma saga de câmbio: só registra o id, para não creditar duas vezes.</summary>
+    Recebida = 4,
 }

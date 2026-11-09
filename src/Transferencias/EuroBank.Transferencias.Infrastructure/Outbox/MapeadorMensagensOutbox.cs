@@ -49,7 +49,7 @@ public sealed class MapeadorMensagensOutbox : IMapeadorMensagensOutbox
             e.TransferenciaId.ToString(),
             "LiquidarTransferencia",
             new LiquidarTransferenciaMensagem(
-                e.TransferenciaId.Valor, e.IbanDestino, e.Bic, e.NomeBeneficiario, e.Valor.Valor, Dinheiro.Moeda),
+                e.TransferenciaId.Valor, e.IbanDestino, e.Bic, e.NomeBeneficiario, e.Valor.Valor, e.Valor.Moeda.ToString()),
             e,
             traceparent),
         ConsultaLiquidacaoSolicitada e => Criar(

@@ -1,5 +1,4 @@
 using EuroBank.Extrato.Domain.Entities;
-using EuroBank.Shared.ValueObjects;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -16,10 +15,9 @@ public sealed class ExtratoContaConfiguration : IEntityTypeConfiguration<Extrato
         builder.Property(extrato => extrato.Iban).HasColumnName("iban").HasMaxLength(34);
         builder.Property(extrato => extrato.Titular).HasColumnName("titular").HasMaxLength(120);
         builder.Property(extrato => extrato.Status).HasColumnName("status").HasConversion<string>().HasMaxLength(20);
-        builder.Property(extrato => extrato.SaldoAtual)
-            .HasColumnName("saldo_atual")
-            .HasConversion(dinheiro => dinheiro.Valor, valor => Dinheiro.De(valor))
-            .HasPrecision(18, 2);
+        builder.Property(extrato => extrato.Moeda).HasColumnName("moeda").HasConversion<string>().HasMaxLength(3);
+        builder.Ignore(extrato => extrato.SaldoAtual);
+        builder.Property<decimal>("_saldoAtual").HasColumnName("saldo_atual").HasPrecision(18, 2);
 
         // Duas instâncias aplicando eventos da mesma conta (ex.: durante um rebalance) não sobrescrevem uma à
         // outra: a segunda recebe conflito, tenta de novo e a regra de versão descarta o evento repetido.

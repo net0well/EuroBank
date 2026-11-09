@@ -18,7 +18,7 @@ public sealed class SaqueRealizadoManipulador(
         var extrato = await repositorio.ObterOuFalharAsync(evento.ContaId, cancellationToken);
 
         var resultado = extrato.RegistrarSaque(
-            evento.Versao, Dinheiro.De(evento.Valor), Dinheiro.De(evento.SaldoApos), evento.OcorridoEm);
+            evento.Versao, Dinheiro.De(evento.Valor, extrato.Moeda), Dinheiro.De(evento.SaldoApos, extrato.Moeda), evento.OcorridoEm);
 
         if (resultado != ResultadoAplicacao.IgnoradoJaAplicado)
         {

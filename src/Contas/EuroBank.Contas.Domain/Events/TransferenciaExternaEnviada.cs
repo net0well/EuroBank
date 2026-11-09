@@ -3,6 +3,7 @@ using EuroBank.Shared.ValueObjects;
 
 namespace EuroBank.Contas.Domain.Events;
 
+/// <summary>Débito de uma transferência externa; com câmbio, <see cref="Conversao"/> diz o que o destino recebe.</summary>
 public sealed record TransferenciaExternaEnviada(
     ContaId ContaId,
     Guid TransferenciaId,
@@ -13,4 +14,5 @@ public sealed record TransferenciaExternaEnviada(
     Dinheiro Tarifa,
     Dinheiro SaldoApos,
     int Versao,
-    DateTimeOffset OcorridoEm) : IEventoDeConta;
+    DateTimeOffset OcorridoEm,
+    Conversao? Conversao = null) : IEventoDeConta;

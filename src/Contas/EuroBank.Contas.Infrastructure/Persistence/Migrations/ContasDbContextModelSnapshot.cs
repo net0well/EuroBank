@@ -40,10 +40,11 @@ namespace EuroBank.Contas.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(34)")
                         .HasColumnName("iban");
 
-                    b.Property<decimal>("Saldo")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("saldo");
+                    b.Property<string>("Moeda")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasColumnName("moeda");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -62,6 +63,11 @@ namespace EuroBank.Contas.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("versao");
 
+                    b.Property<decimal>("_saldo")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("saldo");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Iban")
@@ -72,13 +78,13 @@ namespace EuroBank.Contas.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("EuroBank.Contas.Domain.Entities.TransferenciaDaConta", b =>
                 {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
                     b.Property<Guid>("ContaId")
                         .HasColumnType("uuid")
                         .HasColumnName("conta_id");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
 
                     b.Property<DateTimeOffset>("DebitadaEm")
                         .HasColumnType("timestamp with time zone")
@@ -87,6 +93,12 @@ namespace EuroBank.Contas.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("EstornadaEm")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("estornada_em");
+
+                    b.Property<string>("Moeda")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasColumnName("moeda");
 
                     b.Property<string>("NomeBeneficiario")
                         .IsRequired()
@@ -100,19 +112,17 @@ namespace EuroBank.Contas.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(20)")
                         .HasColumnName("status");
 
-                    b.Property<decimal>("Tarifa")
+                    b.Property<decimal>("_tarifa")
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)")
                         .HasColumnName("tarifa");
 
-                    b.Property<decimal>("Valor")
+                    b.Property<decimal>("_valor")
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)")
                         .HasColumnName("valor");
 
-                    b.HasKey("Id");
-
-                    b.HasIndex("ContaId");
+                    b.HasKey("ContaId", "Id");
 
                     b.ToTable("transferencias_conta", (string)null);
                 });

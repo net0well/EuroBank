@@ -1,59 +1,34 @@
 using EuroBank.Contas.Application.Commands;
 using EuroBank.Contas.Application.Interfaces;
-using EuroBank.Contas.Application.Mappers;
-using EuroBank.Contas.Domain.Repositories;
+using EuroBank.Contas.Application.Services;
 using EuroBank.Contas.Domain.ValueObjects;
-using EuroBank.Shared.Domain;
-using EuroBank.Shared.Exceptions;
+using EuroBank.Shared.Enums;
 using EuroBank.Shared.ValueObjects;
-using Microsoft.Extensions.Logging;
 
 namespace EuroBank.Contas.Application.Handlers;
 
-public sealed class DebitarTransferenciaExternaManipulador(
-    IRepositorioContas repositorio,
-    IRespostasSaga respostas,
-    IUnidadeDeTrabalho unidadeDeTrabalho,
-    TimeProvider relogio,
-    ILogger<DebitarTransferenciaExternaManipulador> logger)
+public sealed class DebitarTransferenciaExternaManipulador(PassoDaSaga passo, IRespostasSaga respostas, TimeProvider relogio)
 {
-    public async Task Handle(DebitarTransferenciaExterna comando, CancellationToken cancellationToken)
-    {
-        var conta = await repositorio.ObterPorIdAsync(new ContaId(comando.ContaId), cancellationToken);
-        if (conta is null)
-        {
-            respostas.DebitoRecusado(comando.TransferenciaId, comando.ContaId, MotivoRecusaMapeador.ContaInexistente);
-            await unidadeDeTrabalho.SalvarAsync(cancellationToken);
-            return;
-        }
-
-        try
-        {
-            var resultado = conta.DebitarTransferenciaExterna(
+    public Task Handle(DebitarTransferenciaExterna comando, CancellationToken cancellationToken) =>
+        passo.ExecutarAsync(
+            comando.TransferenciaId,
+            comando.ContaId,
+            comando.Moeda,
+            conta => conta.DebitarTransferenciaExterna(
                 comando.TransferenciaId,
-                Dinheiro.De(comando.Valor),
-                Dinheiro.De(comando.Tarifa),
+                Dinheiro.De(comando.Valor, conta.Moeda),
+                Dinheiro.De(comando.Tarifa, conta.Moeda),
                 comando.IbanDestino,
                 comando.NomeBeneficiario,
                 comando.Descricao,
-                relogio.GetUtcNow());
+                relogio.GetUtcNow(),
+                ConversaoDo(comando)),
+            transferencia => respostas.DebitoRealizado(comando.TransferenciaId, comando.ContaId, transferencia.Valor, transferencia.Tarifa),
+            motivo => respostas.DebitoRecusado(comando.TransferenciaId, comando.ContaId, motivo),
+            cancellationToken);
 
-            // Mesmo num reenvio (JaProcessada), responde de novo com os valores originais.
-            var transferencia = conta.Transferencias.First(t => t.Id == comando.TransferenciaId);
-            respostas.DebitoRealizado(comando.TransferenciaId, comando.ContaId, transferencia.Valor, transferencia.Tarifa);
-            logger.LogInformation(
-                "Débito da transferência {TransferenciaId} na conta {ContaId}: {Resultado}",
-                comando.TransferenciaId, comando.ContaId, resultado);
-        }
-        catch (ExcecaoDominio excecao) when (excecao is ExcecaoRegraNegocio or ExcecaoValidacao)
-        {
-            var motivo = MotivoRecusaMapeador.DoCodigo(excecao.Codigo);
-            respostas.DebitoRecusado(comando.TransferenciaId, comando.ContaId, motivo);
-            logger.LogInformation(
-                "Débito da transferência {TransferenciaId} na conta {ContaId} recusado: {Motivo}",
-                comando.TransferenciaId, comando.ContaId, motivo);
-        }
-
-        await unidadeDeTrabalho.SalvarAsync(cancellationToken);
-    }
+    private static Conversao? ConversaoDo(DebitarTransferenciaExterna comando) =>
+        comando is { MoedaDestino: { } moeda, ValorDestino: { } valor, Taxa: { } taxa }
+            ? Conversao.Criar(Dinheiro.De(valor, Moedas.Ler(moeda)), taxa)
+            : null;
 }

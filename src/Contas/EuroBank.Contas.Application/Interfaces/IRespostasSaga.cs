@@ -13,4 +13,8 @@ public interface IRespostasSaga
     void DebitoRecusado(Guid transferenciaId, Guid contaId, string motivo);
 
     void EstornoRealizado(Guid transferenciaId, Guid contaId, Dinheiro valorDevolvido);
+
+    void CreditoRealizado(Guid transferenciaId, Guid contaId, Dinheiro valor);
+
+    void CreditoRecusado(Guid transferenciaId, Guid contaId, string motivo);
 }

@@ -32,9 +32,15 @@ public sealed class ContaConfiguration : IEntityTypeConfiguration<Conta>
             .HasMaxLength(Titular.TamanhoMaximo)
             .IsRequired();
 
-        builder.Property(conta => conta.Saldo)
+        builder.Property(conta => conta.Moeda)
+            .HasColumnName("moeda")
+            .HasConversion<string>()
+            .HasMaxLength(3);
+
+        // O saldo vira só o número; a moeda é a da conta (um conversor não enxerga outra coluna).
+        builder.Ignore(conta => conta.Saldo);
+        builder.Property<decimal>("_saldo")
             .HasColumnName("saldo")
-            .HasConversion(dinheiro => dinheiro.Valor, valor => Dinheiro.De(valor))
             .HasPrecision(18, 2);
 
         builder.Property(conta => conta.Status)

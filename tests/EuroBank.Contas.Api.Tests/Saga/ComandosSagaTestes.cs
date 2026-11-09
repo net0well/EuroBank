@@ -3,6 +3,7 @@ using System.Text.Json;
 using EuroBank.Contas.Api.Tests.Fixtures;
 using EuroBank.Contas.Application.Commands;
 using EuroBank.Contas.Application.Handlers;
+using EuroBank.Contas.Application.Services;
 using EuroBank.Contas.Domain.Entities;
 using EuroBank.Contas.Domain.Enums;
 using EuroBank.Contas.Domain.ValueObjects;
@@ -39,14 +40,13 @@ public sealed class ComandosSagaTestes(PostgresFixture banco)
     {
         await using var cenario = new CenarioPersistencia(banco);
         var manipulador = new DebitarTransferenciaExternaManipulador(
-            cenario.Repositorio,
-            new RespostasSagaOutbox(cenario.Fila, TimeProvider.System),
-            cenario.UnidadeDeTrabalho,
-            TimeProvider.System,
-            NullLogger<DebitarTransferenciaExternaManipulador>.Instance);
+            Passo(cenario), new RespostasSagaOutbox(cenario.Fila, TimeProvider.System), TimeProvider.System);
         await manipulador.Handle(
             new DebitarTransferenciaExterna(transferenciaId, contaId, valor, tarifa, "DE89370400440532013000", "Bruno", "Aluguel"), Ct);
     }
+
+    private static PassoDaSaga Passo(CenarioPersistencia cenario) =>
+        new(cenario.Repositorio, cenario.UnidadeDeTrabalho, NullLogger<PassoDaSaga>.Instance);
 
     private async Task EstornarAsync(Guid transferenciaId, Guid contaId)
     {
@@ -158,11 +158,7 @@ public sealed class ComandosSagaTestes(PostgresFixture banco)
         await using (var cenario = new CenarioPersistencia(banco.ConnectionStringApi))
         {
             var manipulador = new DebitarTransferenciaExternaManipulador(
-                cenario.Repositorio,
-                new RespostasSagaOutbox(cenario.Fila, TimeProvider.System),
-                cenario.UnidadeDeTrabalho,
-                TimeProvider.System,
-                NullLogger<DebitarTransferenciaExternaManipulador>.Instance);
+            Passo(cenario), new RespostasSagaOutbox(cenario.Fila, TimeProvider.System), TimeProvider.System);
             await manipulador.Handle(
                 new DebitarTransferenciaExterna(Guid.CreateVersion7(), conta.Id, 100m, 2.50m, "DE89370400440532013000", "Bruno", null), Ct);
         }

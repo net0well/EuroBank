@@ -11,6 +11,7 @@ public static class MotivoRecusaMapeador
         "conta_bloqueada" => "ContaBloqueada",
         "conta_encerrada" => "ContaEncerrada",
         "valor_invalido" => "ValorInvalido",
+        "moeda_diferente" => "MoedaDiferente",
         _ => codigo,
     };
 }

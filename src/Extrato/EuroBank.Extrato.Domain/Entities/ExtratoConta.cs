@@ -1,4 +1,6 @@
 using EuroBank.Extrato.Domain.Enums;
+using EuroBank.Extrato.Domain.ValueObjects;
+using EuroBank.Shared.Enums;
 using EuroBank.Shared.ValueObjects;
 
 namespace EuroBank.Extrato.Domain.Entities;
@@ -25,8 +27,17 @@ public sealed class ExtratoConta
 
     public StatusConta Status { get; private set; }
 
+    /// <summary>A moeda da conta, vinda do ContaAberta; todos os valores do extrato estão nela.</summary>
+    public Moeda Moeda { get; private set; }
+
     /// <summary>Saldo depois do último evento aplicado (vem do saldoApos do evento, não é recalculado).</summary>
-    public Dinheiro SaldoAtual { get; private set; } = Dinheiro.Zero;
+    public Dinheiro SaldoAtual
+    {
+        get => Dinheiro.De(_saldoAtual, Moeda);
+        private set => _saldoAtual = value.Valor;
+    }
+
+    private decimal _saldoAtual;
 
     public int UltimaVersao { get; private set; }
 
@@ -34,14 +45,21 @@ public sealed class ExtratoConta
 
     public IReadOnlyList<Lancamento> Lancamentos => _lancamentos.AsReadOnly();
 
-    public static ExtratoConta Abrir(Guid contaId, string iban, string titular, int versao, DateTimeOffset ocorridoEm) =>
+    public static ExtratoConta Abrir(
+        Guid contaId,
+        string iban,
+        string titular,
+        int versao,
+        DateTimeOffset ocorridoEm,
+        Moeda moeda = Moeda.EUR) =>
         new()
         {
             ContaId = contaId,
             Iban = iban,
             Titular = titular,
+            Moeda = moeda,
             Status = StatusConta.Ativa,
-            SaldoAtual = Dinheiro.Zero,
+            SaldoAtual = Dinheiro.ZeroEm(moeda),
             UltimaVersao = versao,
             AtualizadoEm = ocorridoEm,
         };
@@ -96,17 +114,66 @@ public sealed class ExtratoConta
         Dinheiro valor,
         Dinheiro tarifa,
         Dinheiro saldoApos,
-        DateTimeOffset ocorridoEm)
-    {
-        var texto = $"Transferência para {nomeBeneficiario} ({ibanDestino})";
-        if (!string.IsNullOrWhiteSpace(descricao))
-        {
-            texto += $": {descricao}";
-        }
+        DateTimeOffset ocorridoEm,
+        CambioDoLancamento? cambio = null) =>
+        RegistrarLancamento(
+            TipoLancamento.TransferenciaExternaEnviada,
+            versao,
+            valor,
+            saldoApos,
+            ocorridoEm,
+            ComDescricao($"Transferência para {nomeBeneficiario} ({ibanDestino})", descricao),
+            transferenciaId,
+            tarifa,
+            cambio);
 
-        return RegistrarLancamento(
-            TipoLancamento.TransferenciaExternaEnviada, versao, valor, saldoApos, ocorridoEm, texto, transferenciaId, tarifa);
-    }
+    /// <summary>Débito de um câmbio para outra conta EuroBank; <paramref name="destino"/> é o que ela recebeu.</summary>
+    public ResultadoAplicacao RegistrarTransferenciaCambioEnviada(
+        int versao,
+        Guid transferenciaId,
+        string ibanDestino,
+        string nomeDestino,
+        string? descricao,
+        Dinheiro valor,
+        Dinheiro tarifa,
+        Dinheiro saldoApos,
+        CambioDoLancamento destino,
+        DateTimeOffset ocorridoEm) =>
+        RegistrarLancamento(
+            TipoLancamento.TransferenciaCambioEnviada,
+            versao,
+            valor,
+            saldoApos,
+            ocorridoEm,
+            ComDescricao($"Câmbio para {nomeDestino} ({ibanDestino}): {destino.Valor:0.00} {destino.Moeda}", descricao),
+            transferenciaId,
+            tarifa,
+            destino);
+
+    /// <summary>Crédito de um câmbio vindo de outra conta EuroBank; <paramref name="origem"/> é o que ela pagou.</summary>
+    public ResultadoAplicacao RegistrarTransferenciaCambioRecebida(
+        int versao,
+        Guid transferenciaId,
+        string ibanOrigem,
+        string nomeOrigem,
+        string? descricao,
+        Dinheiro valor,
+        Dinheiro saldoApos,
+        CambioDoLancamento origem,
+        DateTimeOffset ocorridoEm) =>
+        RegistrarLancamento(
+            TipoLancamento.TransferenciaCambioRecebida,
+            versao,
+            valor,
+            saldoApos,
+            ocorridoEm,
+            ComDescricao($"Câmbio de {nomeOrigem} ({ibanOrigem}): {origem.Valor:0.00} {origem.Moeda}", descricao),
+            transferenciaId,
+            tarifa: null,
+            origem);
+
+    private static string ComDescricao(string texto, string? descricao) =>
+        string.IsNullOrWhiteSpace(descricao) ? texto : $"{texto}: {descricao}";
 
     public ResultadoAplicacao RegistrarEstornoTransferencia(
         int versao,
@@ -132,10 +199,11 @@ public sealed class ExtratoConta
         DateTimeOffset ocorridoEm,
         string descricao,
         Guid? transferenciaId,
-        Dinheiro? tarifa = null) =>
+        Dinheiro? tarifa = null,
+        CambioDoLancamento? cambio = null) =>
         Aplicar(versao, ocorridoEm, () =>
         {
-            _lancamentos.Add(new Lancamento(tipo, valor, saldoApos, versao, ocorridoEm, descricao, transferenciaId, tarifa));
+            _lancamentos.Add(new Lancamento(tipo, valor, saldoApos, versao, ocorridoEm, descricao, transferenciaId, tarifa, cambio));
             SaldoAtual = saldoApos;
         });
 

@@ -2,7 +2,9 @@ using EuroBank.Extrato.Application.Extensions;
 using EuroBank.Extrato.Application.TransferObjects;
 using EuroBank.Extrato.Domain.Enums;
 using EuroBank.Extrato.Domain.Repositories;
+using EuroBank.Extrato.Domain.ValueObjects;
 using EuroBank.Shared.Domain;
+using EuroBank.Shared.Enums;
 using EuroBank.Shared.ValueObjects;
 using Microsoft.Extensions.Logging;
 
@@ -23,10 +25,13 @@ public sealed class TransferenciaExternaEnviadaManipulador(
             evento.IbanDestino,
             evento.NomeBeneficiario,
             evento.Descricao,
-            Dinheiro.De(evento.Valor),
-            Dinheiro.De(evento.Tarifa),
-            Dinheiro.De(evento.SaldoApos),
-            evento.OcorridoEm);
+            Dinheiro.De(evento.Valor, extrato.Moeda),
+            Dinheiro.De(evento.Tarifa, extrato.Moeda),
+            Dinheiro.De(evento.SaldoApos, extrato.Moeda),
+            evento.OcorridoEm,
+            evento is { MoedaDestino: { } moeda, ValorDestino: { } valor, Cotacao: { } cotacao }
+                ? new CambioDoLancamento(Moedas.Ler(moeda), valor, cotacao)
+                : null);
 
         if (resultado != ResultadoAplicacao.IgnoradoJaAplicado)
         {

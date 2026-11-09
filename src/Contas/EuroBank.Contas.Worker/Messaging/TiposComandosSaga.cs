@@ -12,5 +12,7 @@ public static class TiposComandosSaga
         ["DebitarTransferenciaExterna"] = typeof(DebitarTransferenciaExterna),
         ["EstornarTransferencia"] = typeof(EstornarTransferencia),
         ["LiberarTravaTransferencia"] = typeof(LiberarTravaTransferencia),
+        ["DebitarTransferenciaCambio"] = typeof(DebitarTransferenciaCambio),
+        ["CreditarTransferenciaCambio"] = typeof(CreditarTransferenciaCambio),
     };
 }
