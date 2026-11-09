@@ -1,5 +1,6 @@
 using EuroBank.Shared.ValueObjects;
 using EuroBank.Transferencias.Domain.Entities;
+using EuroBank.Transferencias.Domain.Enums;
 using EuroBank.Transferencias.Domain.Policies;
 using EuroBank.Transferencias.Domain.Repositories;
 using EuroBank.Transferencias.Domain.ValueObjects;
@@ -25,6 +26,35 @@ public sealed class RepositorioTransferencias(TransferenciasDbContext contexto) 
     public Task TravarLimiteDaContaAsync(Guid contaOrigemId, CancellationToken cancellationToken) =>
         contexto.Database.ExecuteSqlAsync(
             $"SELECT pg_advisory_xact_lock(hashtextextended({contaOrigemId.ToString()}, 0))", cancellationToken);
+
+    public async Task<IReadOnlyList<TransferenciaId>> ListarParaAvancarAsync(
+        DateTimeOffset agora,
+        int limite,
+        CancellationToken cancellationToken) =>
+        await contexto.Transferencias
+            .AsNoTracking()
+            .IgnoreAutoIncludes()
+            .Where(transferencia =>
+                (transferencia.Estado == EstadoTransferencia.Agendada && transferencia.ExecutarEmEfetivo <= agora)
+                || transferencia.PrazoDoPasso <= agora)
+            .OrderBy(transferencia => transferencia.AtualizadaEm)
+            .Select(transferencia => transferencia.Id)
+            .Take(limite)
+            .ToListAsync(cancellationToken);
+
+    public async Task<bool> TravarParaAvancarAsync(TransferenciaId id, DateTimeOffset agora, CancellationToken cancellationToken)
+    {
+        var travadas = await contexto.Database
+            .SqlQuery<Guid>(
+                $"""
+                SELECT id AS "Value" FROM transferencias
+                WHERE id = {id.Valor}
+                  AND ((estado = 'Agendada' AND executar_em_efetivo <= {agora}) OR prazo_do_passo <= {agora})
+                FOR UPDATE SKIP LOCKED
+                """)
+            .ToListAsync(cancellationToken);
+        return travadas.Count == 1;
+    }
 
     public async Task<Dinheiro> SomarConsumoDoLimiteAsync(
         Guid contaOrigemId,

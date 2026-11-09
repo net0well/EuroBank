@@ -222,8 +222,16 @@ namespace EuroBank.Transferencias.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ExecutarEmEfetivo")
+                        .HasDatabaseName("ix_transferencias_agendadas")
+                        .HasFilter("estado = 'Agendada'");
+
                     b.HasIndex("IdempotencyKey")
                         .IsUnique();
+
+                    b.HasIndex("PrazoDoPasso")
+                        .HasDatabaseName("ix_transferencias_prazo_do_passo")
+                        .HasFilter("prazo_do_passo IS NOT NULL");
 
                     b.HasIndex("ContaOrigemId", "ExecutarEmEfetivo");
 

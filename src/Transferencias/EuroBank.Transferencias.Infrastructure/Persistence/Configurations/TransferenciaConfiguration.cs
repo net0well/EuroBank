@@ -60,6 +60,14 @@ public sealed class TransferenciaConfiguration : IEntityTypeConfiguration<Transf
         // Soma do limite diário por conta e dia.
         builder.HasIndex(transferencia => new { transferencia.ContaOrigemId, transferencia.ExecutarEmEfetivo });
 
+        // Varredura do worker: índices parciais, só com as linhas que ela pode precisar.
+        builder.HasIndex(transferencia => transferencia.ExecutarEmEfetivo)
+            .HasDatabaseName("ix_transferencias_agendadas")
+            .HasFilter("estado = 'Agendada'");
+        builder.HasIndex(transferencia => transferencia.PrazoDoPasso)
+            .HasDatabaseName("ix_transferencias_prazo_do_passo")
+            .HasFilter("prazo_do_passo IS NOT NULL");
+
         builder.Ignore(transferencia => transferencia.EventosDominio);
 
         builder.HasMany(transferencia => transferencia.Historico)
