@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\Shared\EuroBank.Shared\EuroBank.Shared.csproj" />
+  </ItemGroup>
+</Project>

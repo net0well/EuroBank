@@ -23,13 +23,14 @@ builder.Services.AddResourceSetupOnStartup();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<TratadorExcecoesDominio>();
 builder.Services.AddHealthChecks().AddDbContextCheck<ExtratoDbContext>();
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(opcoes => opcoes.SwaggerDoc("v1", new() { Title = "EuroBank - Extrato", Version = "v1" }));
+builder.Services.AdicionarSwaggerComApiKey("EuroBank - Extrato");
+builder.Services.AdicionarApiKey();
 
 var app = builder.Build();
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
+app.UsarApiKey();
 app.UseSwagger();
 app.UseSwaggerUI();
 

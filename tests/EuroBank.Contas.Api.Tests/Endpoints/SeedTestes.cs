@@ -24,7 +24,7 @@ public sealed class SeedTestes(PostgresFixture banco)
 
     private static async Task<List<string>> ListarAsync(ContasApiFactory api)
     {
-        using var cliente = api.CreateClient();
+        using var cliente = api.CriarClienteAutenticado();
         using var pagina = JsonDocument.Parse(await cliente.GetStringAsync("/contas?tamanho=200", Ct));
         return pagina.RootElement.GetProperty("itens").EnumerateArray()
             .Select(conta => conta.GetProperty("titular").GetString()!)

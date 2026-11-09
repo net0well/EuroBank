@@ -1,5 +1,5 @@
 using EuroBank.Contas.Domain.Entities;
-using EuroBank.Contas.Infrastructure.Outbox;
+using EuroBank.Shared.Persistence.Outbox;
 using Microsoft.EntityFrameworkCore;
 
 namespace EuroBank.Contas.Infrastructure.Persistence;
@@ -17,5 +17,6 @@ public sealed class ContasDbContext(DbContextOptions<ContasDbContext> options) :
     {
         modelBuilder.HasSequence<long>(SequenciaNumeroConta).StartsAt(1);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ContasDbContext).Assembly);
+        modelBuilder.ApplyConfiguration(new MensagemOutboxConfiguration());
     }
 }

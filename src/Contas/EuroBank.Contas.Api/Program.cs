@@ -34,13 +34,14 @@ builder.Host.UseWolverine(opcoes =>
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<TratadorExcecoesDominio>();
 builder.Services.AddHealthChecks().AddDbContextCheck<ContasDbContext>();
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(opcoes => opcoes.SwaggerDoc("v1", new() { Title = "EuroBank - Contas", Version = "v1" }));
+builder.Services.AdicionarSwaggerComApiKey("EuroBank - Contas");
+builder.Services.AdicionarApiKey();
 
 var app = builder.Build();
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
+app.UsarApiKey();
 app.UseSwagger();
 app.UseSwaggerUI();
 

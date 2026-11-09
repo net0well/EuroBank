@@ -25,7 +25,7 @@
   "transforms.outbox.table.field.event.key": "id_agregado",
   "transforms.outbox.table.field.event.payload": "payload",
   "transforms.outbox.route.by.field": "tipo_agregado",
-  "transforms.outbox.route.topic.replacement": "eurobank.${routedByValue}.eventos",
+  "transforms.outbox.route.topic.replacement": "eurobank.${routedByValue}",
   "transforms.outbox.table.expand.json.payload": "true",
   "transforms.outbox.table.fields.additional.placement": "tipo_evento:header:tipo,traceparent:header:traceparent"
 }

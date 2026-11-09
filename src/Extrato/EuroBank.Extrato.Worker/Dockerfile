@@ -8,6 +8,7 @@ WORKDIR /src
 COPY Directory.Build.props Directory.Packages.props ./
 COPY src/Shared/EuroBank.Shared/EuroBank.Shared.csproj src/Shared/EuroBank.Shared/
 COPY src/Shared/EuroBank.Shared.Web/EuroBank.Shared.Web.csproj src/Shared/EuroBank.Shared.Web/
+COPY src/Shared/EuroBank.Shared.Messaging/EuroBank.Shared.Messaging.csproj src/Shared/EuroBank.Shared.Messaging/
 COPY src/Extrato/EuroBank.Extrato.Domain/EuroBank.Extrato.Domain.csproj src/Extrato/EuroBank.Extrato.Domain/
 COPY src/Extrato/EuroBank.Extrato.Application/EuroBank.Extrato.Application.csproj src/Extrato/EuroBank.Extrato.Application/
 COPY src/Extrato/EuroBank.Extrato.Infrastructure/EuroBank.Extrato.Infrastructure.csproj src/Extrato/EuroBank.Extrato.Infrastructure/

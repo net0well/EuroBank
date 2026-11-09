@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Transferencias\EuroBank.Transferencias.Domain\EuroBank.Transferencias.Domain.csproj" />
+  </ItemGroup>
+</Project>

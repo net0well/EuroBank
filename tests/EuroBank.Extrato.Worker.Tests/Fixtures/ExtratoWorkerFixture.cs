@@ -33,12 +33,19 @@ public sealed class ExtratoWorkerFixture : IAsyncLifetime
         {
             builder.UseEnvironment("Development");
             builder.UseSetting("ConnectionStrings:Extrato", _container.GetConnectionString());
+            builder.UseSetting("Seguranca:ApiKey", ApiKey);
             builder.UseSetting("OTEL_SDK_DISABLED", "true");
             builder.ConfigureServices(services => services.DisableAllExternalWolverineTransports());
         });
 
         Http = _worker.CreateClient();
+        Http.DefaultRequestHeaders.Add("X-Api-Key", ApiKey);
     }
+
+    public const string ApiKey = "chave-de-teste-extrato";
+
+    /// <summary>Cliente HTTP sem nenhuma API key (para testar o 401).</summary>
+    public HttpClient CriarClienteSemChave() => _worker.CreateClient();
 
     /// <summary>Entrega um evento ao manipulador, como o listener do Kafka faria.</summary>
     public async Task EntregarAsync(object evento)

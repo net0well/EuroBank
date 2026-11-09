@@ -1,0 +1,84 @@
+### Roteiro da API de Transferências (VS Code REST Client, Rider ou Visual Studio)
+### A saga roda em segundo plano: acompanhe pelo GET da transferência (estado e histórico) e, no Kafbat UI
+### (http://localhost:8080), pelos tópicos:
+###   eurobank.contas.comandos          -> DebitarTransferenciaExterna, EstornarTransferencia, LiberarTravaTransferencia
+###   eurobank.contas.respostas         -> DebitoRealizado, DebitoRecusado, EstornoRealizado
+###   eurobank.banco-externo.comandos   -> LiquidarTransferencia, ConsultarLiquidacao
+###   eurobank.banco-externo.respostas  -> LiquidacaoConfirmada, LiquidacaoRecusada, StatusLiquidacao
+###   eurobank.transferencias.eventos   -> TransferenciaConcluida, TransferenciaCancelada, TransferenciaRecusada
+### O final do IBAN de destino comanda o banco externo simulado: 99 recusa, 98 nunca responde,
+### 97 responde em 45 s, 96 liquida mas a resposta se perde; os demais confirmam em 1 s.
+
+@api = http://localhost:5300
+@apiKey = transferencias-lab-key
+@apiContas = http://localhost:5100
+@apiKeyContas = contas-lab-key
+
+### Escolha uma conta de origem (copie o id de uma conta com saldo)
+GET {{apiContas}}/contas?tamanho=5
+X-Api-Key: {{apiKeyContas}}
+
+###
+@contaOrigemId = cole-aqui-o-id-da-conta
+
+### Transferência externa para já (troque a Idempotency-Key a cada pedido novo)
+# @name externa
+POST {{api}}/transferencias-externas
+X-Api-Key: {{apiKey}}
+Idempotency-Key: roteiro-001
+Content-Type: application/json
+
+{
+  "contaOrigemId": "{{contaOrigemId}}",
+  "ibanDestino": "DE89370400440532013000",
+  "bic": "DEUTDEFF",
+  "nomeBeneficiario": "Bruno Externo",
+  "valor": 100.00,
+  "descricao": "Aluguel"
+}
+
+###
+@transferenciaId = {{externa.response.body.id}}
+
+### Repetir o mesmo pedido com a mesma Idempotency-Key devolve a mesma transferência
+POST {{api}}/transferencias-externas
+X-Api-Key: {{apiKey}}
+Idempotency-Key: roteiro-001
+Content-Type: application/json
+
+{
+  "contaOrigemId": "{{contaOrigemId}}",
+  "ibanDestino": "DE89370400440532013000",
+  "bic": "DEUTDEFF",
+  "nomeBeneficiario": "Bruno Externo",
+  "valor": 100.00,
+  "descricao": "Aluguel"
+}
+
+### Estado, prazo do passo atual e histórico da saga
+GET {{api}}/transferencias/{{transferenciaId}}
+X-Api-Key: {{apiKey}}
+
+### Agendada para o futuro (cancele antes de começar)
+# @name agendada
+POST {{api}}/transferencias-externas
+X-Api-Key: {{apiKey}}
+Idempotency-Key: roteiro-002
+Content-Type: application/json
+
+{
+  "contaOrigemId": "{{contaOrigemId}}",
+  "ibanDestino": "DE89370400440532013000",
+  "bic": "DEUTDEFF",
+  "nomeBeneficiario": "Bruno Externo",
+  "valor": 50.00,
+  "executarEm": "2030-01-02T09:00:00Z"
+}
+
+### Cancelamento (depois de a liquidação ser pedida: 409)
+POST {{api}}/transferencias/{{agendada.response.body.id}}/cancelamento
+X-Api-Key: {{apiKey}}
+
+### Listar por conta e estado (Agendada, AguardandoDebito, AguardandoLiquidacao, Concluida, Cancelada...)
+GET {{api}}/transferencias?contaOrigemId={{contaOrigemId}}&status=Cancelada
+X-Api-Key: {{apiKey}}

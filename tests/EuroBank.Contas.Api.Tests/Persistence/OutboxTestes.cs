@@ -34,7 +34,7 @@ public sealed class OutboxTestes(PostgresFixture banco)
 
         var mensagem = (await leitura.Outbox.Where(m => m.IdAgregado == conta.Id.ToString()).ToListAsync(Ct))
             .ShouldHaveSingleItem();
-        mensagem.TipoAgregado.ShouldBe("contas");
+        mensagem.TipoAgregado.ShouldBe("contas.eventos");
         mensagem.TipoEvento.ShouldBe("ContaAberta");
         mensagem.Traceparent.ShouldBe(atividade.Id);
 
@@ -158,7 +158,7 @@ public sealed class OutboxTestes(PostgresFixture banco)
         return conta;
     }
 
-    private async Task<Infrastructure.Outbox.MensagemOutbox> UltimaMensagemAsync(ContaId contaId)
+    private async Task<Shared.Persistence.Outbox.MensagemOutbox> UltimaMensagemAsync(ContaId contaId)
     {
         await using var leitura = banco.CriarContexto();
         return await leitura.Outbox

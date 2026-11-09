@@ -2,6 +2,7 @@ using System.Text.Json;
 using EuroBank.Contas.Domain.Events;
 using EuroBank.Contas.Infrastructure.Outbox.TransferObjects;
 using EuroBank.Shared.Domain;
+using EuroBank.Shared.Persistence.Outbox;
 
 namespace EuroBank.Contas.Infrastructure.Outbox;
 
@@ -9,10 +10,10 @@ namespace EuroBank.Contas.Infrastructure.Outbox;
 /// Converte eventos de domínio em linhas da outbox. O mapeamento é explícito: o payload publicado é um contrato
 /// de integração, independente da forma interna dos eventos de domínio.
 /// </summary>
-public sealed class MapeadorMensagensOutbox
+public sealed class MapeadorMensagensOutbox : IMapeadorMensagensOutbox
 {
-    /// <summary>Valor de tipo_agregado; o Debezium roteia para o tópico eurobank.contas.eventos.</summary>
-    public const string TipoAgregado = "contas";
+    /// <summary>Valor de tipo_agregado dos eventos de conta; o Debezium roteia para eurobank.contas.eventos.</summary>
+    public const string TipoAgregado = "contas.eventos";
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -43,6 +44,25 @@ public sealed class MapeadorMensagensOutbox
         ContaBloqueada e => Criar(e, traceparent, new AlteracaoStatusMensagem(e.ContaId.Valor, e.Versao, e.OcorridoEm)),
         ContaDesbloqueada e => Criar(e, traceparent, new AlteracaoStatusMensagem(e.ContaId.Valor, e.Versao, e.OcorridoEm)),
         ContaEncerrada e => Criar(e, traceparent, new AlteracaoStatusMensagem(e.ContaId.Valor, e.Versao, e.OcorridoEm)),
+        TransferenciaExternaEnviada e => Criar(e, traceparent, new TransferenciaExternaEnviadaMensagem(
+            e.ContaId.Valor,
+            e.TransferenciaId,
+            e.IbanDestino,
+            e.NomeBeneficiario,
+            e.Descricao,
+            e.Valor.ToString(),
+            e.Tarifa.ToString(),
+            e.SaldoApos.ToString(),
+            e.Versao,
+            e.OcorridoEm)),
+        EstornoTransferencia e => Criar(e, traceparent, new EstornoTransferenciaMensagem(
+            e.ContaId.Valor,
+            e.TransferenciaId,
+            e.NomeBeneficiario,
+            e.Valor.ToString(),
+            e.SaldoApos.ToString(),
+            e.Versao,
+            e.OcorridoEm)),
         _ => throw new InvalidOperationException($"O evento {evento.GetType().Name} não tem mapeamento para a outbox."),
     };
 

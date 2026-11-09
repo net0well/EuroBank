@@ -1,4 +1,4 @@
-using EuroBank.Extrato.Application.TransferObjects;
+using EuroBank.Shared.TransferObjects;
 using Microsoft.Extensions.Logging;
 
 namespace EuroBank.Extrato.Application.Handlers;

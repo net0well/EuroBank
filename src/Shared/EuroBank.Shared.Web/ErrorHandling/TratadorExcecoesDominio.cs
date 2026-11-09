@@ -6,7 +6,7 @@ namespace EuroBank.Shared.Web.ErrorHandling;
 
 /// <summary>
 /// Converte exceções de domínio em ProblemDetails (RFC 9457): validação 400, não encontrado 404,
-/// concorrência 409 e regra de negócio 422. Outras exceções seguem para o tratamento padrão (500).
+/// concorrência ou conflito 409 e regra de negócio 422. Outras exceções seguem para o tratamento padrão (500).
 /// </summary>
 public sealed class TratadorExcecoesDominio(IProblemDetailsService problemDetails) : IExceptionHandler
 {
@@ -25,6 +25,7 @@ public sealed class TratadorExcecoesDominio(IProblemDetailsService problemDetail
             ExcecaoValidacao => (StatusCodes.Status400BadRequest, "Requisição inválida"),
             ExcecaoNaoEncontrado => (StatusCodes.Status404NotFound, "Recurso não encontrado"),
             ExcecaoConcorrencia => (StatusCodes.Status409Conflict, "Conflito de concorrência"),
+            ExcecaoConflito => (StatusCodes.Status409Conflict, "Operação não é mais possível"),
             ExcecaoRegraNegocio => (StatusCodes.Status422UnprocessableEntity, "Regra de negócio violada"),
             _ => (StatusCodes.Status400BadRequest, "Requisição inválida"),
         };

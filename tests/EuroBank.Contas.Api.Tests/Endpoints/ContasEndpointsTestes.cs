@@ -10,7 +10,7 @@ namespace EuroBank.Contas.Api.Tests.Endpoints;
 
 public sealed class ContasEndpointsTestes(PostgresFixture banco)
 {
-    private readonly ClienteContas _cliente = new(banco.Api.CreateClient());
+    private readonly ClienteContas _cliente = new(banco.Api.CriarClienteAutenticado());
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 

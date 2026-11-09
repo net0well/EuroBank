@@ -32,6 +32,18 @@ public sealed class Conta : RaizDeAgregado<ContaId>
 
     public DateTimeOffset AbertaEm { get; private set; }
 
+    /// <summary>
+    /// Transferências pedidas por uma saga e já debitadas. Servem a dois propósitos: idempotência (o mesmo
+    /// comando repetido não debita nem estorna duas vezes) e trava semântica (as pendentes impedem o encerramento,
+    /// para a compensação nunca encontrar a conta encerrada).
+    /// </summary>
+    public IReadOnlyList<TransferenciaDaConta> Transferencias => _transferencias.AsReadOnly();
+
+    public bool TemTransferenciaEmAndamento =>
+        _transferencias.Exists(transferencia => transferencia.Status == StatusTransferenciaDaConta.Pendente);
+
+    private readonly List<TransferenciaDaConta> _transferencias = [];
+
     public static Conta Abrir(Iban iban, Titular titular, DateTimeOffset agora)
     {
         var conta = new Conta
@@ -101,10 +113,84 @@ public sealed class Conta : RaizDeAgregado<ContaId>
             throw new ExcecaoContaComSaldo(Saldo);
         }
 
+        if (TemTransferenciaEmAndamento)
+        {
+            throw new ExcecaoContaComTransferenciaEmAndamento();
+        }
+
         Status = StatusConta.Encerrada;
         Versao++;
         Registrar(new ContaEncerrada(Id, Versao, agora));
     }
+
+    /// <summary>
+    /// Primeiro passo da saga de transferência externa: debita valor e tarifa e trava a transferência.
+    /// Repetir o comando (reenvio do orquestrador) não debita de novo.
+    /// </summary>
+    public ResultadoOperacao DebitarTransferenciaExterna(
+        Guid transferenciaId,
+        Dinheiro valor,
+        Dinheiro tarifa,
+        string ibanDestino,
+        string nomeBeneficiario,
+        string? descricao,
+        DateTimeOffset agora)
+    {
+        if (BuscarTransferencia(transferenciaId) is not null)
+        {
+            return ResultadoOperacao.JaProcessada;
+        }
+
+        GarantirValorPositivo(valor);
+        var total = valor + tarifa;
+        GarantirPodeDebitar(total);
+
+        Saldo -= total;
+        Versao++;
+        _transferencias.Add(new TransferenciaDaConta(transferenciaId, valor, tarifa, nomeBeneficiario, agora));
+        Registrar(new TransferenciaExternaEnviada(
+            Id, transferenciaId, ibanDestino, nomeBeneficiario, descricao, valor, tarifa, Saldo, Versao, agora));
+        return ResultadoOperacao.Aplicada;
+    }
+
+    /// <summary>Compensação da saga: devolve valor e tarifa. É crédito, então vale também em conta bloqueada.</summary>
+    public ResultadoOperacao EstornarTransferencia(Guid transferenciaId, DateTimeOffset agora)
+    {
+        var transferencia = BuscarTransferencia(transferenciaId) ?? throw new ExcecaoTransferenciaDesconhecida(transferenciaId);
+        switch (transferencia.Status)
+        {
+            case StatusTransferenciaDaConta.Estornada:
+                return ResultadoOperacao.JaProcessada;
+            case StatusTransferenciaDaConta.Liberada:
+                throw new ExcecaoTransferenciaJaConcluida(transferenciaId);
+        }
+
+        var total = transferencia.Valor + transferencia.Tarifa;
+        Saldo += total;
+        Versao++;
+        transferencia.Estornar(agora);
+        Registrar(new EstornoTransferencia(Id, transferenciaId, transferencia.NomeBeneficiario, total, Saldo, Versao, agora));
+        return ResultadoOperacao.Aplicada;
+    }
+
+    /// <summary>
+    /// Fim feliz da saga: a transferência sai da trava. Não mexe no saldo nem na versão e não gera evento,
+    /// porque nada que o Extrato precise saber mudou.
+    /// </summary>
+    public ResultadoOperacao LiberarTrava(Guid transferenciaId)
+    {
+        var transferencia = BuscarTransferencia(transferenciaId) ?? throw new ExcecaoTransferenciaDesconhecida(transferenciaId);
+        if (transferencia.Status != StatusTransferenciaDaConta.Pendente)
+        {
+            return ResultadoOperacao.JaProcessada;
+        }
+
+        transferencia.Liberar();
+        return ResultadoOperacao.Aplicada;
+    }
+
+    private TransferenciaDaConta? BuscarTransferencia(Guid transferenciaId) =>
+        _transferencias.Find(transferencia => transferencia.Id == transferenciaId);
 
     // As operações de transferência são internas: só o ServicoTransferencia as coordena,
     // garantindo que débito e crédito aconteçam juntos.

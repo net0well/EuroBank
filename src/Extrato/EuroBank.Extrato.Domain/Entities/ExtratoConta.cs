@@ -87,6 +87,43 @@ public sealed class ExtratoConta
     public ResultadoAplicacao AlterarStatus(StatusConta status, int versao, DateTimeOffset ocorridoEm) =>
         Aplicar(versao, ocorridoEm, () => Status = status);
 
+    public ResultadoAplicacao RegistrarTransferenciaExternaEnviada(
+        int versao,
+        Guid transferenciaId,
+        string ibanDestino,
+        string nomeBeneficiario,
+        string? descricao,
+        Dinheiro valor,
+        Dinheiro tarifa,
+        Dinheiro saldoApos,
+        DateTimeOffset ocorridoEm)
+    {
+        var texto = $"Transferência para {nomeBeneficiario} ({ibanDestino})";
+        if (!string.IsNullOrWhiteSpace(descricao))
+        {
+            texto += $": {descricao}";
+        }
+
+        return RegistrarLancamento(
+            TipoLancamento.TransferenciaExternaEnviada, versao, valor, saldoApos, ocorridoEm, texto, transferenciaId, tarifa);
+    }
+
+    public ResultadoAplicacao RegistrarEstornoTransferencia(
+        int versao,
+        Guid transferenciaId,
+        string nomeBeneficiario,
+        Dinheiro valor,
+        Dinheiro saldoApos,
+        DateTimeOffset ocorridoEm) =>
+        RegistrarLancamento(
+            TipoLancamento.EstornoTransferencia,
+            versao,
+            valor,
+            saldoApos,
+            ocorridoEm,
+            $"Estorno da transferência para {nomeBeneficiario}",
+            transferenciaId);
+
     private ResultadoAplicacao RegistrarLancamento(
         TipoLancamento tipo,
         int versao,
@@ -94,10 +131,11 @@ public sealed class ExtratoConta
         Dinheiro saldoApos,
         DateTimeOffset ocorridoEm,
         string descricao,
-        Guid? transferenciaId) =>
+        Guid? transferenciaId,
+        Dinheiro? tarifa = null) =>
         Aplicar(versao, ocorridoEm, () =>
         {
-            _lancamentos.Add(new Lancamento(tipo, valor, saldoApos, versao, ocorridoEm, descricao, transferenciaId));
+            _lancamentos.Add(new Lancamento(tipo, valor, saldoApos, versao, ocorridoEm, descricao, transferenciaId, tarifa));
             SaldoAtual = saldoApos;
         });
 

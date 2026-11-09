@@ -4,10 +4,12 @@
 ###   eurobank.cdc.public.contas  -> CDC bruto da tabela contas (before/after)
 
 @api = http://localhost:5100
+@apiKey = contas-lab-key
 
 ### Abrir conta
 # @name abrir
 POST {{api}}/contas
+X-Api-Key: {{apiKey}}
 Content-Type: application/json
 
 { "titular": "Diana" }
@@ -17,12 +19,14 @@ Content-Type: application/json
 
 ### Depositar
 POST {{api}}/contas/{{contaId}}/depositos
+X-Api-Key: {{apiKey}}
 Content-Type: application/json
 
 { "valor": 150.00 }
 
 ### Sacar
 POST {{api}}/contas/{{contaId}}/saques
+X-Api-Key: {{apiKey}}
 Content-Type: application/json
 
 { "valor": 20.00 }
@@ -30,39 +34,47 @@ Content-Type: application/json
 ### Listar contas (pegue o IBAN de outra conta para transferir)
 # @name listar
 GET {{api}}/contas?pagina=1&tamanho=10
+X-Api-Key: {{apiKey}}
 
 ###
 @ibanDestino = {{listar.response.body.itens[1].iban}}
 
 ### Transferir para outra conta pelo IBAN
 POST {{api}}/contas/{{contaId}}/transferencias
+X-Api-Key: {{apiKey}}
 Content-Type: application/json
 
 { "ibanDestino": "{{ibanDestino}}", "valor": 30.00 }
 
 ### Consultar a conta
 GET {{api}}/contas/{{contaId}}
+X-Api-Key: {{apiKey}}
 
 ### Bloquear (passa a aceitar só créditos)
 POST {{api}}/contas/{{contaId}}/bloqueio
+X-Api-Key: {{apiKey}}
 
 ### Saque com a conta bloqueada (422)
 POST {{api}}/contas/{{contaId}}/saques
+X-Api-Key: {{apiKey}}
 Content-Type: application/json
 
 { "valor": 1.00 }
 
 ### Desbloquear
 POST {{api}}/contas/{{contaId}}/desbloqueio
+X-Api-Key: {{apiKey}}
 
 ### Saque acima do saldo (422 saldo_insuficiente)
 POST {{api}}/contas/{{contaId}}/saques
+X-Api-Key: {{apiKey}}
 Content-Type: application/json
 
 { "valor": 99999.00 }
 
 ### Valor com três casas (400 valor_invalido)
 POST {{api}}/contas/{{contaId}}/depositos
+X-Api-Key: {{apiKey}}
 Content-Type: application/json
 
 { "valor": 10.555 }

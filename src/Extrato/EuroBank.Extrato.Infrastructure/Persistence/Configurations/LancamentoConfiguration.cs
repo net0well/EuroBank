@@ -29,6 +29,10 @@ public sealed class LancamentoConfiguration : IEntityTypeConfiguration<Lancament
         builder.Property(lancamento => lancamento.OcorridoEm).HasColumnName("ocorrido_em");
         builder.Property(lancamento => lancamento.Descricao).HasColumnName("descricao").HasMaxLength(200);
         builder.Property(lancamento => lancamento.TransferenciaId).HasColumnName("transferencia_id");
+        builder.Property(lancamento => lancamento.Tarifa)
+            .HasColumnName("tarifa")
+            .HasConversion(dinheiro => dinheiro!.Valor, valor => Dinheiro.De(valor))
+            .HasPrecision(18, 2);
 
         // Última linha de defesa da idempotência: no máximo um lançamento por versão da conta.
         builder.HasIndex("ContaId", nameof(Lancamento.Versao)).IsUnique();

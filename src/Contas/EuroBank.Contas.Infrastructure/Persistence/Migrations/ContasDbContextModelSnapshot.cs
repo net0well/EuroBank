@@ -70,7 +70,54 @@ namespace EuroBank.Contas.Infrastructure.Persistence.Migrations
                     b.ToTable("contas", (string)null);
                 });
 
-            modelBuilder.Entity("EuroBank.Contas.Infrastructure.Outbox.MensagemOutbox", b =>
+            modelBuilder.Entity("EuroBank.Contas.Domain.Entities.TransferenciaDaConta", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("ContaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("conta_id");
+
+                    b.Property<DateTimeOffset>("DebitadaEm")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("debitada_em");
+
+                    b.Property<DateTimeOffset?>("EstornadaEm")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("estornada_em");
+
+                    b.Property<string>("NomeBeneficiario")
+                        .IsRequired()
+                        .HasMaxLength(140)
+                        .HasColumnType("character varying(140)")
+                        .HasColumnName("nome_beneficiario");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.Property<decimal>("Tarifa")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("tarifa");
+
+                    b.Property<decimal>("Valor")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("valor");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContaId");
+
+                    b.ToTable("transferencias_conta", (string)null);
+                });
+
+            modelBuilder.Entity("EuroBank.Shared.Persistence.Outbox.MensagemOutbox", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid")
@@ -121,6 +168,20 @@ namespace EuroBank.Contas.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("outbox", (string)null);
+                });
+
+            modelBuilder.Entity("EuroBank.Contas.Domain.Entities.TransferenciaDaConta", b =>
+                {
+                    b.HasOne("EuroBank.Contas.Domain.Entities.Conta", null)
+                        .WithMany("Transferencias")
+                        .HasForeignKey("ContaId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("EuroBank.Contas.Domain.Entities.Conta", b =>
+                {
+                    b.Navigation("Transferencias");
                 });
 #pragma warning restore 612, 618
         }

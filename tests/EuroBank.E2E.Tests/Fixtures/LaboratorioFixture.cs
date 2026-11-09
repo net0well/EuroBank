@@ -7,7 +7,11 @@ using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using DotNet.Testcontainers.Networks;
 using EuroBank.Contas.Api;
+using EuroBank.Contas.Worker;
 using EuroBank.Extrato.Worker;
+using EuroBank.Simuladores.BancoExterno;
+using EuroBank.Transferencias.Api;
+using EuroBank.Transferencias.Worker;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Npgsql;
@@ -27,6 +31,33 @@ public sealed class LaboratorioFixture : IAsyncLifetime
 {
     public const string TopicoOutbox = "eurobank.contas.eventos";
     public const string TopicoCdc = "eurobank.cdc.public.contas";
+
+    /// <summary>Mesmos tópicos do kafka-init do compose, com 3 partições.</summary>
+    private static readonly string[] Topicos =
+    [
+        TopicoOutbox,
+        "eurobank.contas.comandos",
+        "eurobank.contas.respostas",
+        "eurobank.banco-externo.comandos",
+        "eurobank.banco-externo.respostas",
+        "eurobank.transferencias.eventos",
+    ];
+
+    /// <summary>
+    /// Prazos curtos para a saga caber no teste. O final 97 do banco externo responde depois do primeiro prazo da
+    /// liquidação (força o reenvio) e antes de os reenvios acabarem.
+    /// </summary>
+    private static readonly Dictionary<string, string> ConfiguracaoSaga = new()
+    {
+        ["Saga:PrazoDebito"] = "00:00:05",
+        ["Saga:PrazoLiquidacao"] = "00:00:03",
+        ["Saga:PrazoConsulta"] = "00:00:02",
+        ["Saga:PrazoEstorno"] = "00:00:05",
+        ["Saga:ReenviosPorPasso"] = "3",
+        ["Varredura:Intervalo"] = "00:00:00.500",
+    };
+
+    private readonly List<IAsyncDisposable> _aplicacoes = [];
 
     private readonly INetwork _rede = new NetworkBuilder().Build();
     private readonly PostgreSqlContainer _postgres;
@@ -86,7 +117,15 @@ public sealed class LaboratorioFixture : IAsyncLifetime
 
     public HttpClient Extrato { get; private set; } = null!;
 
+    public HttpClient Transferencias { get; private set; } = null!;
+
     public string BootstrapKafka => _kafka.GetBootstrapAddress();
+
+    public string ConnectionStringTransferencias =>
+        new NpgsqlConnectionStringBuilder(_postgres.GetConnectionString()) { Database = "eurobank_transferencias" }.ConnectionString;
+
+    public string ConnectionStringBancoExterno =>
+        new NpgsqlConnectionStringBuilder(_postgres.GetConnectionString()) { Database = "eurobank_banco_externo" }.ConnectionString;
 
     public string ConnectionStringContas => _postgres.GetConnectionString();
 
@@ -101,8 +140,8 @@ public sealed class LaboratorioFixture : IAsyncLifetime
         await _rede.CreateAsync();
         await Task.WhenAll(_postgres.StartAsync(), _kafka.StartAsync());
 
-        await CriarBancoExtratoAsync();
-        await CriarTopicoOutboxAsync();
+        await CriarBancosAsync();
+        await CriarTopicosAsync();
 
         await _connect.StartAsync();
         await RegistrarConectoresAsync();
@@ -111,9 +150,11 @@ public sealed class LaboratorioFixture : IAsyncLifetime
         {
             builder.UseEnvironment("Development");
             builder.UseSetting("ConnectionStrings:Contas", ConnectionStringContas);
+            builder.UseSetting("Seguranca:ApiKey", "chave-e2e-contas");
             builder.UseSetting("OTEL_SDK_DISABLED", "true");
         });
         Contas = _contas.CreateClient();
+        Contas.DefaultRequestHeaders.Add("X-Api-Key", "chave-e2e-contas");
 
         _extrato = new WebApplicationFactory<MarcadorExtratoWorker>().WithWebHostBuilder(builder =>
         {
@@ -121,9 +162,61 @@ public sealed class LaboratorioFixture : IAsyncLifetime
             builder.UseSetting("ConnectionStrings:Extrato", ConnectionStringExtrato);
             builder.UseSetting("Kafka:BootstrapServers", BootstrapKafka);
             builder.UseSetting("Kafka:GrupoConsumidor", $"eurobank-extrato-e2e-{Guid.NewGuid():N}");
+            builder.UseSetting("Seguranca:ApiKey", "chave-e2e-extrato");
             builder.UseSetting("OTEL_SDK_DISABLED", "true");
         });
         Extrato = _extrato.CreateClient();
+        Extrato.DefaultRequestHeaders.Add("X-Api-Key", "chave-e2e-extrato");
+
+        // A API de Contas já aplicou as migrations: o worker de Contas pode subir.
+        Subir(new WebApplicationFactory<MarcadorContasWorker>(), new()
+        {
+            ["ConnectionStrings:Contas"] = ConnectionStringContas,
+            ["Kafka:BootstrapServers"] = BootstrapKafka,
+            ["Kafka:GrupoConsumidor"] = $"eurobank-contas-worker-e2e-{Guid.NewGuid():N}",
+        });
+
+        var transferencias = Subir(new WebApplicationFactory<MarcadorTransferenciasApi>(), new(ConfiguracaoSaga)
+        {
+            ["ConnectionStrings:Transferencias"] = ConnectionStringTransferencias,
+            ["Seguranca:ApiKey"] = "chave-e2e-transferencias",
+        });
+        Transferencias = transferencias.CreateClient();
+        Transferencias.DefaultRequestHeaders.Add("X-Api-Key", "chave-e2e-transferencias");
+
+        Subir(new WebApplicationFactory<MarcadorTransferenciasWorker>(), new(ConfiguracaoSaga)
+        {
+            ["ConnectionStrings:Transferencias"] = ConnectionStringTransferencias,
+            ["Kafka:BootstrapServers"] = BootstrapKafka,
+            ["Kafka:GrupoConsumidor"] = $"eurobank-transferencias-worker-e2e-{Guid.NewGuid():N}",
+        });
+
+        Subir(new WebApplicationFactory<MarcadorBancoExterno>(), new()
+        {
+            ["ConnectionStrings:BancoExterno"] = ConnectionStringBancoExterno,
+            ["Kafka:BootstrapServers"] = BootstrapKafka,
+            ["Kafka:GrupoConsumidor"] = $"eurobank-banco-externo-e2e-{Guid.NewGuid():N}",
+            ["BancoExterno:LatenciaMs"] = "200",
+            ["BancoExterno:AtrasoFinal97Segundos"] = "5",
+        });
+    }
+
+    /// <summary>Sobe uma aplicação in-process (Development, sem OTLP) e já cria o host, para ela começar a consumir.</summary>
+    private WebApplicationFactory<T> Subir<T>(WebApplicationFactory<T> fabrica, Dictionary<string, string> configuracao)
+        where T : class
+    {
+        var aplicacao = fabrica.WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Development");
+            builder.UseSetting("OTEL_SDK_DISABLED", "true");
+            foreach (var (chave, valor) in configuracao)
+            {
+                builder.UseSetting(chave, valor);
+            }
+        });
+        using var _ = aplicacao.CreateClient();
+        _aplicacoes.Add(aplicacao);
+        return aplicacao;
     }
 
     /// <summary>Para o Kafka Connect (o replication slot passa a segurar o WAL).</summary>
@@ -136,26 +229,35 @@ public sealed class LaboratorioFixture : IAsyncLifetime
         await EsperarConectoresRodandoAsync();
     }
 
-    private async Task CriarBancoExtratoAsync()
+    /// <summary>Os databases além do eurobank_contas; precisam existir antes de registrar os conectores.</summary>
+    private async Task CriarBancosAsync()
     {
         await using var conexao = new NpgsqlConnection(ConnectionStringContas);
         await conexao.OpenAsync();
-        await using var comando = new NpgsqlCommand("CREATE DATABASE eurobank_extrato", conexao);
-        await comando.ExecuteNonQueryAsync();
+        foreach (var banco in new[] { "eurobank_extrato", "eurobank_transferencias", "eurobank_banco_externo" })
+        {
+            await using var comando = new NpgsqlCommand($"CREATE DATABASE {banco}", conexao);
+            await comando.ExecuteNonQueryAsync();
+        }
     }
 
-    private async Task CriarTopicoOutboxAsync()
+    private async Task CriarTopicosAsync()
     {
         using var admin = new AdminClientBuilder(new AdminClientConfig { BootstrapServers = BootstrapKafka }).Build();
-        await admin.CreateTopicsAsync([new TopicSpecification { Name = TopicoOutbox, NumPartitions = 3, ReplicationFactor = 1 }]);
+        await admin.CreateTopicsAsync(Topicos
+            .Select(topico => new TopicSpecification { Name = topico, NumPartitions = 3, ReplicationFactor = 1 })
+            .ToList());
     }
 
     private Uri UrlConnect => new($"http://{_connect.Hostname}:{_connect.GetMappedPublicPort(8083)}");
 
+    private static string[] ArquivosDosConectores() =>
+        Directory.GetFiles(Path.Combine(RaizDoRepositorio(), "infra", "connect", "conectores"), "*.json");
+
     private async Task RegistrarConectoresAsync()
     {
         using var http = new HttpClient { BaseAddress = UrlConnect };
-        foreach (var arquivo in Directory.GetFiles(Path.Combine(RaizDoRepositorio(), "infra", "connect", "conectores"), "*.json"))
+        foreach (var arquivo in ArquivosDosConectores())
         {
             var nome = Path.GetFileNameWithoutExtension(arquivo);
             using var configuracao = new StringContent(await File.ReadAllTextAsync(arquivo), System.Text.Encoding.UTF8, "application/json");
@@ -170,7 +272,7 @@ public sealed class LaboratorioFixture : IAsyncLifetime
         using var http = new HttpClient { BaseAddress = UrlConnect };
         await Esperar.AteAsync(async () =>
         {
-            foreach (var nome in new[] { "eurobank-contas-outbox", "eurobank-contas-cdc" })
+            foreach (var nome in ArquivosDosConectores().Select(Path.GetFileNameWithoutExtension))
             {
                 var resposta = await http.GetAsync($"/connectors/{nome}/status");
                 if (!resposta.IsSuccessStatusCode)
@@ -208,6 +310,12 @@ public sealed class LaboratorioFixture : IAsyncLifetime
         _ouvinteAtividades.Dispose();
         Contas?.Dispose();
         Extrato?.Dispose();
+        Transferencias?.Dispose();
+        foreach (var aplicacao in Enumerable.Reverse(_aplicacoes))
+        {
+            await aplicacao.DisposeAsync();
+        }
+
         if (_extrato is not null)
         {
             await _extrato.DisposeAsync();

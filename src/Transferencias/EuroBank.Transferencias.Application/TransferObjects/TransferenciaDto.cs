@@ -1,0 +1,25 @@
+namespace EuroBank.Transferencias.Application.TransferObjects;
+
+public sealed record TransferenciaDto(
+    Guid Id,
+    string Tipo,
+    Guid ContaOrigemId,
+    string IbanDestino,
+    string Bic,
+    string NomeBeneficiario,
+    decimal Valor,
+    decimal Tarifa,
+    string Moeda,
+    string? Descricao,
+    string? EmailNotificacao,
+    DateTimeOffset SolicitadaEm,
+    DateTimeOffset? ExecutarEm,
+    DateTimeOffset ExecutarEmEfetivo,
+    string Estado,
+    string? Motivo,
+    bool CancelamentoSolicitado,
+    int TentativasNoPasso,
+    DateTimeOffset? PrazoDoPasso,
+    int Versao,
+    DateTimeOffset AtualizadaEm,
+    IReadOnlyList<PassoTransferenciaDto> Historico);

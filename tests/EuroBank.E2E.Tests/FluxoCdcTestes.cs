@@ -10,6 +10,7 @@ namespace EuroBank.E2E.Tests;
 /// <summary>
 /// Fluxo completo com Debezium de verdade: operação na API de Contas, linha na outbox, WAL, Kafka, Extrato.
 /// </summary>
+[Collection(nameof(ColecaoSemParalelismo))]
 public sealed class FluxoCdcTestes(LaboratorioFixture lab)
 {
     private static readonly TimeSpan Limite = TimeSpan.FromSeconds(60);

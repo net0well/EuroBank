@@ -2,19 +2,25 @@
 ### Pegue o id de uma conta em contas.http (GET /contas) e cole abaixo.
 
 @extrato = http://localhost:5200
+@apiKey = extrato-lab-key
 @contaId = cole-aqui-o-id-da-conta
 
 ### Extrato completo (primeira página, 50 lançamentos)
 GET {{extrato}}/extratos/{{contaId}}
+X-Api-Key: {{apiKey}}
 
 ### Paginado: 2 lançamentos por página
 GET {{extrato}}/extratos/{{contaId}}?pagina=1&tamanho=2
+X-Api-Key: {{apiKey}}
 
 ### Segunda página
 GET {{extrato}}/extratos/{{contaId}}?pagina=2&tamanho=2
+X-Api-Key: {{apiKey}}
 
 ### Conta sem extrato (404 extrato_nao_encontrado)
 GET {{extrato}}/extratos/00000000-0000-0000-0000-000000000000
+X-Api-Key: {{apiKey}}
 
 ### Paginação inválida (400 paginacao_invalida)
 GET {{extrato}}/extratos/{{contaId}}?tamanho=500
+X-Api-Key: {{apiKey}}

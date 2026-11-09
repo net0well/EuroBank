@@ -50,5 +50,16 @@ public sealed class ContaConfiguration : IEntityTypeConfiguration<Conta>
         builder.Property(conta => conta.AbertaEm).HasColumnName("aberta_em");
 
         builder.Ignore(conta => conta.EventosDominio);
+        builder.Ignore(conta => conta.TemTransferenciaEmAndamento);
+
+        // As transferências da saga fazem parte do agregado: são carregadas sempre junto com a conta.
+        builder.HasMany(conta => conta.Transferencias)
+            .WithOne()
+            .HasForeignKey("ContaId")
+            .IsRequired();
+        builder.Navigation(conta => conta.Transferencias)
+            .HasField("_transferencias")
+            .UsePropertyAccessMode(PropertyAccessMode.Field)
+            .AutoInclude();
     }
 }

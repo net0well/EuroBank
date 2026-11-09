@@ -1,14 +1,18 @@
 # EuroBank
 
 Laboratório de estudo de **CDC (Change Data Capture)** com **Debezium**, **Kafka** e **.NET 10**, organizado em
-DDD com Clean Architecture. É um banco fictício com dois contextos que conversam apenas por eventos:
+DDD com Clean Architecture, e de **saga orquestrada** sobre essa mesma base. É um banco fictício com três
+contextos que conversam apenas por mensagens, mais um banco externo simulado:
 
 - **Contas**: abre contas, deposita, saca, transfere, bloqueia, desbloqueia e encerra. Grava no PostgreSQL.
 - **Extrato**: consome os eventos de Contas pelo Kafka e monta o extrato de cada conta.
+- **Transferencias**: orquestra a transferência para um IBAN de outro banco (débito em Contas, liquidação no
+  banco externo e, se a liquidação falhar, estorno do débito), com prazos, reenvios e cancelamento.
+- **Banco externo simulado**: um sistema "de fora" que liquida, recusa, atrasa ou some conforme o final do IBAN.
 
-A API de Contas nunca fala com o Kafka. Ela grava a alteração da conta e o evento na tabela `outbox`, na mesma
-transação, e o Debezium lê essas mudanças no log de transações (WAL) do PostgreSQL e as publica no Kafka.
-Tudo sobe com um único `docker compose up`.
+Nenhuma API do EuroBank fala com o Kafka. Cada uma grava a alteração e a mensagem na tabela `outbox` do seu
+banco, na mesma transação, e o Debezium lê essas mudanças no log de transações (WAL) do PostgreSQL e as publica
+no Kafka. Tudo sobe com um único `docker compose up`.
 
 ## Por que este laboratório existe
 
@@ -28,8 +32,10 @@ dois sistemas precisam ficar consistentes sem compartilhar uma transação:
    consumidor.
 6. **Praticar DDD, Clean Architecture e TDD** num domínio com regras reais (saldo, estados da conta,
    concorrência) e com testes que usam a infraestrutura de verdade.
-7. **Preparar o terreno para sagas.** A próxima etapa usa a mesma outbox para orquestrar uma transferência
-   para outro banco, com compensação.
+7. **Orquestrar uma saga com compensação.** A transferência para outro banco envolve três sistemas, cada um com
+   o próprio banco de dados. O orquestrador é um agregado DDD com o estado no PostgreSQL; comandos e respostas
+   passam pela mesma combinação de outbox, Debezium e Kafka. Respostas que não chegam, chegam atrasadas ou
+   chegam duas vezes são o caso normal, não a exceção.
 
 ## O que foi construído
 
@@ -39,10 +45,16 @@ dois sistemas precisam ficar consistentes sem compartilhar uma transação:
 | API de Contas | Minimal API com Wolverine como mediator, erros de domínio em ProblemDetails (400, 404, 409, 422), Swagger, seed de contas de exemplo |
 | Outbox | A unidade de trabalho grava conta e eventos na mesma transação, na ordem em que os eventos aconteceram |
 | Debezium | Dois conectores: Outbox Event Router (eventos de negócio) e CDC bruto da tabela `contas` (before e after) |
-| Extrato | Worker com Wolverine consumindo o Kafka: inbox durável, ordem por conta, retry, dead letter e a projeção do extrato com paginação |
-| Infraestrutura | Docker Compose com PostgreSQL em replicação lógica, Kafka em modo KRaft, Kafka Connect, Kafbat UI e Jaeger, com os conectores registrados automaticamente |
-| Observabilidade | Serilog estruturado e OpenTelemetry, com o `traceparent` levado pela outbox até o consumidor |
-| Testes | 127 testes: unitários, de integração com Testcontainers e ponta a ponta com Debezium real |
+| Extrato | Worker com Wolverine consumindo o Kafka: inbox durável, ordem por conta, retry, dead letter e a projeção do extrato com paginação, incluindo transferências externas com tarifa e estornos |
+| Saga de transferência externa | Agregado `Transferencia` com a máquina de estados, prazo por passo, até 3 reenvios, consulta de status antes de estornar, cancelamento pelo cliente, agendamento, tarifa e limite diário; histórico de cada passo |
+| API de Transferências | `POST /transferencias-externas` com `Idempotency-Key`, consulta com histórico, listagem com filtros e cancelamento; o limite diário é conferido com um advisory lock por conta |
+| Worker de Transferências | Respostas de Contas e do banco externo (inbox durável) e uma varredura que começa as agendadas e trata os prazos com `FOR UPDATE SKIP LOCKED` |
+| Worker de Contas | Executa os comandos da saga (debitar, estornar, liberar a trava) com idempotência pelo id da transferência e responde pela outbox; a trava semântica impede encerrar a conta no meio da saga |
+| Banco externo simulado | Confluent.Kafka e Npgsql puros, sem Wolverine e sem EF: inbox escrita à mão, respostas agendadas no banco e regras pelo final do IBAN |
+| Segurança | Uma API key por API (`X-Api-Key`), com `/health` e Swagger abertos |
+| Infraestrutura | Docker Compose com PostgreSQL em replicação lógica, Kafka em modo KRaft, Kafka Connect, Kafbat UI e Jaeger, com os databases, os tópicos e os conectores criados automaticamente |
+| Observabilidade | Serilog estruturado e OpenTelemetry, com o `traceparent` levado pela outbox até o consumidor e de volta nas respostas da saga |
+| Testes | 282 testes: unitários, de integração com Testcontainers e ponta a ponta com Debezium real, incluindo cada caminho da saga |
 | Carga | Script k6 que gera operações em paralelo e confere se o Extrato convergiu para Contas |
 
 ## Como funciona
@@ -76,6 +88,59 @@ Dois padrões lado a lado:
 Em um sistema real, a integração entre serviços normalmente usa só a outbox. O CDC bruto serve para levar
 dados a outros sistemas (data warehouse, índice de busca, cache). Aqui os dois existem para comparação.
 
+### O caminho de uma transferência externa
+
+1. A API de Transferências recebe `POST /transferencias-externas` com o header `Idempotency-Key`. O agregado
+   `Transferencia` valida o pedido (IBAN de outro banco, BIC, valor), calcula a tarifa e, se for para já,
+   confere o limite diário e pede o débito. Estado e comando `DebitarTransferenciaExterna` vão juntos para o
+   banco: a saga e a outbox, na mesma transação.
+2. O Debezium publica o comando em `eurobank.contas.comandos`, com o id da conta como chave. O worker de Contas
+   debita valor e tarifa, guarda o id da transferência (idempotência e trava contra encerramento) e responde
+   `DebitoRealizado` pela outbox de Contas, em `eurobank.contas.respostas`.
+3. O worker de Transferências aplica a resposta e pede a liquidação ao banco externo
+   (`eurobank.banco-externo.comandos`). O banco simulado responde em `eurobank.banco-externo.respostas`.
+4. Com `LiquidacaoConfirmada`, a saga termina `Concluida` e manda `LiberarTravaTransferencia` a Contas. Com
+   `LiquidacaoRecusada`, pede o estorno e termina `Cancelada` quando Contas confirmar a devolução.
+5. Em paralelo, a varredura do worker acompanha os prazos. Sem resposta no prazo, o comando é reenviado (com id
+   novo; os participantes deduplicam pelo id da transferência). Esgotados os reenvios da liquidação, a saga
+   consulta o status no banco antes de decidir pelo estorno.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Agendada
+    Agendada --> AguardandoDebito: na hora (limite diário ok)
+    Agendada --> Recusada: limite diário excedido
+    Agendada --> Cancelada: cancelamento
+    AguardandoDebito --> Debitada: DebitoRealizado
+    AguardandoDebito --> Recusada: DebitoRecusado ou sem resposta
+    Debitada --> AguardandoLiquidacao
+    Debitada --> AguardandoEstorno: cancelamento anotado
+    AguardandoLiquidacao --> Concluida: LiquidacaoConfirmada
+    AguardandoLiquidacao --> AguardandoEstorno: LiquidacaoRecusada
+    AguardandoLiquidacao --> ConsultandoLiquidacao: reenvios esgotados
+    ConsultandoLiquidacao --> Concluida: Liquidada
+    ConsultandoLiquidacao --> AguardandoEstorno: NaoLiquidada ou sem resposta
+    AguardandoEstorno --> Cancelada: EstornoRealizado
+    Recusada --> AguardandoEstorno: DebitoRealizado tardio
+    Concluida --> [*]
+    Cancelada --> [*]
+    Recusada --> [*]
+```
+
+O banco externo simulado decide pelo final do IBAN de destino, para cada caminho poder ser reproduzido:
+
+| Final | Comportamento | Fim da saga |
+|---|---|---|
+| `99` | recusa | `Cancelada` (`RecusadaPeloBanco`), com estorno |
+| `98` | nunca responde, nem à consulta | `Cancelada` (`SemRespostaDoBanco`), depois dos reenvios e das consultas |
+| `97` | responde em 45 s, depois do primeiro prazo | `Concluida`, com um reenvio e a resposta duplicada ignorada |
+| `96` | liquida, mas a resposta se perde | `Concluida` pela consulta de status, sem estorno |
+| outros | confirma em 1 s | `Concluida` |
+
+Prazos padrão: débito 30 s, liquidação 30 s, consulta 15 s, estorno 30 s, com até 3 reenvios por passo (o
+estorno reenvia sem limite: a compensação precisa acontecer). Tarifa de 2,50 EUR no mesmo débito; limite diário
+de 5.000 EUR por conta, somando só o valor.
+
 ## O que o laboratório revelou
 
 Problemas reais encontrados durante a construção, cada um com um teste que o reproduz:
@@ -98,8 +163,25 @@ Problemas reais encontrados durante a construção, cada um com um teste que o r
 6. **Observabilidade também precisa de filtro.** As consultas periódicas do Wolverine ao banco geravam traces
    avulsos que escondiam os traces das operações. Um amostrador descarta chamadas que não pertencem a nenhuma
    requisição ou mensagem.
+7. **O orquestrador não sabe se o débito aconteceu.** Se Contas não responde, o comando continua no Kafka e
+   pode ser executado depois que a saga desistiu. Solução: a saga termina `Recusada` (`SemRespostaDeContas`),
+   guarda que o débito ficou sem resposta e, se o `DebitoRealizado` chegar mais tarde, pede o estorno.
+8. **A varredura e as respostas disputam a mesma saga.** Uma resposta e um prazo vencido chegaram juntos na
+   mesma transferência. A versão otimista e a chave do histórico (transferência e ordem do passo) fazem um dos
+   dois falhar; o Wolverine tenta de novo com a saga recarregada e a resposta é aplicada no estado novo.
+9. **Limite diário precisa de serialização por conta.** Seis pedidos simultâneos de 1.000 EUR na mesma conta
+   passariam todos pela soma do dia. Um advisory lock do PostgreSQL por conta, até o commit, faz exatamente
+   cinco passarem.
+10. **Scripts de init do PostgreSQL só rodam num volume novo.** Num laboratório que já existia, o database
+    novo não seria criado e o conector do Debezium falharia. Solução: um serviço que cria os databases que
+    faltam a cada subida, antes do registro dos conectores.
+11. **O reenvio por prazo também cobre a perda de mensagens.** Durante um teste, o Docker reiniciou e o Kafka
+    (sem volume no laboratório) perdeu os comandos que ainda estavam nos tópicos. As sagas estavam salvas no
+    PostgreSQL: quando os prazos venceram, a varredura reenviou os comandos e todas terminaram `Concluida`.
 
 ## Arquitetura
+
+CDC de Contas para o Extrato:
 
 ```mermaid
 flowchart LR
@@ -114,6 +196,26 @@ flowchart LR
     extrato -. traces .-> jaeger
 ```
 
+Saga de transferência externa (cada seta para o Kafka sai de uma outbox, lida pelo Debezium, exceto a do banco
+externo, que publica direto por ser um sistema de fora):
+
+```mermaid
+flowchart LR
+    cliente([Cliente]) -->|HTTP + Idempotency-Key| tapi[API de Transferências<br/>:5300]
+    tapi --> pgt[(eurobank_transferencias<br/>saga + outbox)]
+    tworker[Worker de Transferências<br/>respostas + varredura] --> pgt
+    pgt -->|Debezium| cc[[eurobank.contas.comandos]]
+    pgt -->|Debezium| bc[[eurobank.banco-externo.comandos]]
+    pgt -->|Debezium| te[[eurobank.transferencias.eventos]]
+    cc --> cworker[Worker de Contas]
+    cworker --> pgc[(eurobank_contas<br/>conta + outbox)]
+    pgc -->|Debezium| cr[[eurobank.contas.respostas]]
+    bc --> banco[Banco externo simulado]
+    banco --> br[[eurobank.banco-externo.respostas]]
+    cr --> tworker
+    br --> tworker
+```
+
 ## Tecnologias
 
 | Peça | Versão |
@@ -124,6 +226,7 @@ flowchart LR
 | Debezium (Kafka Connect) | 3.6.3.Final |
 | Wolverine | 6.60 |
 | Entity Framework Core e Npgsql | 10 |
+| Confluent.Kafka (banco externo simulado) | 2.16 |
 | Kafbat UI | 1.5.0 |
 | Jaeger | 2.22 |
 | k6 | 2.3 |
@@ -131,7 +234,7 @@ flowchart LR
 
 ## Pré-requisitos
 
-- Docker com Docker Compose (o compose completo usa cerca de 6 GB de RAM)
+- Docker com Docker Compose (o compose completo usa cerca de 7 GB de RAM)
 - .NET SDK 10.0.400 ou mais recente (para rodar testes ou depurar pela IDE)
 
 ## Como subir
@@ -140,14 +243,16 @@ flowchart LR
 docker compose up -d --build
 ```
 
-A ordem de subida é controlada pelo compose: Postgres e Kafka, criação do tópico com 3 partições, Kafka Connect,
-registro dos conectores, API de Contas (aplica as migrations e cria as contas de exemplo Ana, Bruno e Carla) e o
-worker do Extrato.
+A ordem de subida é controlada pelo compose: Postgres e Kafka, criação dos databases e dos tópicos com 3
+partições, Kafka Connect, registro dos conectores, APIs de Contas (aplica as migrations e cria as contas de
+exemplo Ana, Bruno e Carla) e de Transferências (aplica as migrations), e depois os workers e o banco externo
+simulado.
 
 | Serviço | URL |
 |---|---|
 | API de Contas (Swagger) | http://localhost:5100/swagger |
 | Extrato (Swagger) | http://localhost:5200/swagger |
+| API de Transferências (Swagger) | http://localhost:5300/swagger |
 | Kafbat UI (tópicos, mensagens, consumer groups, conectores) | http://localhost:8080 |
 | Kafka Connect (REST) | http://localhost:8083/connectors |
 | Jaeger (traces) | http://localhost:16686 |
@@ -156,7 +261,13 @@ worker do Extrato.
 
 As credenciais existem só para o ambiente local do laboratório.
 
-Roteiros de requisições prontos: [`http/contas.http`](http/contas.http) e [`http/extrato.http`](http/extrato.http).
+As rotas de negócio exigem o header `X-Api-Key`, com uma chave por API, definidas no `.env`
+(`CONTAS_API_KEY`, `EXTRATO_API_KEY`, `TRANSFERENCIAS_API_KEY`). Sem a chave, a resposta é 401. O `/health` e o
+Swagger ficam abertos; no Swagger, use o botão Authorize. Os roteiros `.http` e o k6 já enviam as chaves de
+laboratório.
+
+Roteiros de requisições prontos: [`http/contas.http`](http/contas.http), [`http/extrato.http`](http/extrato.http)
+e [`http/transferencias.http`](http/transferencias.http).
 
 Para recomeçar do zero (apaga os dados do laboratório): `docker compose down -v`.
 
@@ -165,44 +276,58 @@ Para recomeçar do zero (apaga os dados do laboratório): `docker compose down -
 ```
 src/
   Shared/   EuroBank.Shared (blocos de domínio, Dinheiro, Paginacao)
-            EuroBank.Shared.Web (Serilog, OpenTelemetry, erros em ProblemDetails)
-  Contas/   Domain | Application | Infrastructure | Api
+            EuroBank.Shared.Persistence (outbox genérica com escrita ordenada)
+            EuroBank.Shared.Messaging (mapeador do Debezium e convenções do Wolverine)
+            EuroBank.Shared.Web (Serilog, OpenTelemetry, erros em ProblemDetails, API key)
+  Contas/   Domain | Application | Infrastructure | Api | Worker (comandos das sagas)
   Extrato/  Domain | Application | Infrastructure | Worker
+  Transferencias/  Domain | Application | Infrastructure | Api | Worker (orquestrador das sagas)
+  Simuladores/  Comum | BancoExterno (sistemas de fora: Confluent.Kafka e Npgsql puros, sem Wolverine e sem EF)
 tests/      testes unitários, de integração (Testcontainers) e ponta a ponta (Debezium de verdade)
-infra/      init do Postgres, criação do tópico, conectores do Debezium, script do k6
+infra/      criação dos databases e dos tópicos, conectores do Debezium, script do k6
 http/       roteiros de requisições
 ```
 
 Convenções: nomes de projetos e pastas técnicas em inglês (`Entities`, `ValueObjects`, `Events`, `Exceptions`,
-`TransferObjects`...), classes de negócio e métodos em português, uma classe por arquivo. Os dois contextos não
-referenciam um ao outro: o Extrato tem os próprios DTOs para os eventos que consome.
+`TransferObjects`, `Replies`...), classes de negócio e métodos em português, uma classe por arquivo. Os
+contextos não referenciam uns aos outros: cada um tem os próprios DTOs para as mensagens que consome.
 
 Pontos do código que valem a leitura:
 
 - `src/Contas/EuroBank.Contas.Domain/Entities/Conta.cs`: o agregado decide qual evento acontece.
-- `src/Contas/EuroBank.Contas.Infrastructure/Persistence/UnidadeDeTrabalho.cs`: estado e outbox na mesma
+- `src/Shared/EuroBank.Shared.Persistence/Outbox/UnidadeDeTrabalhoComOutbox.cs`: estado e outbox na mesma
   transação, com as linhas inseridas na ordem dos eventos.
 - `infra/connect/conectores/eurobank-contas-outbox.json`: como cada coluna da outbox vira tópico, chave, header
   ou corpo da mensagem.
-- `src/Extrato/EuroBank.Extrato.Infrastructure/Messaging/MapeadorEnvelopeDebezium.cs`: como o Wolverine lê os
+- `src/Shared/EuroBank.Shared.Messaging/MapeadorEnvelopeDebezium.cs`: como o Wolverine lê os
   headers do Debezium.
-- `src/Extrato/EuroBank.Extrato.Infrastructure/Messaging/ConfiguracaoMensageria.cs`: inbox durável, ordem por
+- `src/Shared/EuroBank.Shared.Messaging/WolverineExtensions.cs`: inbox durável, ordem por
   conta, retry e dead letter.
 - `src/Extrato/EuroBank.Extrato.Domain/Entities/ExtratoConta.cs`: a regra de versão que torna a projeção
   idempotente.
+- `src/Transferencias/EuroBank.Transferencias.Domain/Entities/Transferencia.cs`: a saga como agregado; cada
+  resposta e cada prazo vencido decide o próximo comando, e o que não cabe no estado atual é ignorado e anotado
+  no histórico.
+- `src/Transferencias/EuroBank.Transferencias.Infrastructure/Persistence/Repositories/RepositorioTransferencias.cs`:
+  o advisory lock do limite diário e o `FOR UPDATE SKIP LOCKED` da varredura.
+- `src/Simuladores/EuroBank.Simuladores.BancoExterno/ProcessadorComandos.cs`: inbox e agenda de respostas
+  escritas à mão, para comparar com o que o Wolverine faz nos outros serviços.
 
 ## Depurar pela IDE
 
 A infra continua no Docker; só as aplicações rodam no host.
 
 ```bash
-docker compose stop contas-api extrato-worker
+docker compose stop contas-api extrato-worker transferencias-api transferencias-worker
 dotnet run --project src/Contas/EuroBank.Contas.Api
 dotnet run --project src/Extrato/EuroBank.Extrato.Worker
+dotnet run --project src/Transferencias/EuroBank.Transferencias.Api
+dotnet run --project src/Transferencias/EuroBank.Transferencias.Worker
 ```
 
 Os `appsettings.json` já apontam para `localhost:5434` (Postgres) e `localhost:9092` (Kafka), e as portas
-continuam 5100 e 5200.
+continuam 5100, 5200 e 5300 (os workers de Contas e de Transferências ficam em 5101 e 5301, o banco externo
+simulado em 5401).
 
 ## Testes
 
@@ -213,7 +338,9 @@ dotnet test
 Precisa do Docker rodando: os testes de integração e ponta a ponta sobem os próprios containers com
 Testcontainers. Os testes ponta a ponta usam os mesmos conectores de `infra/connect/conectores` e cobrem o
 evento nos dois tópicos, a convergência do extrato, o trace contínuo, o Kafka Connect parado e religado sem
-perda, a duplicata barrada pela inbox e as mensagens inválidas no dead letter.
+perda, a duplicata barrada pela inbox e as mensagens inválidas no dead letter. Para a saga, com prazos curtos,
+cobrem cada final de IBAN do banco externo, as recusas (saldo, conta bloqueada ou encerrada, limite diário), o
+agendamento, os dois tipos de cancelamento, a `Idempotency-Key` e a trava que impede encerrar a conta.
 
 ## Roteiro de exercícios
 
@@ -305,6 +432,42 @@ OUTBOX_APAGAR_APOS_GRAVAR=true docker compose up -d contas-api
 Agora cada linha da outbox é inserida e apagada na mesma transação. A tabela fica vazia, mas os eventos
 continuam chegando ao Kafka: o Debezium lê o INSERT no WAL, não a tabela.
 
+### 9. Um caminho da saga por final de IBAN
+
+Pelo `http/transferencias.http`, peça transferências para IBANs terminados em `00`, `99`, `98`, `97` e `96` (uma
+`Idempotency-Key` diferente em cada pedido) e acompanhe cada uma pelo `GET /transferencias/{id}`: o histórico
+mostra cada comando enviado, cada reenvio, cada resposta recebida e as respostas ignoradas. No Kafbat UI, siga
+os comandos e as respostas pelos tópicos `eurobank.contas.*` e `eurobank.banco-externo.*`. Os finais `98` e `96`
+levam cerca de 2 minutos com os prazos padrão; para encurtar:
+
+```bash
+SAGA_PRAZO_LIQUIDACAO=00:00:05 SAGA_PRAZO_CONSULTA=00:00:03 docker compose up -d transferencias-api transferencias-worker
+```
+
+### 10. Contas fora do ar no meio da saga
+
+```bash
+docker compose stop contas-worker
+# peça uma transferência pelo transferencias.http e acompanhe o histórico
+docker compose start contas-worker
+```
+
+Sem resposta, a saga reenvia o débito três vezes e termina `Recusada` (`SemRespostaDeContas`). Os comandos
+continuam no Kafka: quando o worker de Contas volta, ele debita uma vez só (os reenvios têm o mesmo id de
+transferência) e responde. A saga recebe o `DebitoRealizado` tardio, pede o estorno e termina `Cancelada`, com o
+saldo de volta.
+
+### 11. Duas instâncias do orquestrador
+
+```bash
+docker compose up -d --scale transferencias-worker=2
+docker compose logs -f transferencias-worker
+```
+
+As duas instâncias dividem as partições dos tópicos de resposta e rodam a varredura ao mesmo tempo. O
+`FOR UPDATE SKIP LOCKED` faz cada transferência vencida ser tratada por uma instância só. Para voltar a uma:
+`docker compose up -d --scale transferencias-worker=1`.
+
 ## Laboratório e produção
 
 Atalhos que este laboratório toma de propósito:
@@ -317,11 +480,21 @@ Atalhos que este laboratório toma de propósito:
 | JSON sem schema | Muitas vezes Avro ou Protobuf com Schema Registry, para versionar contratos |
 | Sem monitoramento dos replication slots | Alerta de atraso de slot (um slot parado enche o disco com WAL) e heartbeat configurado |
 | CDC bruto e outbox no mesmo banco, para comparar | Integração entre serviços pela outbox; CDC bruto só para levar dados a outros sistemas |
-| APIs sem autenticação | Autenticação e autorização em todas as APIs |
+| Uma API key fixa por API, guardada no `.env` | OAuth 2.0 ou OpenID Connect com tokens de curta duração e segredos em cofre |
+| Banco externo simulado, com o comportamento escolhido pelo final do IBAN | Integração com a rede de pagamentos (SEPA, mensagens ISO 20022), com contrato e homologação |
+| Prazo fixo por passo e até 3 reenvios | Espera crescente com variação aleatória e alerta para sagas paradas num estado |
+| Orquestrador próprio, com varredura a cada 2 s | Igual, ou um motor de workflow (Temporal, Camunda) quando os processos são muitos e longos |
 
 ## Próximos passos
 
-Em andamento: uma **saga orquestrada** de transferência para outro banco. Um novo contexto, `Transferencias`,
-coordena o débito na conta de origem, a liquidação num banco externo simulado e, se a liquidação falhar, o
-estorno do débito. Comandos e respostas usam a mesma combinação de outbox, Debezium e Kafka, com timeouts,
-reenvio, cancelamento pelo cliente, tarifa, agendamento e limite diário.
+A primeira fase da **saga orquestrada** está pronta: a transferência externa em EUR, com prazos, reenvios,
+consulta antes de estornar, cancelamento, agendamento, tarifa, limite diário e `Idempotency-Key`. As próximas:
+
+1. Contas em várias moedas (EUR, USD, GBP, BRL), um serviço de câmbio simulado com cotações travadas e uma
+   saga de câmbio entre contas EuroBank.
+2. Validações SEPA e SWIFT com horário de corte, devolução pelo banco externo, estado `Divergente` com
+   reconciliação e saldo negativo controlado.
+3. Notificações por e-mail (Mailpit), cenário de carga da saga no k6 e diagramas de sequência.
+
+Depois disso, um contexto de **antifraude** com regras e machine learning (ML.NET), comunicação gRPC entre os
+serviços e Redis.
