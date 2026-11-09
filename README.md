@@ -140,9 +140,9 @@ flowchart LR
 docker compose up -d --build
 ```
 
-A ordem de subida é controlada pelo compose: Postgres e Kafka, criação do tópico com 3 partições, Kafka Connect,
-registro dos conectores, API de Contas (aplica as migrations e cria as contas de exemplo Ana, Bruno e Carla) e o
-worker do Extrato.
+A ordem de subida é controlada pelo compose: Postgres e Kafka, criação dos tópicos com 3 partições, Kafka Connect,
+registro dos conectores, API de Contas (aplica as migrations e cria as contas de exemplo Ana, Bruno e Carla), o
+worker de Contas, o worker do Extrato e o banco externo simulado.
 
 | Serviço | URL |
 |---|---|
@@ -171,11 +171,12 @@ src/
   Shared/   EuroBank.Shared (blocos de domínio, Dinheiro, Paginacao)
             EuroBank.Shared.Persistence (outbox genérica com escrita ordenada)
             EuroBank.Shared.Messaging (mapeador do Debezium e convenções do Wolverine)
-            EuroBank.Shared.Web (Serilog, OpenTelemetry, erros em ProblemDetails)
-  Contas/   Domain | Application | Infrastructure | Api
+            EuroBank.Shared.Web (Serilog, OpenTelemetry, erros em ProblemDetails, API key)
+  Contas/   Domain | Application | Infrastructure | Api | Worker (comandos das sagas)
   Extrato/  Domain | Application | Infrastructure | Worker
+  Simuladores/  Comum | BancoExterno (sistemas de fora: Confluent.Kafka e Npgsql puros, sem Wolverine e sem EF)
 tests/      testes unitários, de integração (Testcontainers) e ponta a ponta (Debezium de verdade)
-infra/      init do Postgres, criação do tópico, conectores do Debezium, script do k6
+infra/      init do Postgres, criação dos tópicos, conectores do Debezium, script do k6
 http/       roteiros de requisições
 ```
 
@@ -323,7 +324,7 @@ Atalhos que este laboratório toma de propósito:
 | JSON sem schema | Muitas vezes Avro ou Protobuf com Schema Registry, para versionar contratos |
 | Sem monitoramento dos replication slots | Alerta de atraso de slot (um slot parado enche o disco com WAL) e heartbeat configurado |
 | CDC bruto e outbox no mesmo banco, para comparar | Integração entre serviços pela outbox; CDC bruto só para levar dados a outros sistemas |
-| APIs sem autenticação | Autenticação e autorização em todas as APIs |
+| Uma API key fixa por API, guardada no `.env` | OAuth 2.0 ou OpenID Connect com tokens de curta duração e segredos em cofre |
 
 ## Próximos passos
 

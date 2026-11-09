@@ -1,5 +1,5 @@
 #!/bin/sh
-# Cria os tópicos com 3 partições antes de o Debezium publicar neles
+# Cria os tópicos com 3 partições antes de alguém publicar neles
 # (se o Kafka os criasse sozinho, eles nasceriam com 1 partição).
 set -eu
 
@@ -9,7 +9,9 @@ TOPICOS=/opt/kafka/bin/kafka-topics.sh
 for topico in \
   eurobank.contas.eventos \
   eurobank.contas.comandos \
-  eurobank.contas.respostas
+  eurobank.contas.respostas \
+  eurobank.banco-externo.comandos \
+  eurobank.banco-externo.respostas
 do
   $TOPICOS --bootstrap-server "$BOOTSTRAP" --create --if-not-exists \
     --topic "$topico" --partitions 3 --replication-factor 1

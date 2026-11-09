@@ -19,6 +19,10 @@
     <Project Path="src/Shared/EuroBank.Shared.Web/EuroBank.Shared.Web.csproj" />
     <Project Path="src/Shared/EuroBank.Shared/EuroBank.Shared.csproj" />
   </Folder>
+  <Folder Name="/src/Simuladores/">
+    <Project Path="src/Simuladores/EuroBank.Simuladores.BancoExterno/EuroBank.Simuladores.BancoExterno.csproj" />
+    <Project Path="src/Simuladores/EuroBank.Simuladores.Comum/EuroBank.Simuladores.Comum.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/EuroBank.Contas.Api.Tests/EuroBank.Contas.Api.Tests.csproj" />
     <Project Path="tests/EuroBank.Contas.Domain.Tests/EuroBank.Contas.Domain.Tests.csproj" />
@@ -27,5 +31,6 @@
     <Project Path="tests/EuroBank.Extrato.Domain.Tests/EuroBank.Extrato.Domain.Tests.csproj" />
     <Project Path="tests/EuroBank.Extrato.Worker.Tests/EuroBank.Extrato.Worker.Tests.csproj" />
     <Project Path="tests/EuroBank.Shared.Tests/EuroBank.Shared.Tests.csproj" />
+    <Project Path="tests/EuroBank.Simuladores.Tests/EuroBank.Simuladores.Tests.csproj" />
   </Folder>
 </Solution>

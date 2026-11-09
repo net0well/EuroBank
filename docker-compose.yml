@@ -53,7 +53,7 @@ services:
       timeout: 10s
       retries: 30
 
-  # Cria eurobank.contas.eventos com 3 partições antes de o Debezium publicar nele.
+  # Cria os tópicos do laboratório com 3 partições antes de alguém publicar neles.
   kafka-init:
     image: apache/kafka:4.4.0
     depends_on:
@@ -205,6 +205,36 @@ services:
       ConnectionStrings__Extrato: "Host=postgres;Port=5432;Database=eurobank_extrato;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
       Seguranca__ApiKey: ${EXTRATO_API_KEY}
       Kafka__BootstrapServers: kafka:29092
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8080/health > /dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # ---------------------------------------------------------------------------------------------------------
+  # Simuladores de sistemas de fora do EuroBank (Confluent.Kafka e Npgsql puros, sem Wolverine e sem EF).
+  # ---------------------------------------------------------------------------------------------------------
+
+  # Rede SEPA de mentira: liquida, recusa, atrasa ou some conforme o final do IBAN de destino.
+  # Database próprio (eurobank_banco_externo), criado pelo simulador na primeira subida.
+  banco-externo-simulador:
+    build:
+      context: .
+      dockerfile: src/Simuladores/EuroBank.Simuladores.BancoExterno/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_HTTP_PORTS: "8080"
+      ConnectionStrings__BancoExterno: "Host=postgres;Port=5432;Database=eurobank_banco_externo;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      Kafka__BootstrapServers: kafka:29092
+      BancoExterno__LatenciaMs: ${BANCO_EXTERNO_LATENCIA_MS:-1000}
+      BancoExterno__TaxaRecusa: ${BANCO_EXTERNO_TAXA_RECUSA:-0}
+      BancoExterno__TaxaSilencio: ${BANCO_EXTERNO_TAXA_SILENCIO:-0}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
     healthcheck:
       test: ["CMD-SHELL", "curl -fs http://localhost:8080/health > /dev/null"]

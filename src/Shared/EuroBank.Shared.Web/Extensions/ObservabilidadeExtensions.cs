@@ -16,7 +16,11 @@ public static class ObservabilidadeExtensions
         "[{Timestamp:HH:mm:ss} {Level:u3}] {SourceContext}: {Message:lj} {Properties:j}{NewLine}{Exception}";
 
     /// <summary>Serilog estruturado no console e traces OpenTelemetry exportados via OTLP (Jaeger).</summary>
-    public static WebApplicationBuilder AdicionarObservabilidade(this WebApplicationBuilder builder, string nomeServico)
+    /// <param name="fontesAdicionais">ActivitySources próprias do serviço, além de ASP.NET Core, Npgsql e Wolverine.</param>
+    public static WebApplicationBuilder AdicionarObservabilidade(
+        this WebApplicationBuilder builder,
+        string nomeServico,
+        params string[] fontesAdicionais)
     {
         builder.Services.AddSerilog((servicos, configuracao) => configuracao
             .ReadFrom.Configuration(builder.Configuration)
@@ -32,7 +36,8 @@ public static class ObservabilidadeExtensions
                 .AddAspNetCoreInstrumentation(opcoes => opcoes.Filter = contexto =>
                     !contexto.Request.Path.StartsWithSegments("/health", StringComparison.OrdinalIgnoreCase))
                 .AddNpgsql()
-                .AddSource("Wolverine"))
+                .AddSource("Wolverine")
+                .AddSource(fontesAdicionais))
             .UseOtlpExporter();
 
         return builder;
