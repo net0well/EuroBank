@@ -13,19 +13,22 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.AdicionarObservabilidade("eurobank-banco-externo", Telemetria.NomeFonte);
 
-var kafka = builder.Configuration.GetSection(OpcoesKafkaSimulador.Secao).Get<OpcoesKafkaSimulador>() ?? new OpcoesKafkaSimulador();
-if (string.IsNullOrWhiteSpace(kafka.GrupoConsumidor))
-{
-    kafka.GrupoConsumidor = "eurobank-banco-externo";
-}
-
-var connectionString = builder.Configuration.GetConnectionString("BancoExterno")
-    ?? throw new InvalidOperationException("ConnectionStrings:BancoExterno não configurada.");
-
 builder.Services.AddOptions<OpcoesBancoExterno>().BindConfiguration(OpcoesBancoExterno.Secao);
+builder.Services.AddOptions<OpcoesKafkaSimulador>()
+    .BindConfiguration(OpcoesKafkaSimulador.Secao)
+    .PostConfigure(kafka =>
+    {
+        if (string.IsNullOrWhiteSpace(kafka.GrupoConsumidor))
+        {
+            kafka.GrupoConsumidor = "eurobank-banco-externo";
+        }
+    });
+
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddSingleton(kafka);
-builder.Services.AddSingleton(new RepositorioBancoExterno(connectionString));
+builder.Services.AddSingleton(servicos => servicos.GetRequiredService<IOptions<OpcoesKafkaSimulador>>().Value);
+builder.Services.AddSingleton(servicos => new RepositorioBancoExterno(
+    servicos.GetRequiredService<IConfiguration>().GetConnectionString("BancoExterno")
+        ?? throw new InvalidOperationException("ConnectionStrings:BancoExterno não configurada.")));
 builder.Services.AddSingleton(servicos => new RegrasLiquidacao(
     servicos.GetRequiredService<IOptions<OpcoesBancoExterno>>(), Random.Shared));
 builder.Services.AddSingleton<ProcessadorComandos>();
