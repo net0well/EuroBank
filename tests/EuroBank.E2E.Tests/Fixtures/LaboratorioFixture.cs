@@ -101,7 +101,7 @@ public sealed class LaboratorioFixture : IAsyncLifetime
         await _rede.CreateAsync();
         await Task.WhenAll(_postgres.StartAsync(), _kafka.StartAsync());
 
-        await CriarBancoExtratoAsync();
+        await CriarBancosAsync();
         await CriarTopicoOutboxAsync();
 
         await _connect.StartAsync();
@@ -140,12 +140,16 @@ public sealed class LaboratorioFixture : IAsyncLifetime
         await EsperarConectoresRodandoAsync();
     }
 
-    private async Task CriarBancoExtratoAsync()
+    /// <summary>Os databases além do eurobank_contas; precisam existir antes de registrar os conectores.</summary>
+    private async Task CriarBancosAsync()
     {
         await using var conexao = new NpgsqlConnection(ConnectionStringContas);
         await conexao.OpenAsync();
-        await using var comando = new NpgsqlCommand("CREATE DATABASE eurobank_extrato", conexao);
-        await comando.ExecuteNonQueryAsync();
+        foreach (var banco in new[] { "eurobank_extrato", "eurobank_transferencias" })
+        {
+            await using var comando = new NpgsqlCommand($"CREATE DATABASE {banco}", conexao);
+            await comando.ExecuteNonQueryAsync();
+        }
     }
 
     private async Task CriarTopicoOutboxAsync()
@@ -156,10 +160,13 @@ public sealed class LaboratorioFixture : IAsyncLifetime
 
     private Uri UrlConnect => new($"http://{_connect.Hostname}:{_connect.GetMappedPublicPort(8083)}");
 
+    private static string[] ArquivosDosConectores() =>
+        Directory.GetFiles(Path.Combine(RaizDoRepositorio(), "infra", "connect", "conectores"), "*.json");
+
     private async Task RegistrarConectoresAsync()
     {
         using var http = new HttpClient { BaseAddress = UrlConnect };
-        foreach (var arquivo in Directory.GetFiles(Path.Combine(RaizDoRepositorio(), "infra", "connect", "conectores"), "*.json"))
+        foreach (var arquivo in ArquivosDosConectores())
         {
             var nome = Path.GetFileNameWithoutExtension(arquivo);
             using var configuracao = new StringContent(await File.ReadAllTextAsync(arquivo), System.Text.Encoding.UTF8, "application/json");
@@ -174,7 +181,7 @@ public sealed class LaboratorioFixture : IAsyncLifetime
         using var http = new HttpClient { BaseAddress = UrlConnect };
         await Esperar.AteAsync(async () =>
         {
-            foreach (var nome in new[] { "eurobank-contas-outbox", "eurobank-contas-cdc" })
+            foreach (var nome in ArquivosDosConectores().Select(Path.GetFileNameWithoutExtension))
             {
                 var resposta = await http.GetAsync($"/connectors/{nome}/status");
                 if (!resposta.IsSuccessStatusCode)

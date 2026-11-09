@@ -24,7 +24,10 @@
     <Project Path="src/Simuladores/EuroBank.Simuladores.Comum/EuroBank.Simuladores.Comum.csproj" />
   </Folder>
   <Folder Name="/src/Transferencias/">
+    <Project Path="src/Transferencias/EuroBank.Transferencias.Api/EuroBank.Transferencias.Api.csproj" />
+    <Project Path="src/Transferencias/EuroBank.Transferencias.Application/EuroBank.Transferencias.Application.csproj" />
     <Project Path="src/Transferencias/EuroBank.Transferencias.Domain/EuroBank.Transferencias.Domain.csproj" />
+    <Project Path="src/Transferencias/EuroBank.Transferencias.Infrastructure/EuroBank.Transferencias.Infrastructure.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/EuroBank.Contas.Api.Tests/EuroBank.Contas.Api.Tests.csproj" />
@@ -35,6 +38,7 @@
     <Project Path="tests/EuroBank.Extrato.Worker.Tests/EuroBank.Extrato.Worker.Tests.csproj" />
     <Project Path="tests/EuroBank.Shared.Tests/EuroBank.Shared.Tests.csproj" />
     <Project Path="tests/EuroBank.Simuladores.Tests/EuroBank.Simuladores.Tests.csproj" />
+    <Project Path="tests/EuroBank.Transferencias.Api.Tests/EuroBank.Transferencias.Api.Tests.csproj" />
     <Project Path="tests/EuroBank.Transferencias.Domain.Tests/EuroBank.Transferencias.Domain.Tests.csproj" />
   </Folder>
 </Solution>

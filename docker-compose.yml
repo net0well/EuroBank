@@ -3,7 +3,8 @@ name: eurobank
 services:
   # ---------------------------------------------------------------------------------------------------------
   # PostgreSQL com replicação lógica (wal_level=logical): é daqui que o Debezium lê as mudanças (WAL).
-  # Databases: eurobank_contas (contas + outbox) e eurobank_extrato (projeção do contexto Extrato).
+  # Um database por contexto: eurobank_contas (contas + outbox), eurobank_extrato (projeção),
+  # eurobank_transferencias (sagas + outbox) e eurobank_banco_externo (simulador).
   # ---------------------------------------------------------------------------------------------------------
   postgres:
     image: postgres:18.6
@@ -16,12 +17,26 @@ services:
       - "${POSTGRES_PORTA_HOST:-5434}:5432"
     volumes:
       - postgres-dados:/var/lib/postgresql
-      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d eurobank_contas"]
       interval: 5s
       timeout: 5s
       retries: 20
+
+  # Cria os databases que faltarem (idempotente, roda a cada "up", inclusive num volume antigo). Precisa
+  # terminar antes do registro dos conectores: o Debezium não conecta num database que não existe.
+  postgres-init:
+    image: postgres:18.6
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./infra/postgres:/infra:ro
+    entrypoint: ["/bin/sh", "/infra/criar-bancos.sh"]
+    restart: "no"
 
   # ---------------------------------------------------------------------------------------------------------
   # Kafka em modo KRaft (sem Zookeeper), um único nó que é broker e controller.
@@ -105,6 +120,8 @@ services:
       connect:
         condition: service_healthy
       kafka-init:
+        condition: service_completed_successfully
+      postgres-init:
         condition: service_completed_successfully
     volumes:
       - ./infra/connect:/infra:ro
@@ -195,8 +212,8 @@ services:
     ports:
       - "5200:8080"
     depends_on:
-      postgres:
-        condition: service_healthy
+      postgres-init:
+        condition: service_completed_successfully
       kafka-init:
         condition: service_completed_successfully
     environment:
@@ -205,6 +222,29 @@ services:
       ConnectionStrings__Extrato: "Host=postgres;Port=5432;Database=eurobank_extrato;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
       Seguranca__ApiKey: ${EXTRATO_API_KEY}
       Kafka__BootstrapServers: kafka:29092
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8080/health > /dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # Orquestrador das sagas de transferência: recebe os pedidos (Idempotency-Key obrigatório) e começa a saga
+  # na hora; os comandos saem pela outbox de eurobank_transferencias (conector eurobank-transferencias-outbox).
+  transferencias-api:
+    build:
+      context: .
+      dockerfile: src/Transferencias/EuroBank.Transferencias.Api/Dockerfile
+    ports:
+      - "5300:8080"
+    depends_on:
+      connect-init:
+        condition: service_completed_successfully
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_HTTP_PORTS: "8080"
+      ConnectionStrings__Transferencias: "Host=postgres;Port=5432;Database=eurobank_transferencias;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      Seguranca__ApiKey: ${TRANSFERENCIAS_API_KEY}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
     healthcheck:
       test: ["CMD-SHELL", "curl -fs http://localhost:8080/health > /dev/null"]
@@ -223,8 +263,8 @@ services:
       context: .
       dockerfile: src/Simuladores/EuroBank.Simuladores.BancoExterno/Dockerfile
     depends_on:
-      postgres:
-        condition: service_healthy
+      postgres-init:
+        condition: service_completed_successfully
       kafka-init:
         condition: service_completed_successfully
     environment:

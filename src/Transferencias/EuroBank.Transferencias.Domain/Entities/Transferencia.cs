@@ -49,6 +49,9 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
 
     public string IdempotencyKey { get; private set; } = string.Empty;
 
+    /// <summary>Impressão digital do corpo do pedido: a mesma Idempotency-Key com outro corpo é recusada.</summary>
+    public string HashDoPedido { get; private set; } = string.Empty;
+
     public DateTimeOffset SolicitadaEm { get; private set; }
 
     /// <summary>Data pedida pelo cliente (nula quando é para já).</summary>
@@ -85,6 +88,8 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
 
     public bool EstaNaHora(DateTimeOffset agora) => Estado == EstadoTransferencia.Agendada && ExecutarEmEfetivo <= agora;
 
+    public bool MesmoPedido(string hashDoPedido) => string.Equals(HashDoPedido, hashDoPedido, StringComparison.Ordinal);
+
     public static Transferencia SolicitarExterna(
         Guid contaOrigemId,
         IbanDestino ibanDestino,
@@ -94,10 +99,12 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
         string? descricao,
         string? emailNotificacao,
         string idempotencyKey,
+        string hashDoPedido,
         DateTimeOffset? executarEm,
         DateTimeOffset agora)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(idempotencyKey);
+        ArgumentException.ThrowIfNullOrWhiteSpace(hashDoPedido);
         if (ibanDestino.EhEuroBank)
         {
             throw new ExcecaoDestinoEuroBank();
@@ -131,6 +138,7 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
             Descricao = descricao,
             EmailNotificacao = emailNotificacao,
             IdempotencyKey = idempotencyKey,
+            HashDoPedido = hashDoPedido,
             SolicitadaEm = agora,
             ExecutarEm = executarEm,
             ExecutarEmEfetivo = executarEm > agora ? executarEm.Value : agora,

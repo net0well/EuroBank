@@ -1,0 +1,31 @@
+{
+  "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+  "tasks.max": "1",
+
+  "database.hostname": "postgres",
+  "database.port": "5432",
+  "database.user": "eurobank",
+  "database.password": "eurobank",
+  "database.dbname": "eurobank_transferencias",
+
+  "topic.prefix": "eurobank.outbox.transferencias",
+  "plugin.name": "pgoutput",
+  "slot.name": "slot_transferencias_outbox",
+  "publication.name": "pub_transferencias_outbox",
+  "publication.autocreate.mode": "all_tables",
+  "table.include.list": "public.outbox",
+  "snapshot.mode": "no_data",
+  "tombstones.on.delete": "false",
+
+  "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+
+  "transforms": "outbox",
+  "transforms.outbox.type": "io.debezium.transforms.outbox.EventRouter",
+  "transforms.outbox.table.field.event.id": "id",
+  "transforms.outbox.table.field.event.key": "id_agregado",
+  "transforms.outbox.table.field.event.payload": "payload",
+  "transforms.outbox.route.by.field": "tipo_agregado",
+  "transforms.outbox.route.topic.replacement": "eurobank.${routedByValue}",
+  "transforms.outbox.table.expand.json.payload": "true",
+  "transforms.outbox.table.fields.additional.placement": "tipo_evento:header:tipo,traceparent:header:traceparent"
+}

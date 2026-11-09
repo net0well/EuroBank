@@ -11,7 +11,8 @@ for topico in \
   eurobank.contas.comandos \
   eurobank.contas.respostas \
   eurobank.banco-externo.comandos \
-  eurobank.banco-externo.respostas
+  eurobank.banco-externo.respostas \
+  eurobank.transferencias.eventos
 do
   $TOPICOS --bootstrap-server "$BOOTSTRAP" --create --if-not-exists \
     --topic "$topico" --partitions 3 --replication-factor 1

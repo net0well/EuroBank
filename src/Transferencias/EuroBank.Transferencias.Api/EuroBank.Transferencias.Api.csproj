@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\EuroBank.Transferencias.Application\EuroBank.Transferencias.Application.csproj" />
+    <ProjectReference Include="..\EuroBank.Transferencias.Infrastructure\EuroBank.Transferencias.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Shared\EuroBank.Shared.Web\EuroBank.Shared.Web.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WolverineFx" />
+    <PackageReference Include="WolverineFx.RuntimeCompilation" />
+    <PackageReference Include="Swashbuckle.AspNetCore" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

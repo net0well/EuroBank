@@ -3,6 +3,7 @@ using EuroBank.Shared.Domain;
 using EuroBank.Shared.Exceptions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace EuroBank.Shared.Persistence.Outbox;
 
@@ -33,7 +34,9 @@ public sealed class UnidadeDeTrabalhoComOutbox<TContexto>(
 
         try
         {
-            await using var transacao = await contexto.Database.BeginTransactionAsync(cancellationToken);
+            // Dentro de uma transação já aberta (IExecutorTransacional), só participa: quem abriu confirma.
+            var transacaoExterna = contexto.Database.CurrentTransaction is not null;
+            await using var transacao = transacaoExterna ? null : await contexto.Database.BeginTransactionAsync(cancellationToken);
 
             await contexto.SaveChangesAsync(cancellationToken);
             foreach (var mensagem in mensagens)
@@ -48,10 +51,19 @@ public sealed class UnidadeDeTrabalhoComOutbox<TContexto>(
                 await contexto.Database.ExecuteSqlAsync($"DELETE FROM outbox WHERE id = ANY({ids})", cancellationToken);
             }
 
-            await transacao.CommitAsync(cancellationToken);
+            if (transacao is not null)
+            {
+                await transacao.CommitAsync(cancellationToken);
+            }
         }
         catch (DbUpdateConcurrencyException)
         {
+            throw new ExcecaoConcorrencia();
+        }
+        catch (DbUpdateException erro) when (erro.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+        {
+            // Duas operações gravaram a mesma chave única ao mesmo tempo (ex.: a mesma Idempotency-Key): quem
+            // perdeu recebe 409 e, ao repetir, encontra o que o outro gravou.
             throw new ExcecaoConcorrencia();
         }
     }

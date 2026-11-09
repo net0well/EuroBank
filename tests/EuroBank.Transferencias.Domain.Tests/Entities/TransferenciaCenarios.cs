@@ -30,6 +30,7 @@ internal static class TransferenciaCenarios
             "Aluguel",
             null,
             "chave-1",
+            "hash-1",
             executarEm,
             Agora);
 
