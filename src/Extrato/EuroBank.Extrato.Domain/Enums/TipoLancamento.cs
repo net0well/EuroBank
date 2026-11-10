@@ -10,4 +10,6 @@ public enum TipoLancamento
     EstornoTransferencia = 6,
     TransferenciaCambioEnviada = 7,
     TransferenciaCambioRecebida = 8,
+    DevolucaoTransferenciaExterna = 9,
+    DebitoReconciliacao = 10,
 }

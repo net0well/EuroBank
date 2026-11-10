@@ -14,5 +14,7 @@ public static class TiposComandosSaga
         ["LiberarTravaTransferencia"] = typeof(LiberarTravaTransferencia),
         ["DebitarTransferenciaCambio"] = typeof(DebitarTransferenciaCambio),
         ["CreditarTransferenciaCambio"] = typeof(CreditarTransferenciaCambio),
+        ["DebitarReconciliacao"] = typeof(DebitarReconciliacao),
+        ["CreditarDevolucao"] = typeof(CreditarDevolucao),
     };
 }

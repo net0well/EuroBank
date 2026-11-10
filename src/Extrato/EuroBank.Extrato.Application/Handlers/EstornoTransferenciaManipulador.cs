@@ -22,7 +22,7 @@ public sealed class EstornoTransferenciaManipulador(
             evento.TransferenciaId,
             evento.NomeBeneficiario,
             Dinheiro.De(evento.Valor, extrato.Moeda),
-            Dinheiro.De(evento.SaldoApos, extrato.Moeda),
+            Saldo.De(evento.SaldoApos, extrato.Moeda),
             evento.OcorridoEm);
 
         if (resultado != ResultadoAplicacao.IgnoradoJaAplicado)

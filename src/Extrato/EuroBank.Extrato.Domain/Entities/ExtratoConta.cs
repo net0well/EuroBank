@@ -31,9 +31,9 @@ public sealed class ExtratoConta
     public Moeda Moeda { get; private set; }
 
     /// <summary>Saldo depois do último evento aplicado (vem do saldoApos do evento, não é recalculado).</summary>
-    public Dinheiro SaldoAtual
+    public Saldo SaldoAtual
     {
-        get => Dinheiro.De(_saldoAtual, Moeda);
+        get => Saldo.De(_saldoAtual, Moeda);
         private set => _saldoAtual = value.Valor;
     }
 
@@ -59,15 +59,15 @@ public sealed class ExtratoConta
             Titular = titular,
             Moeda = moeda,
             Status = StatusConta.Ativa,
-            SaldoAtual = Dinheiro.ZeroEm(moeda),
+            SaldoAtual = Saldo.ZeroEm(moeda),
             UltimaVersao = versao,
             AtualizadoEm = ocorridoEm,
         };
 
-    public ResultadoAplicacao RegistrarDeposito(int versao, Dinheiro valor, Dinheiro saldoApos, DateTimeOffset ocorridoEm) =>
+    public ResultadoAplicacao RegistrarDeposito(int versao, Dinheiro valor, Saldo saldoApos, DateTimeOffset ocorridoEm) =>
         RegistrarLancamento(TipoLancamento.Deposito, versao, valor, saldoApos, ocorridoEm, "Depósito", transferenciaId: null);
 
-    public ResultadoAplicacao RegistrarSaque(int versao, Dinheiro valor, Dinheiro saldoApos, DateTimeOffset ocorridoEm) =>
+    public ResultadoAplicacao RegistrarSaque(int versao, Dinheiro valor, Saldo saldoApos, DateTimeOffset ocorridoEm) =>
         RegistrarLancamento(TipoLancamento.Saque, versao, valor, saldoApos, ocorridoEm, "Saque", transferenciaId: null);
 
     public ResultadoAplicacao RegistrarTransferenciaEnviada(
@@ -75,7 +75,7 @@ public sealed class ExtratoConta
         Guid transferenciaId,
         string ibanDestino,
         Dinheiro valor,
-        Dinheiro saldoApos,
+        Saldo saldoApos,
         DateTimeOffset ocorridoEm) =>
         RegistrarLancamento(
             TipoLancamento.TransferenciaEnviada,
@@ -91,7 +91,7 @@ public sealed class ExtratoConta
         Guid transferenciaId,
         string ibanOrigem,
         Dinheiro valor,
-        Dinheiro saldoApos,
+        Saldo saldoApos,
         DateTimeOffset ocorridoEm) =>
         RegistrarLancamento(
             TipoLancamento.TransferenciaRecebida,
@@ -113,7 +113,7 @@ public sealed class ExtratoConta
         string? descricao,
         Dinheiro valor,
         Dinheiro tarifa,
-        Dinheiro saldoApos,
+        Saldo saldoApos,
         DateTimeOffset ocorridoEm,
         CambioDoLancamento? cambio = null) =>
         RegistrarLancamento(
@@ -136,7 +136,7 @@ public sealed class ExtratoConta
         string? descricao,
         Dinheiro valor,
         Dinheiro tarifa,
-        Dinheiro saldoApos,
+        Saldo saldoApos,
         CambioDoLancamento destino,
         DateTimeOffset ocorridoEm) =>
         RegistrarLancamento(
@@ -158,7 +158,7 @@ public sealed class ExtratoConta
         string nomeOrigem,
         string? descricao,
         Dinheiro valor,
-        Dinheiro saldoApos,
+        Saldo saldoApos,
         CambioDoLancamento origem,
         DateTimeOffset ocorridoEm) =>
         RegistrarLancamento(
@@ -172,6 +172,40 @@ public sealed class ExtratoConta
             tarifa: null,
             origem);
 
+    /// <summary>O banco externo devolveu a transferência: o valor voltou para a conta (a tarifa, não).</summary>
+    public ResultadoAplicacao RegistrarDevolucaoTransferenciaExterna(
+        int versao,
+        Guid transferenciaId,
+        string nomeBeneficiario,
+        Dinheiro valor,
+        Saldo saldoApos,
+        DateTimeOffset ocorridoEm) =>
+        RegistrarLancamento(
+            TipoLancamento.DevolucaoTransferenciaExterna,
+            versao,
+            valor,
+            saldoApos,
+            ocorridoEm,
+            $"Devolução da transferência para {nomeBeneficiario}",
+            transferenciaId);
+
+    /// <summary>Débito de reconciliação: o banco liquidou depois do estorno; o saldo pode ficar negativo.</summary>
+    public ResultadoAplicacao RegistrarDebitoReconciliacao(
+        int versao,
+        Guid transferenciaId,
+        string nomeBeneficiario,
+        Dinheiro valor,
+        Saldo saldoApos,
+        DateTimeOffset ocorridoEm) =>
+        RegistrarLancamento(
+            TipoLancamento.DebitoReconciliacao,
+            versao,
+            valor,
+            saldoApos,
+            ocorridoEm,
+            $"Reconciliação da transferência para {nomeBeneficiario}",
+            transferenciaId);
+
     private static string ComDescricao(string texto, string? descricao) =>
         string.IsNullOrWhiteSpace(descricao) ? texto : $"{texto}: {descricao}";
 
@@ -180,7 +214,7 @@ public sealed class ExtratoConta
         Guid transferenciaId,
         string nomeBeneficiario,
         Dinheiro valor,
-        Dinheiro saldoApos,
+        Saldo saldoApos,
         DateTimeOffset ocorridoEm) =>
         RegistrarLancamento(
             TipoLancamento.EstornoTransferencia,
@@ -195,7 +229,7 @@ public sealed class ExtratoConta
         TipoLancamento tipo,
         int versao,
         Dinheiro valor,
-        Dinheiro saldoApos,
+        Saldo saldoApos,
         DateTimeOffset ocorridoEm,
         string descricao,
         Guid? transferenciaId,

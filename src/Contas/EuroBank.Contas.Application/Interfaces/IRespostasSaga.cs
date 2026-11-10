@@ -17,4 +17,12 @@ public interface IRespostasSaga
     void CreditoRealizado(Guid transferenciaId, Guid contaId, Dinheiro valor);
 
     void CreditoRecusado(Guid transferenciaId, Guid contaId, string motivo);
+
+    void ReconciliacaoRealizada(Guid transferenciaId, Guid contaId, Dinheiro valorDebitado);
+
+    void ReconciliacaoRecusada(Guid transferenciaId, Guid contaId, string motivo);
+
+    void DevolucaoCreditada(Guid transferenciaId, Guid contaId, Dinheiro valor);
+
+    void DevolucaoRecusada(Guid transferenciaId, Guid contaId, string motivo);
 }

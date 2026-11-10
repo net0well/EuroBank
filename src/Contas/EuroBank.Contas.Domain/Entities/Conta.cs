@@ -28,9 +28,9 @@ public sealed class Conta : RaizDeAgregado<ContaId>
     public Moeda Moeda { get; private set; }
 
     /// <summary>Saldo na moeda da conta (persistido só como número; a moeda é a da conta).</summary>
-    public Dinheiro Saldo
+    public Saldo Saldo
     {
-        get => Dinheiro.De(_saldo, Moeda);
+        get => Saldo.De(_saldo, Moeda);
         private set => _saldo = value.Valor;
     }
 
@@ -63,7 +63,7 @@ public sealed class Conta : RaizDeAgregado<ContaId>
             Iban = iban,
             Titular = titular,
             Moeda = moeda,
-            Saldo = Dinheiro.ZeroEm(moeda),
+            Saldo = Saldo.ZeroEm(moeda),
             Status = StatusConta.Ativa,
             Versao = 1,
             AbertaEm = agora,
@@ -228,7 +228,8 @@ public sealed class Conta : RaizDeAgregado<ContaId>
         {
             case StatusTransferenciaDaConta.Estornada:
                 return ResultadoOperacao.JaProcessada;
-            case StatusTransferenciaDaConta.Liberada or StatusTransferenciaDaConta.Recebida:
+            case StatusTransferenciaDaConta.Liberada or StatusTransferenciaDaConta.Recebida
+                or StatusTransferenciaDaConta.Reconciliada or StatusTransferenciaDaConta.Devolvida:
                 throw new ExcecaoTransferenciaJaConcluida(transferenciaId);
         }
 
@@ -253,6 +254,60 @@ public sealed class Conta : RaizDeAgregado<ContaId>
         }
 
         transferencia.Liberar();
+        return ResultadoOperacao.Aplicada;
+    }
+
+    /// <summary>
+    /// Reconciliação de uma transferência que o banco liquidou depois do estorno: debita de novo valor e tarifa,
+    /// mesmo sem saldo. É o único caminho que deixa a conta negativa.
+    /// </summary>
+    public ResultadoOperacao DebitarReconciliacao(Guid transferenciaId, DateTimeOffset agora)
+    {
+        var transferencia = BuscarTransferencia(transferenciaId) ?? throw new ExcecaoTransferenciaDesconhecida(transferenciaId);
+        if (transferencia.Status == StatusTransferenciaDaConta.Reconciliada)
+        {
+            return ResultadoOperacao.JaProcessada;
+        }
+
+        if (transferencia.Status != StatusTransferenciaDaConta.Estornada)
+        {
+            throw new ExcecaoTransferenciaNaoEstornada(transferenciaId);
+        }
+
+        GarantirNaoEncerrada();
+
+        var total = transferencia.Valor + transferencia.Tarifa;
+        Saldo -= total;
+        Versao++;
+        transferencia.Reconciliar();
+        Registrar(new DebitoReconciliacao(Id, transferenciaId, transferencia.NomeBeneficiario, total, Saldo, Versao, agora));
+        return ResultadoOperacao.Aplicada;
+    }
+
+    /// <summary>
+    /// O banco externo devolveu uma transferência já concluída: credita o valor de volta, sem a tarifa (o serviço foi
+    /// prestado). Vale em conta bloqueada, como qualquer crédito.
+    /// </summary>
+    public ResultadoOperacao CreditarDevolucao(Guid transferenciaId, DateTimeOffset agora)
+    {
+        var transferencia = BuscarTransferencia(transferenciaId) ?? throw new ExcecaoTransferenciaDesconhecida(transferenciaId);
+        if (transferencia.Status == StatusTransferenciaDaConta.Devolvida)
+        {
+            return ResultadoOperacao.JaProcessada;
+        }
+
+        if (transferencia.Status is not (StatusTransferenciaDaConta.Liberada or StatusTransferenciaDaConta.Pendente))
+        {
+            throw new ExcecaoTransferenciaNaoConcluida(transferenciaId);
+        }
+
+        GarantirNaoEncerrada();
+
+        Saldo += transferencia.Valor;
+        Versao++;
+        transferencia.Devolver();
+        Registrar(new DevolucaoTransferenciaExterna(
+            Id, transferenciaId, transferencia.NomeBeneficiario, transferencia.Valor, Saldo, Versao, agora));
         return ResultadoOperacao.Aplicada;
     }
 
@@ -307,7 +362,13 @@ public sealed class Conta : RaizDeAgregado<ContaId>
             throw new ExcecaoContaBloqueada();
         }
 
-        if (valor > Saldo)
+        // Devendo (depois de uma reconciliação), a conta só recebe: saques e transferências ficam bloqueados.
+        if (Saldo.EhNegativo)
+        {
+            throw new ExcecaoSaldoNegativo(Saldo);
+        }
+
+        if (!Saldo.Cobre(valor))
         {
             throw new ExcecaoSaldoInsuficiente(Saldo, valor);
         }

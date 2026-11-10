@@ -12,6 +12,7 @@ public static class MotivoRecusaMapeador
         "conta_encerrada" => "ContaEncerrada",
         "valor_invalido" => "ValorInvalido",
         "moeda_diferente" => "MoedaDiferente",
+        "saldo_negativo" => "SaldoNegativo",
         _ => codigo,
     };
 }

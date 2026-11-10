@@ -26,7 +26,7 @@ public sealed class TransferenciaCambioRecebidaManipulador(
             evento.NomeOrigem,
             evento.Descricao,
             Dinheiro.De(evento.Valor, extrato.Moeda),
-            Dinheiro.De(evento.SaldoApos, extrato.Moeda),
+            Saldo.De(evento.SaldoApos, extrato.Moeda),
             new CambioDoLancamento(Moedas.Ler(evento.MoedaOrigem), evento.ValorOrigem, evento.Cotacao),
             evento.OcorridoEm);
 

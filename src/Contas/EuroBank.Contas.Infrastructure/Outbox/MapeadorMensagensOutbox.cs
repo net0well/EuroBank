@@ -87,6 +87,10 @@ public sealed class MapeadorMensagensOutbox : IMapeadorMensagensOutbox
             e.SaldoApos.ToString(),
             e.Versao,
             e.OcorridoEm)),
+        DebitoReconciliacao e => Criar(e, traceparent, new AjusteTransferenciaMensagem(
+            e.ContaId.Valor, e.TransferenciaId, e.NomeBeneficiario, e.Valor.ToString(), e.SaldoApos.ToString(), e.Versao, e.OcorridoEm)),
+        DevolucaoTransferenciaExterna e => Criar(e, traceparent, new AjusteTransferenciaMensagem(
+            e.ContaId.Valor, e.TransferenciaId, e.NomeBeneficiario, e.Valor.ToString(), e.SaldoApos.ToString(), e.Versao, e.OcorridoEm)),
         EstornoTransferencia e => Criar(e, traceparent, new EstornoTransferenciaMensagem(
             e.ContaId.Valor,
             e.TransferenciaId,

@@ -26,7 +26,7 @@ public sealed class Lancamento
     internal Lancamento(
         TipoLancamento tipo,
         Dinheiro valor,
-        Dinheiro saldoApos,
+        Saldo saldoApos,
         int versao,
         DateTimeOffset ocorridoEm,
         string descricao,
@@ -57,7 +57,7 @@ public sealed class Lancamento
 
     public Dinheiro Valor => Dinheiro.De(_valor, Moeda);
 
-    public Dinheiro SaldoApos => Dinheiro.De(_saldoApos, Moeda);
+    public Saldo SaldoApos => Saldo.De(_saldoApos, Moeda);
 
     /// <summary>Tarifa cobrada junto com o lançamento (só nas transferências das sagas).</summary>
     public Dinheiro? Tarifa => _tarifa is { } tarifa ? Dinheiro.De(tarifa, Moeda) : null;

@@ -13,4 +13,10 @@ public enum StatusTransferenciaDaConta
 
     /// <summary>Crédito recebido de uma saga de câmbio: só registra o id, para não creditar duas vezes.</summary>
     Recebida = 4,
+
+    /// <summary>Estornada e depois debitada de novo pela reconciliação (o banco liquidou mesmo assim).</summary>
+    Reconciliada = 5,
+
+    /// <summary>Concluída e depois devolvida pelo banco externo: o valor voltou para a conta.</summary>
+    Devolvida = 6,
 }

@@ -8,6 +8,6 @@ public sealed record TransferenciaRecebida(
     Guid TransferenciaId,
     Iban IbanOrigem,
     Dinheiro Valor,
-    Dinheiro SaldoApos,
+    Saldo SaldoApos,
     int Versao,
     DateTimeOffset OcorridoEm) : IEventoDeConta;

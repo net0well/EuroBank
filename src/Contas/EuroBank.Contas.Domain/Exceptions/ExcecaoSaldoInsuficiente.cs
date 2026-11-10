@@ -3,5 +3,5 @@ using EuroBank.Shared.ValueObjects;
 
 namespace EuroBank.Contas.Domain.Exceptions;
 
-public sealed class ExcecaoSaldoInsuficiente(Dinheiro saldo, Dinheiro valor)
+public sealed class ExcecaoSaldoInsuficiente(Saldo saldo, Dinheiro valor)
     : ExcecaoRegraNegocio("saldo_insuficiente", $"Saldo insuficiente: saldo {saldo} EUR, valor pedido {valor} EUR.");

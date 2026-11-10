@@ -12,7 +12,7 @@ public sealed record TransferenciaExternaEnviada(
     string? Descricao,
     Dinheiro Valor,
     Dinheiro Tarifa,
-    Dinheiro SaldoApos,
+    Saldo SaldoApos,
     int Versao,
     DateTimeOffset OcorridoEm,
     Conversao? Conversao = null) : IEventoDeConta;
