@@ -10,6 +10,8 @@ public sealed class RegrasLiquidacaoTestes
         {
             LatenciaMs = 1000,
             AtrasoFinal97Segundos = 45,
+            AtrasoFinal95Segundos = 300,
+            AtrasoDevolucaoSegundos = 10,
             TaxaRecusa = taxaRecusa,
             TaxaSilencio = taxaSilencio,
         }),
@@ -20,6 +22,8 @@ public sealed class RegrasLiquidacaoTestes
     [InlineData("DE89370400440532013098", ComportamentoLiquidacao.Silenciar, 0)]
     [InlineData("DE89370400440532013097", ComportamentoLiquidacao.Confirmar, 45)]
     [InlineData("DE89370400440532013096", ComportamentoLiquidacao.LiquidarSemResponder, 0)]
+    [InlineData("DE89370400440532013095", ComportamentoLiquidacao.ConfirmarDepoisDeNegar, 300)]
+    [InlineData("DE89370400440532013094", ComportamentoLiquidacao.ConfirmarEDevolver, 1)]
     [InlineData("DE89370400440532013000", ComportamentoLiquidacao.Confirmar, 1)]
     public void FinalDoIban_DefineOComportamento(string iban, ComportamentoLiquidacao esperado, int segundos)
     {

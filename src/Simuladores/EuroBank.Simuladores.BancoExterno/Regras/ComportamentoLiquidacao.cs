@@ -13,4 +13,10 @@ public enum ComportamentoLiquidacao
 
     /// <summary>Liquida, mas a resposta se perde; a consulta diz Liquidada (final 96).</summary>
     LiquidarSemResponder = 4,
+
+    /// <summary>Não responde; a consulta diz NaoLiquidada, mas a confirmação chega bem depois (final 95).</summary>
+    ConfirmarDepoisDeNegar = 5,
+
+    /// <summary>Confirma e, um tempo depois, devolve o dinheiro (final 94).</summary>
+    ConfirmarEDevolver = 6,
 }

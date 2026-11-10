@@ -70,11 +70,12 @@ public sealed class ProcessadorComandos(
         var status = decisao.Comportamento switch
         {
             ComportamentoLiquidacao.Recusar => Recusada,
-            ComportamentoLiquidacao.Silenciar => NaoLiquidada,
+            // O final 95 nega na consulta, mas confirma depois: é o que leva a saga a Divergente.
+            ComportamentoLiquidacao.Silenciar or ComportamentoLiquidacao.ConfirmarDepoisDeNegar => NaoLiquidada,
             _ => Liquidada,
         };
 
-        await sessao.RegistrarLiquidacaoAsync(
+        var primeiraVez = await sessao.RegistrarLiquidacaoAsync(
             comando.TransferenciaId, comando.IbanDestino, comando.Valor, comando.Moeda, status, silenciosa, agora, cancellationToken);
 
         logger.LogInformation("Transferência {TransferenciaId} para {Iban}: {Comportamento}",
@@ -88,6 +89,26 @@ public sealed class ProcessadorComandos(
                 break;
             case ComportamentoLiquidacao.Recusar:
                 await AgendarAsync(sessao, new LiquidacaoRecusada(comando.TransferenciaId, "Conta de destino inexistente ou bloqueada"), traceparent, responderEm, cancellationToken);
+                break;
+            case ComportamentoLiquidacao.ConfirmarDepoisDeNegar when primeiraVez:
+                // Uma confirmação só, bem depois do prazo da saga (os reenvios não agendam outra).
+                await AgendarAsync(sessao, new LiquidacaoConfirmada(comando.TransferenciaId, responderEm), traceparent, responderEm, cancellationToken);
+                break;
+            case ComportamentoLiquidacao.ConfirmarDepoisDeNegar:
+                break;
+            case ComportamentoLiquidacao.ConfirmarEDevolver:
+                await AgendarAsync(sessao, new LiquidacaoConfirmada(comando.TransferenciaId, responderEm), traceparent, responderEm, cancellationToken);
+                if (primeiraVez)
+                {
+                    var devolverEm = responderEm + decisao.AtrasoDevolucao!.Value;
+                    await AgendarAsync(
+                        sessao,
+                        new TransferenciaDevolvida(comando.TransferenciaId, comando.Valor, comando.Moeda, "Conta do beneficiário encerrada"),
+                        traceparent,
+                        devolverEm,
+                        cancellationToken);
+                }
+
                 break;
             case ComportamentoLiquidacao.Silenciar:
             case ComportamentoLiquidacao.LiquidarSemResponder:
