@@ -20,12 +20,14 @@ public sealed class TransferirManipulador(
     /// <returns>A conta de origem depois da transferência.</returns>
     public async Task<ContaDto> Handle(Transferir comando, CancellationToken cancellationToken)
     {
-        var valor = Dinheiro.De(comando.Valor);
         var ibanDestino = Iban.Criar(comando.IbanDestino);
 
         var origem = await repositorio.ObterOuFalharAsync(comando.ContaOrigemId, cancellationToken);
         var destino = await repositorio.ObterPorIbanAsync(ibanDestino, cancellationToken)
             ?? throw new ExcecaoIbanNaoEncontrado(ibanDestino);
+
+        // O valor é na moeda da conta de origem; entre moedas diferentes o serviço recusa (vai para o câmbio).
+        var valor = Dinheiro.De(comando.Valor, origem.Moeda);
 
         servicoTransferencia.Transferir(origem, destino, valor, relogio.GetUtcNow());
 

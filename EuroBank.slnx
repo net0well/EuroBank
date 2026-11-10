@@ -21,6 +21,7 @@
   </Folder>
   <Folder Name="/src/Simuladores/">
     <Project Path="src/Simuladores/EuroBank.Simuladores.BancoExterno/EuroBank.Simuladores.BancoExterno.csproj" />
+    <Project Path="src/Simuladores/EuroBank.Simuladores.Cambio/EuroBank.Simuladores.Cambio.csproj" />
     <Project Path="src/Simuladores/EuroBank.Simuladores.Comum/EuroBank.Simuladores.Comum.csproj" />
   </Folder>
   <Folder Name="/src/Transferencias/">

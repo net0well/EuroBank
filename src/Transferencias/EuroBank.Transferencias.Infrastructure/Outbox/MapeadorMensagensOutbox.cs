@@ -1,7 +1,7 @@
 using System.Text.Json;
 using EuroBank.Shared.Domain;
 using EuroBank.Shared.Persistence.Outbox;
-using EuroBank.Shared.ValueObjects;
+using EuroBank.Transferencias.Domain.Enums;
 using EuroBank.Transferencias.Domain.Events;
 using EuroBank.Transferencias.Infrastructure.Outbox.TransferObjects;
 
@@ -16,18 +16,72 @@ public sealed class MapeadorMensagensOutbox : IMapeadorMensagensOutbox
 {
     public const string ComandosContas = "contas.comandos";
     public const string ComandosBancoExterno = "banco-externo.comandos";
+    public const string ComandosCambio = "cambio.comandos";
     public const string EventosTransferencias = "transferencias.eventos";
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     public MensagemOutbox Mapear(IEventoDominio evento, string? traceparent) => evento switch
     {
+        CotacaoSolicitada e => Criar(
+            ComandosCambio,
+            e.TransferenciaId.ToString(),
+            "CotarCambio",
+            new CotarCambioMensagem(
+                e.TransferenciaId.Valor, e.MoedaOrigem.ToString(), e.MoedaDestino.ToString(), e.Valor.Valor, e.Valor.Moeda.ToString()),
+            e,
+            traceparent),
+        DebitoSolicitado { Tipo: TipoTransferencia.CambioInterno } e => Criar(
+            ComandosContas,
+            e.ContaOrigemId.ToString(),
+            "DebitarTransferenciaCambio",
+            new DebitarTransferenciaCambioMensagem(
+                e.TransferenciaId.Valor,
+                e.ContaOrigemId,
+                e.Valor.Valor,
+                e.Tarifa.Valor,
+                e.Valor.Moeda.ToString(),
+                e.IbanDestino,
+                e.NomeBeneficiario,
+                e.Descricao,
+                e.ValorDestino.Moeda.ToString(),
+                e.ValorDestino.Valor,
+                e.Taxa!.Value),
+            e,
+            traceparent),
         DebitoSolicitado e => Criar(
             ComandosContas,
             e.ContaOrigemId.ToString(),
             "DebitarTransferenciaExterna",
             new DebitarTransferenciaExternaMensagem(
-                e.TransferenciaId.Valor, e.ContaOrigemId, e.Valor.Valor, e.Tarifa.Valor, e.IbanDestino, e.NomeBeneficiario, e.Descricao),
+                e.TransferenciaId.Valor,
+                e.ContaOrigemId,
+                e.Valor.Valor,
+                e.Tarifa.Valor,
+                e.IbanDestino,
+                e.NomeBeneficiario,
+                e.Descricao,
+                e.Valor.Moeda.ToString(),
+                e.Taxa is null ? null : e.ValorDestino.Moeda.ToString(),
+                e.Taxa is null ? null : e.ValorDestino.Valor,
+                e.Taxa),
+            e,
+            traceparent),
+        CreditoSolicitado e => Criar(
+            ComandosContas,
+            e.ContaDestinoId.ToString(),
+            "CreditarTransferenciaCambio",
+            new CreditarTransferenciaCambioMensagem(
+                e.TransferenciaId.Valor,
+                e.ContaDestinoId,
+                e.Valor.Valor,
+                e.Valor.Moeda.ToString(),
+                e.IbanOrigem,
+                e.NomeOrigem,
+                e.Descricao,
+                e.ValorOrigem.Moeda.ToString(),
+                e.ValorOrigem.Valor,
+                e.Taxa),
             e,
             traceparent),
         EstornoSolicitado e => Criar(
@@ -49,7 +103,7 @@ public sealed class MapeadorMensagensOutbox : IMapeadorMensagensOutbox
             e.TransferenciaId.ToString(),
             "LiquidarTransferencia",
             new LiquidarTransferenciaMensagem(
-                e.TransferenciaId.Valor, e.IbanDestino, e.Bic, e.NomeBeneficiario, e.Valor.Valor, Dinheiro.Moeda),
+                e.TransferenciaId.Valor, e.IbanDestino, e.Bic, e.NomeBeneficiario, e.Valor.Valor, e.Valor.Moeda.ToString()),
             e,
             traceparent),
         ConsultaLiquidacaoSolicitada e => Criar(
@@ -64,7 +118,7 @@ public sealed class MapeadorMensagensOutbox : IMapeadorMensagensOutbox
             e.TransferenciaId.ToString(),
             nameof(TransferenciaConcluida),
             new TransferenciaConcluidaMensagem(
-                e.TransferenciaId.Valor, e.ContaOrigemId, e.Valor.ToString(), e.Tarifa.ToString(), e.OcorridoEm),
+                e.TransferenciaId.Valor, e.ContaOrigemId, e.Valor.ToString(), e.Tarifa.ToString(), e.Valor.Moeda.ToString(), e.OcorridoEm),
             e,
             traceparent),
         TransferenciaCancelada e => Criar(

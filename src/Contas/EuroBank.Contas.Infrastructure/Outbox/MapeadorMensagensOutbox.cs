@@ -1,5 +1,7 @@
+using System.Globalization;
 using System.Text.Json;
 using EuroBank.Contas.Domain.Events;
+using EuroBank.Contas.Domain.ValueObjects;
 using EuroBank.Contas.Infrastructure.Outbox.TransferObjects;
 using EuroBank.Shared.Domain;
 using EuroBank.Shared.Persistence.Outbox;
@@ -20,7 +22,7 @@ public sealed class MapeadorMensagensOutbox : IMapeadorMensagensOutbox
     public MensagemOutbox Mapear(IEventoDominio evento, string? traceparent) => evento switch
     {
         ContaAberta e => Criar(e, traceparent, new ContaAbertaMensagem(
-            e.ContaId.Valor, e.Iban.Valor, e.Titular.Nome, e.Versao, e.OcorridoEm)),
+            e.ContaId.Valor, e.Iban.Valor, e.Titular.Nome, e.Moeda.ToString(), e.Versao, e.OcorridoEm)),
         DepositoRealizado e => Criar(e, traceparent, new MovimentacaoMensagem(
             e.ContaId.Valor, e.Valor.ToString(), e.SaldoApos.ToString(), e.Versao, e.OcorridoEm)),
         SaqueRealizado e => Criar(e, traceparent, new MovimentacaoMensagem(
@@ -54,6 +56,36 @@ public sealed class MapeadorMensagensOutbox : IMapeadorMensagensOutbox
             e.Tarifa.ToString(),
             e.SaldoApos.ToString(),
             e.Versao,
+            e.OcorridoEm,
+            e.Conversao?.Contraparte.Moeda.ToString(),
+            e.Conversao?.Contraparte.ToString(),
+            Taxa(e.Conversao))),
+        TransferenciaCambioEnviada e => Criar(e, traceparent, new TransferenciaCambioEnviadaMensagem(
+            e.ContaId.Valor,
+            e.TransferenciaId,
+            e.IbanDestino,
+            e.NomeDestino,
+            e.Descricao,
+            e.Valor.ToString(),
+            e.Tarifa.ToString(),
+            e.Conversao.Contraparte.Moeda.ToString(),
+            e.Conversao.Contraparte.ToString(),
+            Taxa(e.Conversao)!,
+            e.SaldoApos.ToString(),
+            e.Versao,
+            e.OcorridoEm)),
+        TransferenciaCambioRecebida e => Criar(e, traceparent, new TransferenciaCambioRecebidaMensagem(
+            e.ContaId.Valor,
+            e.TransferenciaId,
+            e.IbanOrigem,
+            e.NomeOrigem,
+            e.Descricao,
+            e.Valor.ToString(),
+            e.Conversao.Contraparte.Moeda.ToString(),
+            e.Conversao.Contraparte.ToString(),
+            Taxa(e.Conversao)!,
+            e.SaldoApos.ToString(),
+            e.Versao,
             e.OcorridoEm)),
         EstornoTransferencia e => Criar(e, traceparent, new EstornoTransferenciaMensagem(
             e.ContaId.Valor,
@@ -65,6 +97,10 @@ public sealed class MapeadorMensagensOutbox : IMapeadorMensagensOutbox
             e.OcorridoEm)),
         _ => throw new InvalidOperationException($"O evento {evento.GetType().Name} não tem mapeamento para a outbox."),
     };
+
+    /// <summary>A taxa vai como texto, como os valores, para não perder casas decimais no caminho.</summary>
+    private static string? Taxa(Conversao? conversao) =>
+        conversao?.Taxa.ToString(CultureInfo.InvariantCulture);
 
     private static MensagemOutbox Criar<TPayload>(IEventoDeConta evento, string? traceparent, TPayload payload) =>
         new(

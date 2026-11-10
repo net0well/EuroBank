@@ -12,17 +12,21 @@ public sealed class CenarioSaga(LaboratorioFixture lab)
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    public async Task<Guid> AbrirContaAsync(decimal saldo)
+    public async Task<Guid> AbrirContaAsync(decimal saldo) => (await AbrirContaEmAsync("EUR", saldo)).Id;
+
+    /// <summary>Abre uma conta na moeda pedida e devolve o id e o IBAN dela.</summary>
+    public async Task<(Guid Id, string Iban)> AbrirContaEmAsync(string moeda, decimal saldo = 0m)
     {
-        var resposta = await lab.Contas.PostAsJsonAsync("/contas", new { titular = "Saga E2E" }, Ct);
+        var resposta = await lab.Contas.PostAsJsonAsync("/contas", new { titular = $"Saga E2E {moeda}", moeda }, Ct);
         resposta.EnsureSuccessStatusCode();
-        var id = (await resposta.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("id").GetGuid();
+        var conta = await resposta.Content.ReadFromJsonAsync<JsonElement>(Ct);
+        var id = conta.GetProperty("id").GetGuid();
         if (saldo > 0)
         {
             (await lab.Contas.PostAsJsonAsync($"/contas/{id}/depositos", new { valor = saldo }, Ct)).EnsureSuccessStatusCode();
         }
 
-        return id;
+        return (id, conta.GetProperty("iban").GetString()!);
     }
 
     public async Task<decimal> SaldoAsync(Guid contaId) =>
@@ -36,11 +40,12 @@ public sealed class CenarioSaga(LaboratorioFixture lab)
         string finalIban,
         decimal valor,
         DateTimeOffset? executarEm = null,
-        string? idempotencyKey = null)
-    {
-        var requisicao = new HttpRequestMessage(HttpMethod.Post, "/transferencias-externas")
-        {
-            Content = JsonContent.Create(new
+        string? idempotencyKey = null,
+        string? moedaDestino = null,
+        string? moedaDoValor = null) =>
+        EnviarAsync(
+            "/transferencias-externas",
+            new
             {
                 contaOrigemId = contaId,
                 ibanDestino = Iban(finalIban),
@@ -48,18 +53,62 @@ public sealed class CenarioSaga(LaboratorioFixture lab)
                 nomeBeneficiario = $"Beneficiário {finalIban}",
                 valor,
                 executarEm,
-            }),
-        };
-        requisicao.Headers.Add("Idempotency-Key", idempotencyKey ?? Guid.CreateVersion7().ToString());
-        return lab.Transferencias.SendAsync(requisicao, Ct);
-    }
+                moedaDestino,
+                moedaDoValor,
+            },
+            idempotencyKey ?? Guid.CreateVersion7().ToString());
 
     public async Task<TransferenciaE2E> SolicitarComSucessoAsync(
         Guid contaId,
         string finalIban,
         decimal valor,
-        DateTimeOffset? executarEm = null) =>
-        await LerAsync(await SolicitarAsync(contaId, finalIban, valor, executarEm), HttpStatusCode.Accepted);
+        DateTimeOffset? executarEm = null,
+        string? moedaDestino = null,
+        string? moedaDoValor = null) =>
+        await LerAsync(
+            await SolicitarAsync(contaId, finalIban, valor, executarEm, moedaDestino: moedaDestino, moedaDoValor: moedaDoValor),
+            HttpStatusCode.Accepted);
+
+    public async Task<TransferenciaE2E> SolicitarCambioComSucessoAsync(Guid contaId, string ibanDestino, decimal valor, string? moedaDoValor) =>
+        await LerAsync(
+            await EnviarAsync(
+                "/transferencias-cambio",
+                new { contaOrigemId = contaId, ibanDestino, valor, moedaDoValor },
+                Guid.CreateVersion7().ToString()),
+            HttpStatusCode.Accepted);
+
+    /// <summary>
+    /// Envia o pedido; se Transferencias ainda não conhece a conta (o ContaAberta ainda está a caminho da projeção),
+    /// espera e repete com a mesma Idempotency-Key, como um cliente faria.
+    /// </summary>
+    private async Task<HttpResponseMessage> EnviarAsync(string rota, object corpo, string idempotencyKey)
+    {
+        var fim = DateTime.UtcNow.AddSeconds(30);
+        while (true)
+        {
+            var requisicao = new HttpRequestMessage(HttpMethod.Post, rota) { Content = JsonContent.Create(corpo) };
+            requisicao.Headers.Add("Idempotency-Key", idempotencyKey);
+            var resposta = await lab.Transferencias.SendAsync(requisicao, Ct);
+            if (DateTime.UtcNow > fim || !await ContaAindaNaoProjetadaAsync(resposta))
+            {
+                return resposta;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(300), Ct);
+        }
+    }
+
+    private static async Task<bool> ContaAindaNaoProjetadaAsync(HttpResponseMessage resposta)
+    {
+        if (resposta.StatusCode != HttpStatusCode.UnprocessableEntity)
+        {
+            return false;
+        }
+
+        var corpo = await resposta.Content.ReadAsStringAsync(Ct);
+        return corpo.Contains("conta_origem_desconhecida", StringComparison.Ordinal)
+            || corpo.Contains("conta_destino_desconhecida", StringComparison.Ordinal);
+    }
 
     public Task<HttpResponseMessage> CancelarAsync(Guid id) =>
         lab.Transferencias.PostAsync($"/transferencias/{id}/cancelamento", content: null, Ct);
@@ -117,10 +166,16 @@ public sealed record TransferenciaE2E(
     bool CancelamentoSolicitado,
     decimal Valor,
     decimal Tarifa,
+    decimal? ValorDebitado,
+    decimal? ValorDestino,
+    string MoedaDestino,
+    CotacaoE2E? Cotacao,
     IReadOnlyList<PassoE2E> Historico)
 {
     public bool PassouPor(string trecho) =>
         Historico.Any(passo => passo.Descricao.Contains(trecho, StringComparison.Ordinal));
 }
+
+public sealed record CotacaoE2E(Guid Id, decimal Taxa, DateTimeOffset ValidaAte);
 
 public sealed record PassoE2E(int Ordem, string EstadoApos, string Descricao);

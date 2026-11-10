@@ -20,5 +20,7 @@ public static class TiposEventosContas
         ["ContaEncerrada"] = typeof(EventoContaEncerrada),
         ["TransferenciaExternaEnviada"] = typeof(EventoTransferenciaExternaEnviada),
         ["EstornoTransferencia"] = typeof(EventoEstornoTransferencia),
+        ["TransferenciaCambioEnviada"] = typeof(EventoTransferenciaCambioEnviada),
+        ["TransferenciaCambioRecebida"] = typeof(EventoTransferenciaCambioRecebida),
     };
 }

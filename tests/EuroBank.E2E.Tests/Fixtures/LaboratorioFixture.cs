@@ -10,6 +10,7 @@ using EuroBank.Contas.Api;
 using EuroBank.Contas.Worker;
 using EuroBank.Extrato.Worker;
 using EuroBank.Simuladores.BancoExterno;
+using EuroBank.Simuladores.Cambio;
 using EuroBank.Transferencias.Api;
 using EuroBank.Transferencias.Worker;
 using Microsoft.AspNetCore.Hosting;
@@ -41,6 +42,8 @@ public sealed class LaboratorioFixture : IAsyncLifetime
         "eurobank.banco-externo.comandos",
         "eurobank.banco-externo.respostas",
         "eurobank.transferencias.eventos",
+        "eurobank.cambio.comandos",
+        "eurobank.cambio.respostas",
     ];
 
     /// <summary>
@@ -49,9 +52,11 @@ public sealed class LaboratorioFixture : IAsyncLifetime
     /// </summary>
     private static readonly Dictionary<string, string> ConfiguracaoSaga = new()
     {
+        ["Saga:PrazoCotacao"] = "00:00:05",
         ["Saga:PrazoDebito"] = "00:00:05",
         ["Saga:PrazoLiquidacao"] = "00:00:03",
         ["Saga:PrazoConsulta"] = "00:00:02",
+        ["Saga:PrazoCredito"] = "00:00:05",
         ["Saga:PrazoEstorno"] = "00:00:05",
         ["Saga:ReenviosPorPasso"] = "3",
         ["Varredura:Intervalo"] = "00:00:00.500",
@@ -127,6 +132,9 @@ public sealed class LaboratorioFixture : IAsyncLifetime
     public string ConnectionStringBancoExterno =>
         new NpgsqlConnectionStringBuilder(_postgres.GetConnectionString()) { Database = "eurobank_banco_externo" }.ConnectionString;
 
+    public string ConnectionStringCambio =>
+        new NpgsqlConnectionStringBuilder(_postgres.GetConnectionString()) { Database = "eurobank_cambio" }.ConnectionString;
+
     public string ConnectionStringContas => _postgres.GetConnectionString();
 
     public string ConnectionStringExtrato =>
@@ -199,6 +207,14 @@ public sealed class LaboratorioFixture : IAsyncLifetime
             ["BancoExterno:LatenciaMs"] = "200",
             ["BancoExterno:AtrasoFinal97Segundos"] = "5",
         });
+
+        Subir(new WebApplicationFactory<MarcadorCambio>(), new()
+        {
+            ["ConnectionStrings:Cambio"] = ConnectionStringCambio,
+            ["Kafka:BootstrapServers"] = BootstrapKafka,
+            ["Kafka:GrupoConsumidor"] = $"eurobank-cambio-e2e-{Guid.NewGuid():N}",
+            ["Cambio:LatenciaMs"] = "200",
+        });
     }
 
     /// <summary>Sobe uma aplicação in-process (Development, sem OTLP) e já cria o host, para ela começar a consumir.</summary>
@@ -234,7 +250,7 @@ public sealed class LaboratorioFixture : IAsyncLifetime
     {
         await using var conexao = new NpgsqlConnection(ConnectionStringContas);
         await conexao.OpenAsync();
-        foreach (var banco in new[] { "eurobank_extrato", "eurobank_transferencias", "eurobank_banco_externo" })
+        foreach (var banco in new[] { "eurobank_extrato", "eurobank_transferencias", "eurobank_banco_externo", "eurobank_cambio" })
         {
             await using var comando = new NpgsqlCommand($"CREATE DATABASE {banco}", conexao);
             await comando.ExecuteNonQueryAsync();

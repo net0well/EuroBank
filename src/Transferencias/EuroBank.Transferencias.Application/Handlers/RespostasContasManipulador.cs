@@ -5,7 +5,7 @@ using EuroBank.Transferencias.Domain.ValueObjects;
 
 namespace EuroBank.Transferencias.Application.Handlers;
 
-/// <summary>Respostas de Contas aos comandos da saga (débito e estorno).</summary>
+/// <summary>Respostas de Contas aos comandos da saga (débito, crédito e estorno).</summary>
 public sealed class RespostasContasManipulador(AplicadorRespostas aplicador, PoliticaSaga politica)
 {
     public Task Handle(DebitoRealizado resposta, CancellationToken cancellationToken) =>
@@ -27,6 +27,20 @@ public sealed class RespostasContasManipulador(AplicadorRespostas aplicador, Pol
             resposta.TransferenciaId,
             nameof(EstornoRealizado),
             (transferencia, agora) => transferencia.RegistrarEstornoRealizado(agora),
+            cancellationToken);
+
+    public Task Handle(CreditoRealizado resposta, CancellationToken cancellationToken) =>
+        aplicador.AplicarAsync(
+            resposta.TransferenciaId,
+            nameof(CreditoRealizado),
+            (transferencia, agora) => transferencia.RegistrarCreditoRealizado(agora),
+            cancellationToken);
+
+    public Task Handle(CreditoRecusado resposta, CancellationToken cancellationToken) =>
+        aplicador.AplicarAsync(
+            resposta.TransferenciaId,
+            nameof(CreditoRecusado),
+            (transferencia, agora) => transferencia.RegistrarCreditoRecusado(MotivoDe(resposta.Motivo), politica, agora),
             cancellationToken);
 
     /// <summary>Os motivos de Contas têm o mesmo nome dos da saga; um motivo novo não trava a saga.</summary>

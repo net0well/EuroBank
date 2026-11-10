@@ -28,4 +28,10 @@ public enum EstadoTransferencia
 
     /// <summary>Terminou sem chegar a debitar (limite, saldo, conta bloqueada...).</summary>
     Recusada = 9,
+
+    /// <summary>Moedas diferentes: cotação pedida ao câmbio, antes do débito.</summary>
+    Cotando = 10,
+
+    /// <summary>Câmbio interno: crédito pedido a Contas na conta de destino.</summary>
+    AguardandoCredito = 11,
 }

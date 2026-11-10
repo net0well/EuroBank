@@ -25,6 +25,13 @@ public sealed class RespostasSagaOutbox(IFilaOutbox fila, TimeProvider relogio) 
     public void DebitoRecusado(Guid transferenciaId, Guid contaId, string motivo) =>
         Enfileirar(transferenciaId, "DebitoRecusado", new DebitoRecusadoMensagem(transferenciaId, contaId, motivo));
 
+    public void CreditoRealizado(Guid transferenciaId, Guid contaId, Dinheiro valor) =>
+        Enfileirar(transferenciaId, "CreditoRealizado",
+            new CreditoRealizadoMensagem(transferenciaId, contaId, valor.ToString(), valor.Moeda.ToString()));
+
+    public void CreditoRecusado(Guid transferenciaId, Guid contaId, string motivo) =>
+        Enfileirar(transferenciaId, "CreditoRecusado", new CreditoRecusadoMensagem(transferenciaId, contaId, motivo));
+
     public void EstornoRealizado(Guid transferenciaId, Guid contaId, Dinheiro valorDevolvido) =>
         Enfileirar(transferenciaId, "EstornoRealizado",
             new EstornoRealizadoMensagem(transferenciaId, contaId, valorDevolvido.ToString()));

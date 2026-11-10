@@ -34,7 +34,13 @@ builder.Services.AddSingleton(servicos => new RegrasLiquidacao(
 builder.Services.AddSingleton<ProcessadorComandos>();
 builder.Services.AddSingleton<PublicadorKafka>();
 builder.Services.AddHostedService<ConsumidorComandosBanco>();
-builder.Services.AddHostedService<EntregadorRespostas>();
+builder.Services.AddHostedService(servicos => new EntregadorRespostas(
+    servicos.GetRequiredService<RepositorioBancoExterno>(),
+    servicos.GetRequiredService<PublicadorKafka>(),
+    servicos.GetRequiredService<TimeProvider>(),
+    Telemetria.Fonte,
+    Topicos.Respostas,
+    servicos.GetRequiredService<ILogger<EntregadorRespostas>>()));
 builder.Services.AddHealthChecks();
 
 var app = builder.Build();

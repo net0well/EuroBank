@@ -1,5 +1,7 @@
 using EuroBank.Extrato.Application.Interfaces;
 using EuroBank.Extrato.Application.TransferObjects;
+using EuroBank.Extrato.Domain.Entities;
+using EuroBank.Extrato.Domain.Enums;
 using EuroBank.Shared.ValueObjects;
 using Microsoft.EntityFrameworkCore;
 
@@ -34,19 +36,31 @@ public sealed class ConsultaExtratos(ExtratoDbContext contexto) : IConsultaExtra
             extrato.Titular,
             extrato.Status.ToString(),
             extrato.SaldoAtual.Valor,
-            Dinheiro.Moeda,
+            extrato.Moeda.ToString(),
             extrato.UltimaVersao,
             paginacao.Pagina,
             paginacao.Tamanho,
             total,
-            pagina.Select(lancamento => new LancamentoDto(
-                    lancamento.Tipo.ToString(),
-                    lancamento.Valor.Valor,
-                    lancamento.Tarifa?.Valor,
-                    lancamento.SaldoApos.Valor,
-                    lancamento.Versao,
-                    lancamento.OcorridoEm,
-                    lancamento.Descricao))
-                .ToList());
+            pagina.Select(ParaDto).ToList());
+    }
+
+    /// <summary>No envio, o outro lado do câmbio é o destino; no recebimento, a origem.</summary>
+    private static LancamentoDto ParaDto(Lancamento lancamento)
+    {
+        var recebimento = lancamento.Tipo == TipoLancamento.TransferenciaCambioRecebida;
+        var cambio = lancamento.Cambio;
+        return new LancamentoDto(
+            lancamento.Tipo.ToString(),
+            lancamento.Valor.Valor,
+            lancamento.Tarifa?.Valor,
+            lancamento.SaldoApos.Valor,
+            lancamento.Versao,
+            lancamento.OcorridoEm,
+            lancamento.Descricao,
+            MoedaDestino: recebimento ? null : cambio?.Moeda.ToString(),
+            ValorDestino: recebimento ? null : cambio?.Valor,
+            MoedaOrigem: recebimento ? cambio?.Moeda.ToString() : null,
+            ValorOrigem: recebimento ? cambio?.Valor : null,
+            Cotacao: cambio?.Cotacao);
     }
 }

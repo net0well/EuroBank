@@ -13,6 +13,7 @@ public static class DependencyInjection
     public static IServiceCollection AdicionarAplicacaoContas(this IServiceCollection services)
     {
         services.AddSingleton<ServicoTransferencia>();
+        services.AddScoped<PassoDaSaga>();
         services.AddScoped<SemeadorContas>();
         return services;
     }

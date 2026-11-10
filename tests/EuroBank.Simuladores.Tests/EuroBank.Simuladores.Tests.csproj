@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Simuladores\EuroBank.Simuladores.BancoExterno\EuroBank.Simuladores.BancoExterno.csproj" />
+    <ProjectReference Include="..\..\src\Simuladores\EuroBank.Simuladores.Cambio\EuroBank.Simuladores.Cambio.csproj" />
   </ItemGroup>
 
   <ItemGroup>

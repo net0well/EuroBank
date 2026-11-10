@@ -8,4 +8,6 @@ public enum TipoLancamento
     TransferenciaRecebida = 4,
     TransferenciaExternaEnviada = 5,
     EstornoTransferencia = 6,
+    TransferenciaCambioEnviada = 7,
+    TransferenciaCambioRecebida = 8,
 }

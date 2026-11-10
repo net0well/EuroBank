@@ -11,22 +11,31 @@ public sealed record PoliticaSaga
 {
     public static PoliticaSaga Padrao { get; } = new();
 
+    public TimeSpan PrazoCotacao { get; init; } = TimeSpan.FromSeconds(30);
+
     public TimeSpan PrazoDebito { get; init; } = TimeSpan.FromSeconds(30);
 
     public TimeSpan PrazoLiquidacao { get; init; } = TimeSpan.FromSeconds(30);
 
     public TimeSpan PrazoConsulta { get; init; } = TimeSpan.FromSeconds(15);
 
+    public TimeSpan PrazoCredito { get; init; } = TimeSpan.FromSeconds(30);
+
     public TimeSpan PrazoEstorno { get; init; } = TimeSpan.FromSeconds(30);
 
-    /// <summary>Reenvios depois do envio original. O estorno não tem limite: a compensação precisa acontecer.</summary>
+    /// <summary>
+    /// Reenvios depois do envio original. Crédito e estorno não têm limite: desistir deles deixaria dinheiro
+    /// em dois lugares ou em nenhum.
+    /// </summary>
     public int ReenviosPorPasso { get; init; } = 3;
 
     public TimeSpan PrazoDe(EstadoTransferencia estado) => estado switch
     {
+        EstadoTransferencia.Cotando => PrazoCotacao,
         EstadoTransferencia.AguardandoDebito => PrazoDebito,
         EstadoTransferencia.AguardandoLiquidacao => PrazoLiquidacao,
         EstadoTransferencia.ConsultandoLiquidacao => PrazoConsulta,
+        EstadoTransferencia.AguardandoCredito => PrazoCredito,
         EstadoTransferencia.AguardandoEstorno => PrazoEstorno,
         _ => throw new UnreachableException($"O estado {estado} não espera resposta."),
     };

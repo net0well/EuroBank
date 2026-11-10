@@ -38,10 +38,11 @@ namespace EuroBank.Extrato.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(34)")
                         .HasColumnName("iban");
 
-                    b.Property<decimal>("SaldoAtual")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("saldo_atual");
+                    b.Property<string>("Moeda")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasColumnName("moeda");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -59,6 +60,11 @@ namespace EuroBank.Extrato.Infrastructure.Persistence.Migrations
                         .IsConcurrencyToken()
                         .HasColumnType("integer")
                         .HasColumnName("ultima_versao");
+
+                    b.Property<decimal>("_saldoAtual")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("saldo_atual");
 
                     b.HasKey("ContaId");
 
@@ -81,19 +87,15 @@ namespace EuroBank.Extrato.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("descricao");
 
+                    b.Property<string>("Moeda")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasColumnName("moeda");
+
                     b.Property<DateTimeOffset>("OcorridoEm")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("ocorrido_em");
-
-                    b.Property<decimal>("SaldoApos")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("saldo_apos");
-
-                    b.Property<decimal?>("Tarifa")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("tarifa");
 
                     b.Property<string>("Tipo")
                         .IsRequired()
@@ -105,14 +107,39 @@ namespace EuroBank.Extrato.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("transferencia_id");
 
-                    b.Property<decimal>("Valor")
+                    b.Property<int>("Versao")
+                        .HasColumnType("integer")
+                        .HasColumnName("versao");
+
+                    b.Property<decimal?>("_cotacao")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("cotacao");
+
+                    b.Property<string>("_moedaCambio")
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasColumnName("moeda_cambio");
+
+                    b.Property<decimal>("_saldoApos")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("saldo_apos");
+
+                    b.Property<decimal?>("_tarifa")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("tarifa");
+
+                    b.Property<decimal>("_valor")
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)")
                         .HasColumnName("valor");
 
-                    b.Property<int>("Versao")
-                        .HasColumnType("integer")
-                        .HasColumnName("versao");
+                    b.Property<decimal?>("_valorCambio")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("valor_cambio");
 
                     b.HasKey("Id");
 

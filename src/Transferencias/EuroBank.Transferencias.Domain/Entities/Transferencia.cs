@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using EuroBank.Shared.Domain;
+using EuroBank.Shared.Enums;
 using EuroBank.Shared.Exceptions;
 using EuroBank.Shared.ValueObjects;
 using EuroBank.Transferencias.Domain.Enums;
@@ -11,17 +12,27 @@ using EuroBank.Transferencias.Domain.ValueObjects;
 namespace EuroBank.Transferencias.Domain.Entities;
 
 /// <summary>
-/// Orquestrador da saga de transferência externa, como agregado. Guarda em que passo a saga está, decide o
-/// próximo comando a cada resposta ou prazo vencido e registra a decisão como evento (que a outbox transforma no
-/// comando para Contas ou para o banco externo). Respostas que não cabem no estado atual são ignoradas.
+/// Orquestrador das sagas de transferência, como agregado. Guarda em que passo a saga está, decide o próximo
+/// comando a cada resposta ou prazo vencido e registra a decisão como evento (que a outbox transforma no comando
+/// para Contas, para o câmbio ou para o banco externo). Respostas que não cabem no estado atual são ignoradas.
 /// </summary>
 /// <remarks>
-/// Externa: Agendada, AguardandoDebito, Debitada, AguardandoLiquidacao, [ConsultandoLiquidacao], Concluida.
+/// Externa: Agendada, [Cotando], AguardandoDebito, Debitada, AguardandoLiquidacao, [ConsultandoLiquidacao],
+/// Concluida. Câmbio interno: Agendada, Cotando, AguardandoDebito, Debitada, AguardandoCredito, Concluida.
 /// Falha depois do débito: AguardandoEstorno e Cancelada. Falha antes do débito: Recusada.
 /// </remarks>
 public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
 {
     private readonly List<PassoTransferencia> _historico = [];
+
+    // Valores persistidos só como números; a moeda de cada um está numa coluna própria.
+    private decimal _valor;
+    private decimal _tarifa;
+    private decimal? _valorDebitado;
+    private decimal? _valorDestino;
+    private Guid? _cotacaoId;
+    private decimal? _cotacaoTaxa;
+    private DateTimeOffset? _cotacaoValidaAte;
 
     private Transferencia()
     {
@@ -33,15 +44,42 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
     /// <summary>Id da conta no contexto Contas (outro bounded context, por isso só o Guid).</summary>
     public Guid ContaOrigemId { get; private set; }
 
+    public string IbanOrigem { get; private set; } = string.Empty;
+
+    /// <summary>Titular da conta de origem (vai no crédito do câmbio interno).</summary>
+    public string NomeOrigem { get; private set; } = string.Empty;
+
+    public Moeda MoedaOrigem { get; private set; }
+
+    /// <summary>Só no câmbio interno: a conta EuroBank que recebe.</summary>
+    public Guid? ContaDestinoId { get; private set; }
+
     public IbanDestino IbanDestino { get; private set; } = null!;
 
-    public string Bic { get; private set; } = string.Empty;
+    /// <summary>Só na externa: o banco de destino.</summary>
+    public string? Bic { get; private set; }
 
     public string NomeBeneficiario { get; private set; } = string.Empty;
 
-    public Dinheiro Valor { get; private set; } = Dinheiro.Zero;
+    public Moeda MoedaDestino { get; private set; }
 
-    public Dinheiro Tarifa { get; private set; } = Dinheiro.Zero;
+    public Moeda MoedaDoValor { get; private set; }
+
+    /// <summary>O valor pedido, na moeda em que o cliente o informou (a de origem ou a de destino).</summary>
+    public Dinheiro Valor => Dinheiro.De(_valor, MoedaDoValor);
+
+    public Dinheiro Tarifa => Dinheiro.De(_tarifa, MoedaOrigem);
+
+    /// <summary>Quanto sai da conta de origem, sem a tarifa. Com câmbio, só existe depois da cotação.</summary>
+    public Dinheiro? ValorDebitado => _valorDebitado is { } valor ? Dinheiro.De(valor, MoedaOrigem) : null;
+
+    /// <summary>Quanto o destino recebe. Com câmbio, só existe depois da cotação.</summary>
+    public Dinheiro? ValorDestino => _valorDestino is { } valor ? Dinheiro.De(valor, MoedaDestino) : null;
+
+    public CotacaoTravada? Cotacao =>
+        _cotacaoId is { } id ? new CotacaoTravada(id, _cotacaoTaxa!.Value, _cotacaoValidaAte!.Value) : null;
+
+    public bool PrecisaDeCambio => MoedaOrigem != MoedaDestino;
 
     public string? Descricao { get; private set; }
 
@@ -90,12 +128,14 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
 
     public bool MesmoPedido(string hashDoPedido) => string.Equals(HashDoPedido, hashDoPedido, StringComparison.Ordinal);
 
+    /// <summary>Para um IBAN de outro banco; com moeda de destino diferente da conta, passa pelo câmbio.</summary>
     public static Transferencia SolicitarExterna(
-        Guid contaOrigemId,
+        ContaEuroBank origem,
         IbanDestino ibanDestino,
         string? bic,
         string? nomeBeneficiario,
         Dinheiro valor,
+        Moeda moedaDestino,
         string? descricao,
         string? emailNotificacao,
         string idempotencyKey,
@@ -103,8 +143,6 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
         DateTimeOffset? executarEm,
         DateTimeOffset agora)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(idempotencyKey);
-        ArgumentException.ThrowIfNullOrWhiteSpace(hashDoPedido);
         if (ibanDestino.EhEuroBank)
         {
             throw new ExcecaoDestinoEuroBank();
@@ -120,38 +158,72 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
             throw new ExcecaoBeneficiarioObrigatorio();
         }
 
-        if (valor.EhZero)
+        return Criar(
+            TipoTransferencia.Externa,
+            origem,
+            contaDestinoId: null,
+            ibanDestino,
+            bic.Trim().ToUpperInvariant(),
+            nomeBeneficiario.Trim(),
+            valor,
+            moedaDestino,
+            descricao,
+            emailNotificacao,
+            idempotencyKey,
+            hashDoPedido,
+            executarEm,
+            agora);
+    }
+
+    /// <summary>Entre contas EuroBank de moedas diferentes: sempre passa pelo câmbio.</summary>
+    public static Transferencia SolicitarCambioInterno(
+        ContaEuroBank origem,
+        ContaEuroBank destino,
+        Dinheiro valor,
+        string? descricao,
+        string? emailNotificacao,
+        string idempotencyKey,
+        string hashDoPedido,
+        DateTimeOffset? executarEm,
+        DateTimeOffset agora)
+    {
+        if (destino.Id == origem.Id)
         {
-            throw new ExcecaoValorInvalido("o valor da transferência deve ser maior que zero");
+            throw new ExcecaoDestinoIgualOrigem();
         }
 
-        var transferencia = new Transferencia
+        if (destino.Moeda == origem.Moeda)
         {
-            Id = TransferenciaId.Nova(),
-            Tipo = TipoTransferencia.Externa,
-            ContaOrigemId = contaOrigemId,
-            IbanDestino = ibanDestino,
-            Bic = bic.Trim().ToUpperInvariant(),
-            NomeBeneficiario = nomeBeneficiario.Trim(),
-            Valor = valor,
-            Tarifa = TabelaTransferencias.TarifaExterna,
-            Descricao = descricao,
-            EmailNotificacao = emailNotificacao,
-            IdempotencyKey = idempotencyKey,
-            HashDoPedido = hashDoPedido,
-            SolicitadaEm = agora,
-            ExecutarEm = executarEm,
-            ExecutarEmEfetivo = executarEm > agora ? executarEm.Value : agora,
-            Estado = EstadoTransferencia.Agendada,
-        };
+            throw new ExcecaoCambioNaMesmaMoeda();
+        }
 
-        transferencia.AnotarPasso("Transferência solicitada", agora);
-        return transferencia;
+        var ibanDestino = IbanDestino.Criar(destino.Iban);
+        if (!ibanDestino.EhEuroBank)
+        {
+            throw new ExcecaoDestinoNaoEuroBank();
+        }
+
+        return Criar(
+            TipoTransferencia.CambioInterno,
+            origem,
+            destino.Id,
+            ibanDestino,
+            bic: null,
+            destino.Titular,
+            valor,
+            destino.Moeda,
+            descricao,
+            emailNotificacao,
+            idempotencyKey,
+            hashDoPedido,
+            executarEm,
+            agora);
     }
 
     /// <summary>
-    /// Começa a saga na hora marcada: confere o limite diário (só o valor, sem a tarifa) e pede o débito.
-    /// Ignorado fora da hora ou se já começou (a API e a varredura podem tentar ao mesmo tempo).
+    /// Começa a saga na hora marcada. Com câmbio, pede a cotação (o limite é conferido quando ela chega, porque só
+    /// então se sabe quanto sai da conta); sem câmbio, confere o limite e pede o débito. Ignorado fora da hora ou
+    /// se já começou (a API e a varredura podem tentar ao mesmo tempo).
     /// </summary>
     public ResultadoPasso Iniciar(Dinheiro jaTransferidoNoDia, PoliticaSaga politica, DateTimeOffset agora)
     {
@@ -160,13 +232,66 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
             return ResultadoPasso.Ignorado;
         }
 
-        if (jaTransferidoNoDia + Valor > TabelaTransferencias.LimiteDiario)
+        if (PrecisaDeCambio)
         {
-            Recusar(MotivoTransferencia.LimiteDiarioExcedido, $"Limite diário de {TabelaTransferencias.LimiteDiario} EUR excedido", agora);
+            EntrarNoPasso(EstadoTransferencia.Cotando, politica, agora);
+        }
+        else
+        {
+            PedirDebitoDentroDoLimite(jaTransferidoNoDia, politica, agora);
+        }
+
+        return ResultadoPasso.Aplicado;
+    }
+
+    /// <summary>
+    /// Cotação recebida: trava a taxa e os dois valores, confere o limite com o valor que vai sair da conta e pede o
+    /// débito. Uma cotação que já chegou vencida é descartada e a saga cota de novo.
+    /// </summary>
+    public ResultadoPasso RegistrarCotacaoEmitida(
+        CotacaoTravada cotacao,
+        Dinheiro valorOrigem,
+        Dinheiro valorDestino,
+        Dinheiro jaTransferidoNoDia,
+        PoliticaSaga politica,
+        DateTimeOffset agora)
+    {
+        if (Estado != EstadoTransferencia.Cotando)
+        {
+            return Ignorar("CotacaoEmitida", agora);
+        }
+
+        if (valorOrigem.Moeda != MoedaOrigem || valorDestino.Moeda != MoedaDestino)
+        {
+            throw new ExcecaoMoedaDiferente(MoedaOrigem, valorOrigem.Moeda);
+        }
+
+        if (cotacao.ValidaAte <= agora)
+        {
+            AnotarPasso($"CotacaoEmitida {cotacao.Id} chegou vencida: cotando de novo", agora);
+            EntrarNoPasso(EstadoTransferencia.Cotando, politica, agora);
             return ResultadoPasso.Aplicado;
         }
 
-        EntrarNoPasso(EstadoTransferencia.AguardandoDebito, politica, agora);
+        _cotacaoId = cotacao.Id;
+        _cotacaoTaxa = cotacao.Taxa;
+        _cotacaoValidaAte = cotacao.ValidaAte;
+        _valorDebitado = valorOrigem.Valor;
+        _valorDestino = valorDestino.Valor;
+        AnotarPasso($"CotacaoEmitida recebida do câmbio: 1 {MoedaOrigem} = {cotacao.Taxa} {MoedaDestino}", agora);
+
+        PedirDebitoDentroDoLimite(jaTransferidoNoDia, politica, agora);
+        return ResultadoPasso.Aplicado;
+    }
+
+    public ResultadoPasso RegistrarCotacaoIndisponivel(string motivo, DateTimeOffset agora)
+    {
+        if (Estado != EstadoTransferencia.Cotando)
+        {
+            return Ignorar("CotacaoIndisponivel", agora);
+        }
+
+        Recusar(MotivoTransferencia.CambioIndisponivel, $"CotacaoIndisponivel recebida do câmbio: {motivo}", agora);
         return ResultadoPasso.Aplicado;
     }
 
@@ -181,7 +306,10 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
             }
             else
             {
-                EntrarNoPasso(EstadoTransferencia.AguardandoLiquidacao, politica, agora);
+                EntrarNoPasso(
+                    Tipo == TipoTransferencia.Externa ? EstadoTransferencia.AguardandoLiquidacao : EstadoTransferencia.AguardandoCredito,
+                    politica,
+                    agora);
             }
 
             return ResultadoPasso.Aplicado;
@@ -222,6 +350,33 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
         }
 
         return Ignorar("DebitoRecusado", agora);
+    }
+
+    public ResultadoPasso RegistrarCreditoRealizado(DateTimeOffset agora)
+    {
+        if (Estado != EstadoTransferencia.AguardandoCredito)
+        {
+            return Ignorar("CreditoRealizado", agora);
+        }
+
+        Concluir("CreditoRealizado recebido de Contas", agora);
+        return ResultadoPasso.Aplicado;
+    }
+
+    /// <summary>A conta de destino recusou o crédito (encerrada, por exemplo): a origem é estornada.</summary>
+    public ResultadoPasso RegistrarCreditoRecusado(MotivoTransferencia motivoDeContas, PoliticaSaga politica, DateTimeOffset agora)
+    {
+        if (Estado != EstadoTransferencia.AguardandoCredito)
+        {
+            return Ignorar("CreditoRecusado", agora);
+        }
+
+        AnotarPasso($"CreditoRecusado recebido de Contas: {motivoDeContas}", agora);
+        PedirEstorno(
+            motivoDeContas == MotivoTransferencia.ContaEncerrada ? MotivoTransferencia.DestinoEncerrado : MotivoTransferencia.RecusadaPorContas,
+            politica,
+            agora);
+        return ResultadoPasso.Aplicado;
     }
 
     public ResultadoPasso RegistrarLiquidacaoConfirmada(DateTimeOffset agora)
@@ -289,6 +444,7 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
     /// <summary>
     /// Chamado pela varredura. Com o prazo vencido, reenvia o comando do passo (id de mensagem novo; os
     /// participantes deduplicam pelo id da transferência) ou, esgotados os reenvios, segue o caminho de falha.
+    /// Crédito e estorno reenviam sem limite.
     /// </summary>
     public ResultadoPasso VerificarPrazo(PoliticaSaga politica, DateTimeOffset agora)
     {
@@ -297,17 +453,21 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
             return ResultadoPasso.Ignorado;
         }
 
-        if (Estado == EstadoTransferencia.AguardandoEstorno || TentativasNoPasso <= politica.ReenviosPorPasso)
+        if (Estado is EstadoTransferencia.AguardandoEstorno or EstadoTransferencia.AguardandoCredito
+            || TentativasNoPasso <= politica.ReenviosPorPasso)
         {
             TentativasNoPasso++;
             PrazoDoPasso = agora + politica.PrazoDe(Estado);
-            AnotarPasso($"Prazo vencido: {NomeDoComando} reenviado (tentativa {TentativasNoPasso})", agora);
+            AnotarPasso($"Prazo vencido: {NomeDoComando(Estado)} reenviado (tentativa {TentativasNoPasso})", agora);
             EnviarComandoDoPasso(agora);
             return ResultadoPasso.Aplicado;
         }
 
         switch (Estado)
         {
+            case EstadoTransferencia.Cotando:
+                Recusar(MotivoTransferencia.CambioIndisponivel, "O câmbio não respondeu à cotação depois dos reenvios", agora);
+                break;
             case EstadoTransferencia.AguardandoDebito:
                 DebitoSemResposta = true;
                 if (CancelamentoSolicitado)
@@ -336,16 +496,16 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
     }
 
     /// <summary>
-    /// Cancelamento pelo cliente, possível até a liquidação ser pedida. Com o débito em andamento, só anota: a
-    /// resposta do débito decide entre estornar e terminar direto. Repetir o pedido não muda nada.
+    /// Cancelamento pelo cliente, possível até a liquidação ou o crédito serem pedidos. Com o débito em andamento,
+    /// só anota: a resposta do débito decide entre estornar e terminar direto. Repetir o pedido não muda nada.
     /// </summary>
-    /// <exception cref="ExcecaoCancelamentoNaoPermitido">A liquidação já foi pedida ou a saga já terminou.</exception>
+    /// <exception cref="ExcecaoCancelamentoNaoPermitido">A liquidação ou o crédito já foram pedidos, ou a saga terminou.</exception>
     public void SolicitarCancelamento(DateTimeOffset agora)
     {
         switch (Estado)
         {
-            case EstadoTransferencia.Agendada:
-                Cancelar(MotivoTransferencia.CanceladaPeloCliente, "Cancelada pelo cliente antes de começar", agora);
+            case EstadoTransferencia.Agendada or EstadoTransferencia.Cotando:
+                Cancelar(MotivoTransferencia.CanceladaPeloCliente, "Cancelada pelo cliente antes do débito", agora);
                 break;
             case EstadoTransferencia.AguardandoDebito when !CancelamentoSolicitado:
                 CancelamentoSolicitado = true;
@@ -361,10 +521,86 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
         }
     }
 
+    private static Transferencia Criar(
+        TipoTransferencia tipo,
+        ContaEuroBank origem,
+        Guid? contaDestinoId,
+        IbanDestino ibanDestino,
+        string? bic,
+        string nomeBeneficiario,
+        Dinheiro valor,
+        Moeda moedaDestino,
+        string? descricao,
+        string? emailNotificacao,
+        string idempotencyKey,
+        string hashDoPedido,
+        DateTimeOffset? executarEm,
+        DateTimeOffset agora)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(idempotencyKey);
+        ArgumentException.ThrowIfNullOrWhiteSpace(hashDoPedido);
+        if (valor.EhZero)
+        {
+            throw new ExcecaoValorInvalido("o valor da transferência deve ser maior que zero");
+        }
+
+        if (valor.Moeda != origem.Moeda && valor.Moeda != moedaDestino)
+        {
+            throw new ExcecaoMoedaDoValorInvalida(valor.Moeda, origem.Moeda, moedaDestino);
+        }
+
+        var transferencia = new Transferencia
+        {
+            Id = TransferenciaId.Nova(),
+            Tipo = tipo,
+            ContaOrigemId = origem.Id,
+            IbanOrigem = origem.Iban,
+            NomeOrigem = origem.Titular,
+            MoedaOrigem = origem.Moeda,
+            ContaDestinoId = contaDestinoId,
+            IbanDestino = ibanDestino,
+            Bic = bic,
+            NomeBeneficiario = nomeBeneficiario,
+            MoedaDestino = moedaDestino,
+            MoedaDoValor = valor.Moeda,
+            _valor = valor.Valor,
+            _tarifa = TabelaTransferencias.Tarifa(origem.Moeda).Valor,
+            Descricao = descricao,
+            EmailNotificacao = emailNotificacao,
+            IdempotencyKey = idempotencyKey,
+            HashDoPedido = hashDoPedido,
+            SolicitadaEm = agora,
+            ExecutarEm = executarEm,
+            ExecutarEmEfetivo = executarEm > agora ? executarEm.Value : agora,
+            Estado = EstadoTransferencia.Agendada,
+        };
+
+        // Sem câmbio, o que sai da conta é o que chega ao destino.
+        if (!transferencia.PrecisaDeCambio)
+        {
+            transferencia._valorDebitado = valor.Valor;
+            transferencia._valorDestino = valor.Valor;
+        }
+
+        transferencia.AnotarPasso("Transferência solicitada", agora);
+        return transferencia;
+    }
+
     private bool AguardaOBanco =>
         Estado is EstadoTransferencia.AguardandoLiquidacao or EstadoTransferencia.ConsultandoLiquidacao;
 
-    private string NomeDoComando => ComandoDe(Estado);
+    /// <summary>O limite diário é da moeda da conta e conta só o valor, sem a tarifa.</summary>
+    private void PedirDebitoDentroDoLimite(Dinheiro jaTransferidoNoDia, PoliticaSaga politica, DateTimeOffset agora)
+    {
+        var limite = TabelaTransferencias.LimiteDiario(MoedaOrigem);
+        if (jaTransferidoNoDia + ValorDebitado! > limite)
+        {
+            Recusar(MotivoTransferencia.LimiteDiarioExcedido, $"Limite diário de {limite} {MoedaOrigem} excedido", agora);
+            return;
+        }
+
+        EntrarNoPasso(EstadoTransferencia.AguardandoDebito, politica, agora);
+    }
 
     private void PedirEstorno(MotivoTransferencia motivo, PoliticaSaga politica, DateTimeOffset agora)
     {
@@ -377,15 +613,18 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
     {
         TentativasNoPasso = 1;
         PrazoDoPasso = agora + politica.PrazoDe(estado);
-        MudarPara(estado, $"{ComandoDe(estado)} enviado (tentativa 1)", agora);
+        MudarPara(estado, $"{NomeDoComando(estado)} enviado (tentativa 1)", agora);
         EnviarComandoDoPasso(agora);
     }
 
-    private static string ComandoDe(EstadoTransferencia estado) => estado switch
+    private string NomeDoComando(EstadoTransferencia estado) => estado switch
     {
+        EstadoTransferencia.Cotando => "CotarCambio",
+        EstadoTransferencia.AguardandoDebito when Tipo == TipoTransferencia.CambioInterno => "DebitarTransferenciaCambio",
         EstadoTransferencia.AguardandoDebito => "DebitarTransferenciaExterna",
         EstadoTransferencia.AguardandoLiquidacao => "LiquidarTransferencia",
         EstadoTransferencia.ConsultandoLiquidacao => "ConsultarLiquidacao",
+        EstadoTransferencia.AguardandoCredito => "CreditarTransferenciaCambio",
         EstadoTransferencia.AguardandoEstorno => "EstornarTransferencia",
         _ => throw new UnreachableException($"O estado {estado} não envia comando."),
     };
@@ -394,11 +633,34 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
     {
         IEventoDeTransferencia comando = Estado switch
         {
+            EstadoTransferencia.Cotando => new CotacaoSolicitada(Id, MoedaOrigem, MoedaDestino, Valor, TentativasNoPasso, agora),
             EstadoTransferencia.AguardandoDebito => new DebitoSolicitado(
-                Id, ContaOrigemId, Valor, Tarifa, IbanDestino.Valor, NomeBeneficiario, Descricao, TentativasNoPasso, agora),
+                Id,
+                Tipo,
+                ContaOrigemId,
+                ValorDebitado!,
+                Tarifa,
+                IbanDestino.Valor,
+                NomeBeneficiario,
+                Descricao,
+                ValorDestino!,
+                Cotacao?.Taxa,
+                TentativasNoPasso,
+                agora),
             EstadoTransferencia.AguardandoLiquidacao => new LiquidacaoSolicitada(
-                Id, IbanDestino.Valor, Bic, NomeBeneficiario, Valor, TentativasNoPasso, agora),
+                Id, IbanDestino.Valor, Bic!, NomeBeneficiario, ValorDestino!, TentativasNoPasso, agora),
             EstadoTransferencia.ConsultandoLiquidacao => new ConsultaLiquidacaoSolicitada(Id, TentativasNoPasso, agora),
+            EstadoTransferencia.AguardandoCredito => new CreditoSolicitado(
+                Id,
+                ContaDestinoId!.Value,
+                ValorDestino!,
+                IbanOrigem,
+                NomeOrigem,
+                Descricao,
+                ValorDebitado!,
+                Cotacao!.Taxa,
+                TentativasNoPasso,
+                agora),
             EstadoTransferencia.AguardandoEstorno => new EstornoSolicitado(Id, ContaOrigemId, TentativasNoPasso, agora),
             _ => throw new UnreachableException($"O estado {Estado} não envia comando."),
         };
@@ -410,7 +672,7 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
     {
         Encerrar(EstadoTransferencia.Concluida, motivo: null, descricao, agora);
         Registrar(new LiberacaoTravaSolicitada(Id, ContaOrigemId, agora));
-        Registrar(new TransferenciaConcluida(Id, ContaOrigemId, Valor, Tarifa, agora));
+        Registrar(new TransferenciaConcluida(Id, ContaOrigemId, ValorDebitado!, Tarifa, agora));
     }
 
     private void Cancelar(MotivoTransferencia motivo, string descricao, DateTimeOffset agora)

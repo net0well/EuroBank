@@ -1,4 +1,5 @@
 using EuroBank.Shared.Domain;
+using EuroBank.Shared.Enums;
 using EuroBank.Shared.ValueObjects;
 using EuroBank.Transferencias.Domain.Entities;
 using EuroBank.Transferencias.Domain.Repositories;
@@ -79,12 +80,14 @@ public sealed class TransferenciasWorkerFixture : IAsyncLifetime
         await using var escopo = _worker.Services.CreateAsyncScope();
         var servicos = escopo.ServiceProvider;
         var agora = Relogio.GetUtcNow();
+        var origem = new ContaEuroBank(Guid.CreateVersion7(), "PT50EURO0000000000001", "Ana", Moeda.EUR);
         var transferencia = Transferencia.SolicitarExterna(
-            Guid.CreateVersion7(),
+            origem,
             IbanDestino.Criar(iban),
             "DEUTDEFF",
             "Bruno",
             Dinheiro.De(100m),
+            Moeda.EUR,
             null,
             null,
             Guid.CreateVersion7().ToString(),
@@ -97,10 +100,38 @@ public sealed class TransferenciasWorkerFixture : IAsyncLifetime
         return transferencia.Id;
     }
 
+    /// <summary>Câmbio interno de 100 USD de uma conta EUR para uma conta USD, já cotando.</summary>
+    public async Task<(TransferenciaId Id, ContaEuroBank Origem, ContaEuroBank Destino)> CriarCambioAsync()
+    {
+        await using var escopo = _worker.Services.CreateAsyncScope();
+        var servicos = escopo.ServiceProvider;
+        var agora = Relogio.GetUtcNow();
+        var origem = new ContaEuroBank(Guid.CreateVersion7(), "PT50EURO0000000000001", "Ana", Moeda.EUR);
+        var destino = new ContaEuroBank(Guid.CreateVersion7(), "PT50EURO0000000000002", "Bruno", Moeda.USD);
+        var transferencia = Transferencia.SolicitarCambioInterno(
+            origem, destino, Dinheiro.De(100m, Moeda.USD), null, null, Guid.CreateVersion7().ToString(), "hash", null, agora);
+        transferencia.Iniciar(Dinheiro.Zero, servicos.GetRequiredService<PoliticaSaga>(), agora);
+        servicos.GetRequiredService<IRepositorioTransferencias>().Adicionar(transferencia);
+        await servicos.GetRequiredService<IUnidadeDeTrabalho>().SalvarAsync(TestContext.Current.CancellationToken);
+        return (transferencia.Id, origem, destino);
+    }
+
     public async Task<Transferencia> ObterAsync(TransferenciaId id)
     {
         await using var contexto = CriarContexto();
         return await contexto.Transferencias.AsNoTracking().SingleAsync(t => t.Id == id, TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>Tipos das mensagens que a saga gravou na outbox com estas chaves (transferência e contas), na ordem.</summary>
+    public async Task<List<string>> ComandosPorChaveAsync(params Guid[] chaves)
+    {
+        var textos = chaves.Select(chave => chave.ToString()).ToArray();
+        await using var contexto = CriarContexto();
+        return await contexto.Outbox
+            .Where(mensagem => textos.Contains(mensagem.IdAgregado))
+            .OrderBy(mensagem => mensagem.Sequencia)
+            .Select(mensagem => mensagem.TipoEvento)
+            .ToListAsync(TestContext.Current.CancellationToken);
     }
 
     /// <summary>Tipos das mensagens que a saga gravou na outbox para esta transferência, na ordem.</summary>

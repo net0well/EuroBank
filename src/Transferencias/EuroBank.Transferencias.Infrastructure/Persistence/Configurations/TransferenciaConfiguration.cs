@@ -1,4 +1,3 @@
-using EuroBank.Shared.ValueObjects;
 using EuroBank.Transferencias.Domain.Entities;
 using EuroBank.Transferencias.Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
@@ -21,6 +20,10 @@ public sealed class TransferenciaConfiguration : IEntityTypeConfiguration<Transf
 
         builder.Property(transferencia => transferencia.Tipo).HasColumnName("tipo").HasConversion<string>().HasMaxLength(20);
         builder.Property(transferencia => transferencia.ContaOrigemId).HasColumnName("conta_origem_id");
+        builder.Property(transferencia => transferencia.IbanOrigem).HasColumnName("iban_origem").HasMaxLength(34);
+        builder.Property(transferencia => transferencia.NomeOrigem).HasColumnName("nome_origem").HasMaxLength(140);
+        builder.Property(transferencia => transferencia.MoedaOrigem).HasColumnName("moeda_origem").HasConversion<string>().HasMaxLength(3);
+        builder.Property(transferencia => transferencia.ContaDestinoId).HasColumnName("conta_destino_id");
         builder.Property(transferencia => transferencia.IbanDestino)
             .HasColumnName("iban_destino")
             .HasConversion(iban => iban.Valor, valor => IbanDestino.Criar(valor))
@@ -28,14 +31,23 @@ public sealed class TransferenciaConfiguration : IEntityTypeConfiguration<Transf
             .IsRequired();
         builder.Property(transferencia => transferencia.Bic).HasColumnName("bic").HasMaxLength(11);
         builder.Property(transferencia => transferencia.NomeBeneficiario).HasColumnName("nome_beneficiario").HasMaxLength(140);
-        builder.Property(transferencia => transferencia.Valor)
-            .HasColumnName("valor")
-            .HasConversion(dinheiro => dinheiro.Valor, valor => Dinheiro.De(valor))
-            .HasPrecision(18, 2);
-        builder.Property(transferencia => transferencia.Tarifa)
-            .HasColumnName("tarifa")
-            .HasConversion(dinheiro => dinheiro.Valor, valor => Dinheiro.De(valor))
-            .HasPrecision(18, 2);
+        builder.Property(transferencia => transferencia.MoedaDestino).HasColumnName("moeda_destino").HasConversion<string>().HasMaxLength(3);
+        builder.Property(transferencia => transferencia.MoedaDoValor).HasColumnName("moeda_do_valor").HasConversion<string>().HasMaxLength(3);
+
+        // Valores só como números; cada um tem a moeda numa coluna própria (um conversor não enxerga outra coluna).
+        builder.Ignore(transferencia => transferencia.Valor);
+        builder.Ignore(transferencia => transferencia.Tarifa);
+        builder.Ignore(transferencia => transferencia.ValorDebitado);
+        builder.Ignore(transferencia => transferencia.ValorDestino);
+        builder.Ignore(transferencia => transferencia.Cotacao);
+        builder.Ignore(transferencia => transferencia.PrecisaDeCambio);
+        builder.Property<decimal>("_valor").HasColumnName("valor").HasPrecision(18, 2);
+        builder.Property<decimal>("_tarifa").HasColumnName("tarifa").HasPrecision(18, 2);
+        builder.Property<decimal?>("_valorDebitado").HasColumnName("valor_debitado").HasPrecision(18, 2);
+        builder.Property<decimal?>("_valorDestino").HasColumnName("valor_destino").HasPrecision(18, 2);
+        builder.Property<Guid?>("_cotacaoId").HasColumnName("cotacao_id");
+        builder.Property<decimal?>("_cotacaoTaxa").HasColumnName("cotacao_taxa").HasPrecision(18, 6);
+        builder.Property<DateTimeOffset?>("_cotacaoValidaAte").HasColumnName("cotacao_valida_ate");
         builder.Property(transferencia => transferencia.Descricao).HasColumnName("descricao").HasMaxLength(140);
         builder.Property(transferencia => transferencia.EmailNotificacao).HasColumnName("email_notificacao").HasMaxLength(254);
 

@@ -17,6 +17,21 @@ Content-Type: application/json
 ###
 @contaId = {{abrir.response.body.id}}
 
+### Abrir conta em outra moeda (EUR é o padrão; também USD, GBP e BRL)
+# @name abrirDolar
+POST {{api}}/contas
+X-Api-Key: {{apiKey}}
+Content-Type: application/json
+
+{ "titular": "Elias", "moeda": "USD" }
+
+### Transferência síncrona entre moedas diferentes: 422, use POST /transferencias-cambio
+POST {{api}}/contas/{{contaId}}/transferencias
+X-Api-Key: {{apiKey}}
+Content-Type: application/json
+
+{ "ibanDestino": "{{abrirDolar.response.body.iban}}", "valor": 10.00 }
+
 ### Depositar
 POST {{api}}/contas/{{contaId}}/depositos
 X-Api-Key: {{apiKey}}

@@ -31,6 +31,7 @@ public static class DependencyInjection
 
         services.AddScoped<IRepositorioTransferencias, RepositorioTransferencias>();
         services.AddScoped<IConsultaTransferencias, ConsultaTransferencias>();
+        services.AddScoped<IContasConhecidas, ContasConhecidas>();
         services.AddScoped<IFilaOutbox, FilaOutbox>();
         services.AddScoped<IUnidadeDeTrabalho, UnidadeDeTrabalhoComOutbox<TransferenciasDbContext>>();
         services.AddScoped<IExecutorTransacional, ExecutorTransacionalEf<TransferenciasDbContext>>();

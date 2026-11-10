@@ -15,8 +15,8 @@ public sealed class SacarManipulador(
 {
     public async Task<ContaDto> Handle(Sacar comando, CancellationToken cancellationToken)
     {
-        var valor = Dinheiro.De(comando.Valor);
         var conta = await repositorio.ObterOuFalharAsync(comando.ContaId, cancellationToken);
+        var valor = Dinheiro.De(comando.Valor, conta.Moeda);
 
         conta.Sacar(valor, relogio.GetUtcNow());
 

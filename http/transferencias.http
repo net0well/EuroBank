@@ -5,6 +5,8 @@
 ###   eurobank.contas.respostas         -> DebitoRealizado, DebitoRecusado, EstornoRealizado
 ###   eurobank.banco-externo.comandos   -> LiquidarTransferencia, ConsultarLiquidacao
 ###   eurobank.banco-externo.respostas  -> LiquidacaoConfirmada, LiquidacaoRecusada, StatusLiquidacao
+###   eurobank.cambio.comandos          -> CotarCambio
+###   eurobank.cambio.respostas         -> CotacaoEmitida, CotacaoIndisponivel
 ###   eurobank.transferencias.eventos   -> TransferenciaConcluida, TransferenciaCancelada, TransferenciaRecusada
 ### O final do IBAN de destino comanda o banco externo simulado: 99 recusa, 98 nunca responde,
 ### 97 responde em 45 s, 96 liquida mas a resposta se perde; os demais confirmam em 1 s.
@@ -81,4 +83,41 @@ X-Api-Key: {{apiKey}}
 
 ### Listar por conta e estado (Agendada, AguardandoDebito, AguardandoLiquidacao, Concluida, Cancelada...)
 GET {{api}}/transferencias?contaOrigemId={{contaOrigemId}}&status=Cancelada
+X-Api-Key: {{apiKey}}
+
+### Externa com câmbio: a conta é em EUR e o destino recebe exatamente 100 USD (a saga cota antes de debitar)
+# @name externaDolar
+POST {{api}}/transferencias-externas
+X-Api-Key: {{apiKey}}
+Idempotency-Key: roteiro-003
+Content-Type: application/json
+
+{
+  "contaOrigemId": "{{contaOrigemId}}",
+  "ibanDestino": "US64SVBKUS6S3300958879",
+  "bic": "SVBKUS6S",
+  "nomeBeneficiario": "Bruno Externo",
+  "valor": 100.00,
+  "moedaDoValor": "USD",
+  "moedaDestino": "USD"
+}
+
+### Câmbio entre contas EuroBank de moedas diferentes (abra antes uma conta em USD pelo contas.http)
+@ibanDestinoEmDolar = cole-aqui-o-iban-da-conta-em-dolar
+
+# @name cambio
+POST {{api}}/transferencias-cambio
+X-Api-Key: {{apiKey}}
+Idempotency-Key: roteiro-004
+Content-Type: application/json
+
+{
+  "contaOrigemId": "{{contaOrigemId}}",
+  "ibanDestino": "{{ibanDestinoEmDolar}}",
+  "valor": 100.00,
+  "moedaDoValor": "USD"
+}
+
+### Cotação, valor debitado e valor creditado
+GET {{api}}/transferencias/{{cambio.response.body.id}}
 X-Api-Key: {{apiKey}}

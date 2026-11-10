@@ -22,6 +22,12 @@ public sealed class ServicoTransferencia
             throw new ExcecaoTransferenciaParaMesmaConta();
         }
 
+        // Transferência síncrona só na mesma moeda; entre moedas é uma saga com cotação (Transferencias).
+        if (origem.Moeda != destino.Moeda)
+        {
+            throw new ExcecaoTransferenciaEntreMoedas(origem.Moeda, destino.Moeda);
+        }
+
         origem.GarantirPodeEnviar(valor);
         destino.GarantirPodeReceber(valor);
 

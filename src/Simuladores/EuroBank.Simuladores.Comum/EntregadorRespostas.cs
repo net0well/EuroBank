@@ -1,20 +1,22 @@
 using System.Diagnostics;
-using EuroBank.Simuladores.BancoExterno.Persistencia;
-using EuroBank.Simuladores.Comum;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
-namespace EuroBank.Simuladores.BancoExterno.Servicos;
+namespace EuroBank.Simuladores.Comum;
 
 /// <summary>
-/// Publica as respostas agendadas quando chega a hora. É o que dá ao simulador latência, atrasos e respostas
+/// Publica as respostas agendadas de um simulador quando chega a hora. É o que dá latência, atrasos e respostas
 /// tardias sem segurar a thread do consumidor nem perder nada num restart (a agenda está no banco).
 /// </summary>
 public sealed class EntregadorRespostas(
-    RepositorioBancoExterno repositorio,
+    RepositorioSimulador repositorio,
     PublicadorKafka publicador,
     TimeProvider relogio,
+    ActivitySource fonte,
+    string topico,
     ILogger<EntregadorRespostas> logger) : BackgroundService
 {
-    private static readonly TimeSpan Intervalo = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan Intervalo = TimeSpan.FromMilliseconds(200);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -35,17 +37,17 @@ public sealed class EntregadorRespostas(
 
     private async Task PublicarAsync(RespostaAgendada resposta, CancellationToken cancellationToken)
     {
-        using var atividade = Rastreamento.Iniciar(
-            Telemetria.Fonte, $"banco-externo publicar {resposta.Tipo}", ActivityKind.Producer, resposta.Traceparent);
+        using var atividade = Rastreamento.Iniciar(fonte, $"publicar {resposta.Tipo}", ActivityKind.Producer, resposta.Traceparent);
 
         await publicador.PublicarAsync(
-            Topicos.Respostas,
+            topico,
             resposta.TransferenciaId.ToString(),
             resposta.Tipo,
             resposta.Payload,
             atividade?.Id ?? resposta.Traceparent,
             cancellationToken);
 
-        logger.LogInformation("{Tipo} da transferência {TransferenciaId} publicada", resposta.Tipo, resposta.TransferenciaId);
+        logger.LogInformation("{Tipo} da transferência {TransferenciaId} publicada em {Topico}",
+            resposta.Tipo, resposta.TransferenciaId, topico);
     }
 }

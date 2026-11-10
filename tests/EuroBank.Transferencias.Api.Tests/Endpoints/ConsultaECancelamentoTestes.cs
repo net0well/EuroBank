@@ -40,7 +40,7 @@ public sealed class ConsultaECancelamentoTestes(PostgresFixture banco)
     [Fact]
     public async Task Listar_FiltraPorContaEStatus()
     {
-        var conta = Guid.CreateVersion7();
+        var conta = (await banco.NovaContaAsync()).Id;
         await _cliente.SolicitarComSucessoAsync(Pedido(conta));
         await _cliente.SolicitarComSucessoAsync(Pedido(conta, executarEm: DateTimeOffset.UtcNow.AddDays(1)));
         await _cliente.SolicitarComSucessoAsync(Pedido());

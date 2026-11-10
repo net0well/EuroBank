@@ -22,6 +22,15 @@ public static class TransferenciasEndpoints
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
+        app.MapPost("/transferencias-cambio", SolicitarCambioAsync)
+            .WithTags("Transferências")
+            .WithName("SolicitarTransferenciaCambio")
+            .WithSummary("Pede um câmbio para outra conta EuroBank em outra moeda; a saga cota, debita e credita")
+            .Produces<TransferenciaDto>(StatusCodes.Status202Accepted)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+
         var grupo = app.MapGroup("/transferencias").WithTags("Transferências");
 
         grupo.MapGet("/{id:guid}", ObterAsync)
@@ -60,6 +69,29 @@ public static class TransferenciasEndpoints
                 requisicao.Bic,
                 requisicao.NomeBeneficiario,
                 requisicao.Valor,
+                requisicao.ExecutarEm,
+                requisicao.Descricao,
+                requisicao.EmailNotificacao,
+                requisicao.MoedaDoValor,
+                requisicao.MoedaDestino),
+            cancellationToken);
+
+        return TypedResults.Accepted($"/transferencias/{transferencia.Id}", transferencia);
+    }
+
+    private static async Task<IResult> SolicitarCambioAsync(
+        [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey,
+        TransferenciaCambioRequisicao requisicao,
+        IMessageBus barramento,
+        CancellationToken cancellationToken)
+    {
+        var transferencia = await barramento.InvokeAsync<TransferenciaDto>(
+            new SolicitarTransferenciaCambio(
+                idempotencyKey,
+                requisicao.ContaOrigemId,
+                requisicao.IbanDestino,
+                requisicao.Valor,
+                requisicao.MoedaDoValor,
                 requisicao.ExecutarEm,
                 requisicao.Descricao,
                 requisicao.EmailNotificacao),

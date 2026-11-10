@@ -1,3 +1,4 @@
+using EuroBank.Shared.Enums;
 using EuroBank.Shared.ValueObjects;
 using EuroBank.Transferencias.Domain.Entities;
 using EuroBank.Transferencias.Domain.Enums;
@@ -60,22 +61,24 @@ public sealed class RepositorioTransferencias(TransferenciasDbContext contexto) 
         Guid contaOrigemId,
         DateOnly dia,
         TransferenciaId exceto,
+        Moeda moeda,
         CancellationToken cancellationToken)
     {
         var inicio = new DateTimeOffset(dia.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
         var fim = inicio.AddDays(1);
         var estados = TabelaTransferencias.EstadosQueConsomemLimite;
 
-        var valores = await contexto.Transferencias
+        // O que sai da conta, sem a tarifa: na moeda da conta, então somar é seguro.
+        var soma = await contexto.Transferencias
             .AsNoTracking()
+            .IgnoreAutoIncludes()
             .Where(transferencia => transferencia.ContaOrigemId == contaOrigemId
                 && transferencia.Id != exceto
                 && transferencia.ExecutarEmEfetivo >= inicio
                 && transferencia.ExecutarEmEfetivo < fim
                 && estados.Contains(transferencia.Estado))
-            .Select(transferencia => transferencia.Valor)
-            .ToListAsync(cancellationToken);
+            .SumAsync(transferencia => EF.Property<decimal?>(transferencia, "_valorDebitado") ?? 0m, cancellationToken);
 
-        return valores.Aggregate(Dinheiro.Zero, (soma, valor) => soma + valor);
+        return Dinheiro.De(soma, moeda);
     }
 }

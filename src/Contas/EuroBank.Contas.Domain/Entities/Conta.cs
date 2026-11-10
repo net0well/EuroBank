@@ -3,6 +3,7 @@ using EuroBank.Contas.Domain.Events;
 using EuroBank.Contas.Domain.Exceptions;
 using EuroBank.Contas.Domain.ValueObjects;
 using EuroBank.Shared.Domain;
+using EuroBank.Shared.Enums;
 using EuroBank.Shared.Exceptions;
 using EuroBank.Shared.ValueObjects;
 
@@ -23,7 +24,17 @@ public sealed class Conta : RaizDeAgregado<ContaId>
 
     public Titular Titular { get; private set; } = null!;
 
-    public Dinheiro Saldo { get; private set; } = Dinheiro.Zero;
+    /// <summary>Escolhida na abertura e imutável. Toda operação da conta é nessa moeda.</summary>
+    public Moeda Moeda { get; private set; }
+
+    /// <summary>Saldo na moeda da conta (persistido só como número; a moeda é a da conta).</summary>
+    public Dinheiro Saldo
+    {
+        get => Dinheiro.De(_saldo, Moeda);
+        private set => _saldo = value.Valor;
+    }
+
+    private decimal _saldo;
 
     public StatusConta Status { get; private set; }
 
@@ -44,20 +55,21 @@ public sealed class Conta : RaizDeAgregado<ContaId>
 
     private readonly List<TransferenciaDaConta> _transferencias = [];
 
-    public static Conta Abrir(Iban iban, Titular titular, DateTimeOffset agora)
+    public static Conta Abrir(Iban iban, Titular titular, DateTimeOffset agora, Moeda moeda = Moeda.EUR)
     {
         var conta = new Conta
         {
             Id = ContaId.Nova(),
             Iban = iban,
             Titular = titular,
-            Saldo = Dinheiro.Zero,
+            Moeda = moeda,
+            Saldo = Dinheiro.ZeroEm(moeda),
             Status = StatusConta.Ativa,
             Versao = 1,
             AbertaEm = agora,
         };
 
-        conta.Registrar(new ContaAberta(conta.Id, iban, titular, conta.Versao, agora));
+        conta.Registrar(new ContaAberta(conta.Id, iban, titular, moeda, conta.Versao, agora));
         return conta;
     }
 
@@ -134,6 +146,38 @@ public sealed class Conta : RaizDeAgregado<ContaId>
         string ibanDestino,
         string nomeBeneficiario,
         string? descricao,
+        DateTimeOffset agora,
+        Conversao? conversao = null) =>
+        DebitarTransferencia(transferenciaId, valor, tarifa, nomeBeneficiario, agora, () => new TransferenciaExternaEnviada(
+            Id, transferenciaId, ibanDestino, nomeBeneficiario, descricao, valor, tarifa, Saldo, Versao, agora, conversao));
+
+    /// <summary>
+    /// Primeiro passo da saga de câmbio entre contas EuroBank: debita valor e tarifa na moeda desta conta. O
+    /// crédito na outra moeda é outro comando, na conta de destino.
+    /// </summary>
+    public ResultadoOperacao DebitarTransferenciaCambio(
+        Guid transferenciaId,
+        Dinheiro valor,
+        Dinheiro tarifa,
+        string ibanDestino,
+        string nomeDestino,
+        string? descricao,
+        Conversao conversao,
+        DateTimeOffset agora) =>
+        DebitarTransferencia(transferenciaId, valor, tarifa, nomeDestino, agora, () => new TransferenciaCambioEnviada(
+            Id, transferenciaId, ibanDestino, nomeDestino, descricao, valor, tarifa, conversao, Saldo, Versao, agora));
+
+    /// <summary>
+    /// Crédito da saga de câmbio na conta de destino. Vale em conta bloqueada (é crédito) e não trava nada; o id
+    /// da transferência fica guardado para um reenvio não creditar duas vezes.
+    /// </summary>
+    public ResultadoOperacao CreditarTransferenciaCambio(
+        Guid transferenciaId,
+        Dinheiro valor,
+        string ibanOrigem,
+        string nomeOrigem,
+        string? descricao,
+        Conversao conversao,
         DateTimeOffset agora)
     {
         if (BuscarTransferencia(transferenciaId) is not null)
@@ -141,15 +185,38 @@ public sealed class Conta : RaizDeAgregado<ContaId>
             return ResultadoOperacao.JaProcessada;
         }
 
+        GarantirPodeReceber(valor);
+
+        Saldo += valor;
+        Versao++;
+        _transferencias.Add(TransferenciaDaConta.Recebida(transferenciaId, valor, nomeOrigem, agora));
+        Registrar(new TransferenciaCambioRecebida(
+            Id, transferenciaId, ibanOrigem, nomeOrigem, descricao, valor, conversao, Saldo, Versao, agora));
+        return ResultadoOperacao.Aplicada;
+    }
+
+    private ResultadoOperacao DebitarTransferencia(
+        Guid transferenciaId,
+        Dinheiro valor,
+        Dinheiro tarifa,
+        string nomeDestino,
+        DateTimeOffset agora,
+        Func<IEventoDeConta> evento)
+    {
+        if (BuscarTransferencia(transferenciaId) is not null)
+        {
+            return ResultadoOperacao.JaProcessada;
+        }
+
+        GarantirMesmaMoeda(tarifa);
         GarantirValorPositivo(valor);
         var total = valor + tarifa;
         GarantirPodeDebitar(total);
 
         Saldo -= total;
         Versao++;
-        _transferencias.Add(new TransferenciaDaConta(transferenciaId, valor, tarifa, nomeBeneficiario, agora));
-        Registrar(new TransferenciaExternaEnviada(
-            Id, transferenciaId, ibanDestino, nomeBeneficiario, descricao, valor, tarifa, Saldo, Versao, agora));
+        _transferencias.Add(new TransferenciaDaConta(transferenciaId, valor, tarifa, nomeDestino, agora));
+        Registrar(evento());
         return ResultadoOperacao.Aplicada;
     }
 
@@ -161,7 +228,7 @@ public sealed class Conta : RaizDeAgregado<ContaId>
         {
             case StatusTransferenciaDaConta.Estornada:
                 return ResultadoOperacao.JaProcessada;
-            case StatusTransferenciaDaConta.Liberada:
+            case StatusTransferenciaDaConta.Liberada or StatusTransferenciaDaConta.Recebida:
                 throw new ExcecaoTransferenciaJaConcluida(transferenciaId);
         }
 
@@ -199,6 +266,7 @@ public sealed class Conta : RaizDeAgregado<ContaId>
 
     internal void GarantirPodeReceber(Dinheiro valor)
     {
+        GarantirMesmaMoeda(valor);
         GarantirValorPositivo(valor);
         GarantirNaoEncerrada();
     }
@@ -221,8 +289,17 @@ public sealed class Conta : RaizDeAgregado<ContaId>
         Registrar(new TransferenciaRecebida(Id, transferenciaId, origem, valor, Saldo, Versao, agora));
     }
 
+    private void GarantirMesmaMoeda(Dinheiro valor)
+    {
+        if (valor.Moeda != Moeda)
+        {
+            throw new ExcecaoMoedaDiferente(Moeda, valor.Moeda);
+        }
+    }
+
     private void GarantirPodeDebitar(Dinheiro valor)
     {
+        GarantirMesmaMoeda(valor);
         GarantirValorPositivo(valor);
         GarantirNaoEncerrada();
         if (Status == StatusConta.Bloqueada)
