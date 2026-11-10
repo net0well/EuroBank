@@ -4,11 +4,14 @@ Laboratório de estudo de **CDC (Change Data Capture)** com **Debezium**, **Kafk
 DDD com Clean Architecture, e de **saga orquestrada** sobre essa mesma base. É um banco fictício com três
 contextos que conversam apenas por mensagens, mais um banco externo simulado:
 
-- **Contas**: abre contas, deposita, saca, transfere, bloqueia, desbloqueia e encerra. Grava no PostgreSQL.
-- **Extrato**: consome os eventos de Contas pelo Kafka e monta o extrato de cada conta.
+- **Contas**: abre contas em EUR, USD, GBP ou BRL, deposita, saca, transfere, bloqueia, desbloqueia e encerra.
+  Grava no PostgreSQL.
+- **Extrato**: consome os eventos de Contas pelo Kafka e monta o extrato de cada conta, na moeda dela.
 - **Transferencias**: orquestra a transferência para um IBAN de outro banco (débito em Contas, liquidação no
-  banco externo e, se a liquidação falhar, estorno do débito), com prazos, reenvios e cancelamento.
+  banco externo e, se a liquidação falhar, estorno do débito) e o câmbio entre contas EuroBank de moedas
+  diferentes (cotação, débito, crédito), com prazos, reenvios e cancelamento.
 - **Banco externo simulado**: um sistema "de fora" que liquida, recusa, atrasa ou some conforme o final do IBAN.
+- **Câmbio simulado**: um provedor de cotações "de fora", com spread e cotação travada por 10 minutos.
 
 Nenhuma API do EuroBank fala com o Kafka. Cada uma grava a alteração e a mensagem na tabela `outbox` do seu
 banco, na mesma transação, e o Debezium lê essas mudanças no log de transações (WAL) do PostgreSQL e as publica
@@ -41,20 +44,20 @@ dois sistemas precisam ficar consistentes sem compartilhar uma transação:
 
 | Parte | O que faz |
 |---|---|
-| Domínio de Contas | Agregado `Conta` com estados (Ativa, Bloqueada, Encerrada), versão de negócio, value objects `Dinheiro` (EUR), `Iban` (dígito verificador módulo 97) e `Titular`, serviço de domínio de transferência atômica entre contas |
+| Domínio de Contas | Agregado `Conta` com estados (Ativa, Bloqueada, Encerrada), moeda escolhida na abertura, versão de negócio, value objects `Dinheiro` (valor e moeda; operar moedas diferentes é proibido), `Iban` (dígito verificador módulo 97) e `Titular`, serviço de domínio de transferência atômica entre contas da mesma moeda |
 | API de Contas | Minimal API com Wolverine como mediator, erros de domínio em ProblemDetails (400, 404, 409, 422), Swagger, seed de contas de exemplo |
 | Outbox | A unidade de trabalho grava conta e eventos na mesma transação, na ordem em que os eventos aconteceram |
 | Debezium | Dois conectores: Outbox Event Router (eventos de negócio) e CDC bruto da tabela `contas` (before e after) |
 | Extrato | Worker com Wolverine consumindo o Kafka: inbox durável, ordem por conta, retry, dead letter e a projeção do extrato com paginação, incluindo transferências externas com tarifa e estornos |
-| Saga de transferência externa | Agregado `Transferencia` com a máquina de estados, prazo por passo, até 3 reenvios, consulta de status antes de estornar, cancelamento pelo cliente, agendamento, tarifa e limite diário; histórico de cada passo |
-| API de Transferências | `POST /transferencias-externas` com `Idempotency-Key`, consulta com histórico, listagem com filtros e cancelamento; o limite diário é conferido com um advisory lock por conta |
-| Worker de Transferências | Respostas de Contas e do banco externo (inbox durável) e uma varredura que começa as agendadas e trata os prazos com `FOR UPDATE SKIP LOCKED` |
-| Worker de Contas | Executa os comandos da saga (debitar, estornar, liberar a trava) com idempotência pelo id da transferência e responde pela outbox; a trava semântica impede encerrar a conta no meio da saga |
-| Banco externo simulado | Confluent.Kafka e Npgsql puros, sem Wolverine e sem EF: inbox escrita à mão, respostas agendadas no banco e regras pelo final do IBAN |
+| Sagas de transferência | Agregado `Transferencia` com a máquina de estados da externa e do câmbio interno, cotação antes do débito quando as moedas diferem (com recotação), prazo por passo, até 3 reenvios, consulta de status antes de estornar, cancelamento pelo cliente, agendamento, tarifa e limite diário por moeda; histórico de cada passo |
+| API de Transferências | `POST /transferencias-externas` e `POST /transferencias-cambio` com `Idempotency-Key`, consulta com histórico e cotação, listagem com filtros e cancelamento; o limite diário é conferido com um advisory lock por conta |
+| Worker de Transferências | Respostas de Contas, do câmbio e do banco externo (inbox durável), a projeção local das contas (eventos `ContaAberta`) e uma varredura que começa as agendadas e trata os prazos com `FOR UPDATE SKIP LOCKED` |
+| Worker de Contas | Executa os comandos da saga (debitar, creditar, estornar, liberar a trava) com idempotência pelo id da transferência e responde pela outbox; a trava semântica impede encerrar a conta no meio da saga |
+| Simuladores | Banco externo e câmbio com Confluent.Kafka e Npgsql puros, sem Wolverine e sem EF: inbox escrita à mão e respostas agendadas no banco, compartilhadas pelos dois |
 | Segurança | Uma API key por API (`X-Api-Key`), com `/health` e Swagger abertos |
 | Infraestrutura | Docker Compose com PostgreSQL em replicação lógica, Kafka em modo KRaft, Kafka Connect, Kafbat UI e Jaeger, com os databases, os tópicos e os conectores criados automaticamente |
 | Observabilidade | Serilog estruturado e OpenTelemetry, com o `traceparent` levado pela outbox até o consumidor e de volta nas respostas da saga |
-| Testes | 282 testes: unitários, de integração com Testcontainers e ponta a ponta com Debezium real, incluindo cada caminho da saga |
+| Testes | 366 testes: unitários, de integração com Testcontainers e ponta a ponta com Debezium real, incluindo cada caminho das sagas |
 | Carga | Script k6 que gera operações em paralelo e confere se o Extrato convergiu para Contas |
 
 ## Como funciona
@@ -108,13 +111,21 @@ dados a outros sistemas (data warehouse, índice de busca, cache). Aqui os dois 
 ```mermaid
 stateDiagram-v2
     [*] --> Agendada
-    Agendada --> AguardandoDebito: na hora (limite diário ok)
+    Agendada --> AguardandoDebito: na hora, mesma moeda (limite diário ok)
+    Agendada --> Cotando: na hora, moedas diferentes
     Agendada --> Recusada: limite diário excedido
     Agendada --> Cancelada: cancelamento
+    Cotando --> AguardandoDebito: CotacaoEmitida (limite diário ok)
+    Cotando --> Cotando: cotação vencida
+    Cotando --> Recusada: CotacaoIndisponivel, sem resposta ou limite
+    Cotando --> Cancelada: cancelamento
     AguardandoDebito --> Debitada: DebitoRealizado
     AguardandoDebito --> Recusada: DebitoRecusado ou sem resposta
-    Debitada --> AguardandoLiquidacao
+    Debitada --> AguardandoLiquidacao: externa
+    Debitada --> AguardandoCredito: câmbio interno
     Debitada --> AguardandoEstorno: cancelamento anotado
+    AguardandoCredito --> Concluida: CreditoRealizado
+    AguardandoCredito --> AguardandoEstorno: CreditoRecusado (destino encerrado)
     AguardandoLiquidacao --> Concluida: LiquidacaoConfirmada
     AguardandoLiquidacao --> AguardandoEstorno: LiquidacaoRecusada
     AguardandoLiquidacao --> ConsultandoLiquidacao: reenvios esgotados
@@ -137,9 +148,40 @@ O banco externo simulado decide pelo final do IBAN de destino, para cada caminho
 | `96` | liquida, mas a resposta se perde | `Concluida` pela consulta de status, sem estorno |
 | outros | confirma em 1 s | `Concluida` |
 
-Prazos padrão: débito 30 s, liquidação 30 s, consulta 15 s, estorno 30 s, com até 3 reenvios por passo (o
-estorno reenvia sem limite: a compensação precisa acontecer). Tarifa de 2,50 EUR no mesmo débito; limite diário
-de 5.000 EUR por conta, somando só o valor.
+Prazos padrão: cotação 30 s, débito 30 s, liquidação 30 s, consulta 15 s, crédito 30 s e estorno 30 s, com até 3
+reenvios por passo. Crédito e estorno reenviam sem limite: desistir deles deixaria o dinheiro em dois lugares ou
+em nenhum.
+
+### Transferências com câmbio
+
+As contas têm moeda (EUR, USD, GBP ou BRL), escolhida na abertura. Quando a moeda de destino é outra, a saga
+começa cotando: manda `CotarCambio` ao câmbio simulado (`eurobank.cambio.comandos`) e só pede o débito quando
+a cotação chega, porque só então se sabe quanto sai da conta. O limite diário é conferido nesse momento, com o
+valor convertido.
+
+- **Externa com câmbio**: `POST /transferencias-externas` com `moedaDestino` diferente da conta. O débito é na
+  moeda da conta; a liquidação no banco externo, na moeda de destino.
+- **Câmbio interno**: `POST /transferencias-cambio` para outra conta EuroBank de outra moeda. A saga debita a
+  origem e credita o destino (estado `AguardandoCredito`); se o destino estiver encerrado, estorna a origem.
+- O campo `valor` pode estar na moeda de origem ou na de destino (`moedaDoValor`): "mandar 100 EUR" ou "o destino
+  recebe exatamente 100 USD".
+
+O câmbio simulado usa base EUR (1 EUR = 1,08 USD = 0,86 GBP = 5,90 BRL), cruza os outros pares pelo euro,
+aplica 1% de spread contra o cliente, trava a cotação por 10 minutos, arredonda meio para cima e não negocia o
+par BRL e GBP. Exemplo: para o destino receber 100 USD, uma conta em euro paga 93,53 EUR à taxa de 1,0692, mais a
+tarifa.
+
+| Moeda da conta | Tarifa | Limite diário |
+|---|---|---|
+| EUR | 2,50 | 5.000 |
+| USD | 2,70 | 5.400 |
+| GBP | 2,20 | 4.300 |
+| BRL | 15,00 | 30.000 |
+
+Transferencias não consulta Contas: mantém uma **projeção local das contas** (id, IBAN, titular e moeda) a partir
+dos eventos `ContaAberta` de `eurobank.contas.eventos`. Uma conta recém-aberta pode levar um instante para chegar
+à projeção; até lá, o pedido recebe 422 (`conta_origem_desconhecida`) e pode ser repetido com a mesma
+`Idempotency-Key`.
 
 ## O que o laboratório revelou
 
@@ -178,6 +220,16 @@ Problemas reais encontrados durante a construção, cada um com um teste que o r
 11. **O reenvio por prazo também cobre a perda de mensagens.** Durante um teste, o Docker reiniciou e o Kafka
     (sem volume no laboratório) perdeu os comandos que ainda estavam nos tópicos. As sagas estavam salvas no
     PostgreSQL: quando os prazos venceram, a varredura reenviou os comandos e todas terminaram `Concluida`.
+12. **No câmbio interno, o mesmo id de transferência aparece em duas contas.** A tabela que guarda as
+    transferências de cada conta (trava e idempotência) tinha o id da transferência como chave; o crédito no
+    destino colidiu com o débito na origem. A chave passou a ser conta e transferência.
+13. **Uma projeção só conhece o que viu.** Transferencias aprende as contas pelos eventos `ContaAberta`; contas
+    abertas antes de o worker existir, e cujos eventos já saíram da retenção do Kafka, não aparecem. Num
+    laboratório novo isso não acontece; em produção, a resposta é retenção longa ou compactação do tópico, ou um
+    snapshot inicial da projeção.
+14. **Um conversor do EF não enxerga outra coluna.** Com o `Dinheiro` levando a moeda, o saldo não podia mais
+    ser convertido sozinho de `numeric` para `Dinheiro`. Os agregados guardam o número num campo privado e
+    montam o `Dinheiro` com a moeda da conta.
 
 ## Arquitetura
 
@@ -203,17 +255,23 @@ externo, que publica direto por ser um sistema de fora):
 flowchart LR
     cliente([Cliente]) -->|HTTP + Idempotency-Key| tapi[API de Transferências<br/>:5300]
     tapi --> pgt[(eurobank_transferencias<br/>saga + outbox)]
-    tworker[Worker de Transferências<br/>respostas + varredura] --> pgt
+    tworker[Worker de Transferências<br/>respostas + varredura + projeção] --> pgt
+    pgt -->|Debezium| xc[[eurobank.cambio.comandos]]
     pgt -->|Debezium| cc[[eurobank.contas.comandos]]
     pgt -->|Debezium| bc[[eurobank.banco-externo.comandos]]
     pgt -->|Debezium| te[[eurobank.transferencias.eventos]]
+    xc --> cambio[Câmbio simulado]
+    cambio --> xr[[eurobank.cambio.respostas]]
     cc --> cworker[Worker de Contas]
     cworker --> pgc[(eurobank_contas<br/>conta + outbox)]
     pgc -->|Debezium| cr[[eurobank.contas.respostas]]
+    pgc -->|Debezium| ce[[eurobank.contas.eventos]]
     bc --> banco[Banco externo simulado]
     banco --> br[[eurobank.banco-externo.respostas]]
+    xr --> tworker
     cr --> tworker
     br --> tworker
+    ce -->|ContaAberta| tworker
 ```
 
 ## Tecnologias
@@ -245,8 +303,7 @@ docker compose up -d --build
 
 A ordem de subida é controlada pelo compose: Postgres e Kafka, criação dos databases e dos tópicos com 3
 partições, Kafka Connect, registro dos conectores, APIs de Contas (aplica as migrations e cria as contas de
-exemplo Ana, Bruno e Carla) e de Transferências (aplica as migrations), e depois os workers e o banco externo
-simulado.
+exemplo Ana, Bruno e Carla) e de Transferências (aplica as migrations), e depois os workers e os simuladores.
 
 | Serviço | URL |
 |---|---|
@@ -275,14 +332,14 @@ Para recomeçar do zero (apaga os dados do laboratório): `docker compose down -
 
 ```
 src/
-  Shared/   EuroBank.Shared (blocos de domínio, Dinheiro, Paginacao)
+  Shared/   EuroBank.Shared (blocos de domínio, Dinheiro e Moeda, Paginacao)
             EuroBank.Shared.Persistence (outbox genérica com escrita ordenada)
             EuroBank.Shared.Messaging (mapeador do Debezium e convenções do Wolverine)
             EuroBank.Shared.Web (Serilog, OpenTelemetry, erros em ProblemDetails, API key)
   Contas/   Domain | Application | Infrastructure | Api | Worker (comandos das sagas)
   Extrato/  Domain | Application | Infrastructure | Worker
   Transferencias/  Domain | Application | Infrastructure | Api | Worker (orquestrador das sagas)
-  Simuladores/  Comum | BancoExterno (sistemas de fora: Confluent.Kafka e Npgsql puros, sem Wolverine e sem EF)
+  Simuladores/  Comum | BancoExterno | Cambio (sistemas de fora: Confluent.Kafka e Npgsql puros, sem Wolverine e sem EF)
 tests/      testes unitários, de integração (Testcontainers) e ponta a ponta (Debezium de verdade)
 infra/      criação dos databases e dos tópicos, conectores do Debezium, script do k6
 http/       roteiros de requisições
@@ -310,8 +367,11 @@ Pontos do código que valem a leitura:
   no histórico.
 - `src/Transferencias/EuroBank.Transferencias.Infrastructure/Persistence/Repositories/RepositorioTransferencias.cs`:
   o advisory lock do limite diário e o `FOR UPDATE SKIP LOCKED` da varredura.
-- `src/Simuladores/EuroBank.Simuladores.BancoExterno/ProcessadorComandos.cs`: inbox e agenda de respostas
+- `src/Simuladores/EuroBank.Simuladores.Comum/RepositorioSimulador.cs` e
+  `src/Simuladores/EuroBank.Simuladores.BancoExterno/ProcessadorComandos.cs`: inbox e agenda de respostas
   escritas à mão, para comparar com o que o Wolverine faz nos outros serviços.
+- `src/Simuladores/EuroBank.Simuladores.Cambio/Regras/TabelaCambio.cs`: taxas cruzadas pelo euro, spread e
+  arredondamento meio para cima.
 
 ## Depurar pela IDE
 
@@ -327,7 +387,7 @@ dotnet run --project src/Transferencias/EuroBank.Transferencias.Worker
 
 Os `appsettings.json` já apontam para `localhost:5434` (Postgres) e `localhost:9092` (Kafka), e as portas
 continuam 5100, 5200 e 5300 (os workers de Contas e de Transferências ficam em 5101 e 5301, o banco externo
-simulado em 5401).
+simulado em 5401 e o câmbio simulado em 5402).
 
 ## Testes
 
@@ -340,7 +400,9 @@ Testcontainers. Os testes ponta a ponta usam os mesmos conectores de `infra/conn
 evento nos dois tópicos, a convergência do extrato, o trace contínuo, o Kafka Connect parado e religado sem
 perda, a duplicata barrada pela inbox e as mensagens inválidas no dead letter. Para a saga, com prazos curtos,
 cobrem cada final de IBAN do banco externo, as recusas (saldo, conta bloqueada ou encerrada, limite diário), o
-agendamento, os dois tipos de cancelamento, a `Idempotency-Key` e a trava que impede encerrar a conta.
+agendamento, os dois tipos de cancelamento, a `Idempotency-Key` e a trava que impede encerrar a conta. Para o
+câmbio: a externa em outra moeda com o extrato mostrando a cotação, o par indisponível, o câmbio entre contas
+EuroBank (concluído e com o destino encerrado) e a transferência síncrona entre moedas recusada.
 
 ## Roteiro de exercícios
 
@@ -468,6 +530,15 @@ As duas instâncias dividem as partições dos tópicos de resposta e rodam a va
 `FOR UPDATE SKIP LOCKED` faz cada transferência vencida ser tratada por uma instância só. Para voltar a uma:
 `docker compose up -d --scale transferencias-worker=1`.
 
+### 12. Câmbio: para fora e entre contas
+
+Pelo `http/contas.http`, abra uma conta em USD; pelo `http/transferencias.http`, mande 100 USD de uma conta em
+euro para um IBAN externo (`moedaDestino` e `moedaDoValor` iguais a `USD`) e para a conta em dólar
+(`POST /transferencias-cambio`). No `GET /transferencias/{id}`, veja a cotação travada, o valor debitado em euro
+e o valor de destino em dólar; no Kafbat UI, o `CotarCambio` em `eurobank.cambio.comandos` e a resposta em
+`eurobank.cambio.respostas`. Os extratos das duas contas mostram os dois lados, cada um na sua moeda. Para ver a
+recusa por câmbio, abra uma conta em BRL e mande para fora com `moedaDestino` igual a `GBP`.
+
 ## Laboratório e produção
 
 Atalhos que este laboratório toma de propósito:
@@ -484,17 +555,18 @@ Atalhos que este laboratório toma de propósito:
 | Banco externo simulado, com o comportamento escolhido pelo final do IBAN | Integração com a rede de pagamentos (SEPA, mensagens ISO 20022), com contrato e homologação |
 | Prazo fixo por passo e até 3 reenvios | Espera crescente com variação aleatória e alerta para sagas paradas num estado |
 | Orquestrador próprio, com varredura a cada 2 s | Igual, ou um motor de workflow (Temporal, Camunda) quando os processos são muitos e longos |
+| Câmbio simulado com taxas fixas e spread único | Provedor de cotações real, com taxas que mudam a cada segundo e spread por cliente e por valor |
+| Projeção local de contas montada só pelos eventos que o worker viu | Tópico com retenção longa ou compactado, ou um snapshot inicial da projeção antes de consumir |
 
 ## Próximos passos
 
-A primeira fase da **saga orquestrada** está pronta: a transferência externa em EUR, com prazos, reenvios,
-consulta antes de estornar, cancelamento, agendamento, tarifa, limite diário e `Idempotency-Key`. As próximas:
+Prontas: a **saga orquestrada** de transferência externa (prazos, reenvios, consulta antes de estornar,
+cancelamento, agendamento, tarifa, limite diário e `Idempotency-Key`) e o **câmbio** (contas em quatro moedas,
+cotação travada com spread, externa em outra moeda e câmbio entre contas EuroBank). As próximas:
 
-1. Contas em várias moedas (EUR, USD, GBP, BRL), um serviço de câmbio simulado com cotações travadas e uma
-   saga de câmbio entre contas EuroBank.
-2. Validações SEPA e SWIFT com horário de corte, devolução pelo banco externo, estado `Divergente` com
+1. Validações SEPA e SWIFT com horário de corte, devolução pelo banco externo, estado `Divergente` com
    reconciliação e saldo negativo controlado.
-3. Notificações por e-mail (Mailpit), cenário de carga da saga no k6 e diagramas de sequência.
+2. Notificações por e-mail (Mailpit), cenário de carga das sagas no k6 e diagramas de sequência.
 
 Depois disso, um contexto de **antifraude** com regras e machine learning (ML.NET), comunicação gRPC entre os
 serviços e Redis.
