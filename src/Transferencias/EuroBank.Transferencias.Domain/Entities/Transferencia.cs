@@ -128,7 +128,10 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
 
     public bool MesmoPedido(string hashDoPedido) => string.Equals(HashDoPedido, hashDoPedido, StringComparison.Ordinal);
 
-    /// <summary>Para um IBAN de outro banco; com moeda de destino diferente da conta, passa pelo câmbio.</summary>
+    /// <summary>
+    /// Para um IBAN de outro banco; com moeda de destino diferente da conta, passa pelo câmbio. Em EUR é SEPA: só para
+    /// países da área SEPA e sujeita ao horário de corte.
+    /// </summary>
     public static Transferencia SolicitarExterna(
         ContaEuroBank origem,
         IbanDestino ibanDestino,
@@ -141,29 +144,33 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
         string idempotencyKey,
         string hashDoPedido,
         DateTimeOffset? executarEm,
-        DateTimeOffset agora)
+        DateTimeOffset agora,
+        PoliticaSepa? sepa = null)
     {
         if (ibanDestino.EhEuroBank)
         {
             throw new ExcecaoDestinoEuroBank();
         }
 
-        if (string.IsNullOrWhiteSpace(bic))
-        {
-            throw new ExcecaoBicObrigatorio();
-        }
+        var bicNormalizado = ValueObjects.Bic.Normalizar(bic);
 
         if (string.IsNullOrWhiteSpace(nomeBeneficiario))
         {
             throw new ExcecaoBeneficiarioObrigatorio();
         }
 
-        return Criar(
+        var emEuro = moedaDestino == Moeda.EUR;
+        if (emEuro && !PaisesSepa.Contem(ibanDestino.Pais))
+        {
+            throw new ExcecaoPaisForaDaSepa(ibanDestino.Pais);
+        }
+
+        var transferencia = Criar(
             TipoTransferencia.Externa,
             origem,
             contaDestinoId: null,
             ibanDestino,
-            bic.Trim().ToUpperInvariant(),
+            bicNormalizado,
             nomeBeneficiario.Trim(),
             valor,
             moedaDestino,
@@ -173,6 +180,13 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
             hashDoPedido,
             executarEm,
             agora);
+
+        if (emEuro)
+        {
+            transferencia.ExecutarEmEfetivo = (sepa ?? PoliticaSepa.Padrao).ExecucaoEfetiva(transferencia.ExecutarEmEfetivo);
+        }
+
+        return transferencia;
     }
 
     /// <summary>Entre contas EuroBank de moedas diferentes: sempre passa pelo câmbio.</summary>

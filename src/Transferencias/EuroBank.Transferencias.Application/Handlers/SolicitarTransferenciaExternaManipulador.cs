@@ -11,7 +11,10 @@ using EuroBank.Transferencias.Domain.ValueObjects;
 namespace EuroBank.Transferencias.Application.Handlers;
 
 /// <summary>Transferência para um IBAN de outro banco; a moeda da conta vem da projeção local de contas.</summary>
-public sealed class SolicitarTransferenciaExternaManipulador(SolicitacaoDeTransferencia solicitacao, IContasConhecidas contas)
+public sealed class SolicitarTransferenciaExternaManipulador(
+    SolicitacaoDeTransferencia solicitacao,
+    IContasConhecidas contas,
+    PoliticaSepa sepa)
 {
     public Task<TransferenciaDto> Handle(SolicitarTransferenciaExterna comando, CancellationToken cancellationToken)
     {
@@ -37,7 +40,8 @@ public sealed class SolicitarTransferenciaExternaManipulador(SolicitacaoDeTransf
                     chave,
                     hash,
                     comando.ExecutarEm,
-                    agora);
+                    agora,
+                    sepa);
             },
             cancellationToken);
     }

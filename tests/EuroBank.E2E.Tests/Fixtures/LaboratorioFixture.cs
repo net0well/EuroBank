@@ -60,6 +60,7 @@ public sealed class LaboratorioFixture : IAsyncLifetime
         ["Saga:PrazoEstorno"] = "00:00:05",
         ["Saga:ReenviosPorPasso"] = "3",
         ["Varredura:Intervalo"] = "00:00:00.500",
+        ["Sepa:AplicarHorarioDeCorte"] = "false",
     };
 
     private readonly List<IAsyncDisposable> _aplicacoes = [];

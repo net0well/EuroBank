@@ -22,6 +22,8 @@ public static class DependencyInjection
         services.AddOptions<OpcoesOutbox>().BindConfiguration(OpcoesOutbox.Secao);
         services.AddOptions<OpcoesSaga>().BindConfiguration(OpcoesSaga.Secao);
         services.AddSingleton(provedor => provedor.GetRequiredService<IOptions<OpcoesSaga>>().Value.ParaPolitica());
+        services.AddOptions<OpcoesSepa>().BindConfiguration(OpcoesSepa.Secao);
+        services.AddSingleton(provedor => provedor.GetRequiredService<IOptions<OpcoesSepa>>().Value.ParaPolitica());
         services.AddSingleton<IMapeadorMensagensOutbox, MapeadorMensagensOutbox>();
 
         // A connection string é lida quando o DbContext é criado, para os testes poderem sobrescrevê-la.
