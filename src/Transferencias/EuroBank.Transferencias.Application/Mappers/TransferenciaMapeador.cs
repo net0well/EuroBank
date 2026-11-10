@@ -1,4 +1,3 @@
-using EuroBank.Shared.ValueObjects;
 using EuroBank.Transferencias.Application.TransferObjects;
 using EuroBank.Transferencias.Domain.Entities;
 
@@ -10,12 +9,18 @@ public static class TransferenciaMapeador
         transferencia.Id.Valor,
         transferencia.Tipo.ToString(),
         transferencia.ContaOrigemId,
+        transferencia.MoedaOrigem.ToString(),
+        transferencia.ContaDestinoId,
         transferencia.IbanDestino.Valor,
         transferencia.Bic,
         transferencia.NomeBeneficiario,
         transferencia.Valor.Valor,
+        transferencia.MoedaDoValor.ToString(),
         transferencia.Tarifa.Valor,
-        transferencia.Valor.Moeda.ToString(),
+        transferencia.ValorDebitado?.Valor,
+        transferencia.ValorDestino?.Valor,
+        transferencia.MoedaDestino.ToString(),
+        transferencia.Cotacao is { } cotacao ? new CotacaoDto(cotacao.Id, cotacao.Taxa, cotacao.ValidaAte) : null,
         transferencia.Descricao,
         transferencia.EmailNotificacao,
         transferencia.SolicitadaEm,
@@ -40,8 +45,11 @@ public static class TransferenciaMapeador
         transferencia.IbanDestino.Valor,
         transferencia.NomeBeneficiario,
         transferencia.Valor.Valor,
+        transferencia.MoedaDoValor.ToString(),
         transferencia.Tarifa.Valor,
-        transferencia.Valor.Moeda.ToString(),
+        transferencia.MoedaOrigem.ToString(),
+        transferencia.ValorDestino?.Valor,
+        transferencia.MoedaDestino.ToString(),
         transferencia.Estado.ToString(),
         transferencia.Motivo?.ToString(),
         transferencia.ExecutarEmEfetivo,

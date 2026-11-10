@@ -1,4 +1,5 @@
 using EuroBank.Shared.Domain;
+using EuroBank.Shared.ValueObjects;
 using EuroBank.Transferencias.Domain.Entities;
 using EuroBank.Transferencias.Domain.Enums;
 using EuroBank.Transferencias.Domain.Repositories;
@@ -15,28 +16,60 @@ namespace EuroBank.Transferencias.Application.Services;
 public sealed class AplicadorRespostas(
     IRepositorioTransferencias repositorio,
     IUnidadeDeTrabalho unidadeDeTrabalho,
+    IExecutorTransacional executor,
+    ServicoInicioTransferencia inicio,
     TimeProvider relogio,
     ILogger<AplicadorRespostas> logger)
 {
-    public async Task AplicarAsync(
+    public Task AplicarAsync(
         Guid transferenciaId,
         string resposta,
         Func<Transferencia, DateTimeOffset, ResultadoPasso> aplicar,
-        CancellationToken cancellationToken)
-    {
-        var transferencia = await repositorio.ObterPorIdAsync(new TransferenciaId(transferenciaId), cancellationToken);
-        if (transferencia is null)
-        {
-            // Resposta de uma transferência que este banco não conhece (ex.: comando enviado à mão no laboratório).
-            logger.LogWarning("{Resposta} da transferência desconhecida {TransferenciaId} ignorada", resposta, transferenciaId);
-            return;
-        }
+        CancellationToken cancellationToken) =>
+        AplicarComLimiteAsync(
+            transferenciaId,
+            resposta,
+            consultaLimite: false,
+            (transferencia, _, agora) => aplicar(transferencia, agora),
+            cancellationToken);
 
-        var resultado = aplicar(transferencia, relogio.GetUtcNow());
-        await unidadeDeTrabalho.SalvarAsync(cancellationToken);
+    /// <summary>
+    /// Para a resposta que decide o débito (a cotação): trava a conta e soma o que ela já transferiu no dia, na
+    /// mesma transação em que a saga pede o débito.
+    /// </summary>
+    public Task AplicarComLimiteAsync(
+        Guid transferenciaId,
+        string resposta,
+        Func<Transferencia, Dinheiro, DateTimeOffset, ResultadoPasso> aplicar,
+        CancellationToken cancellationToken) =>
+        AplicarComLimiteAsync(transferenciaId, resposta, consultaLimite: true, aplicar, cancellationToken);
 
-        logger.LogInformation(
-            "{Resposta} da transferência {TransferenciaId}: {Resultado}, estado {Estado}",
-            resposta, transferenciaId, resultado, transferencia.Estado);
-    }
+    private Task AplicarComLimiteAsync(
+        Guid transferenciaId,
+        string resposta,
+        bool consultaLimite,
+        Func<Transferencia, Dinheiro, DateTimeOffset, ResultadoPasso> aplicar,
+        CancellationToken cancellationToken) =>
+        executor.ExecutarAsync(
+            async token =>
+            {
+                var transferencia = await repositorio.ObterPorIdAsync(new TransferenciaId(transferenciaId), token);
+                if (transferencia is null)
+                {
+                    // Resposta de uma transferência que este banco não conhece (ex.: comando enviado à mão no laboratório).
+                    logger.LogWarning("{Resposta} da transferência desconhecida {TransferenciaId} ignorada", resposta, transferenciaId);
+                    return;
+                }
+
+                var jaTransferido = consultaLimite
+                    ? await inicio.ConsumoDoDiaAsync(transferencia, token)
+                    : Dinheiro.ZeroEm(transferencia.MoedaOrigem);
+                var resultado = aplicar(transferencia, jaTransferido, relogio.GetUtcNow());
+                await unidadeDeTrabalho.SalvarAsync(token);
+
+                logger.LogInformation(
+                    "{Resposta} da transferência {TransferenciaId}: {Resultado}, estado {Estado}",
+                    resposta, transferenciaId, resultado, transferencia.Estado);
+            },
+            cancellationToken);
 }

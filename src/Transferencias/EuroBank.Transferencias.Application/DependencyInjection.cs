@@ -12,6 +12,7 @@ public static class DependencyInjection
     public static IServiceCollection AdicionarAplicacaoTransferencias(this IServiceCollection services)
     {
         services.AddScoped<ServicoInicioTransferencia>();
+        services.AddScoped<SolicitacaoDeTransferencia>();
         services.AddScoped<AplicadorRespostas>();
         services.AddScoped<VarreduraTransferencias>();
         return services;

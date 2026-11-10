@@ -1,3 +1,4 @@
+using EuroBank.Shared.Enums;
 using EuroBank.Shared.ValueObjects;
 using EuroBank.Transferencias.Domain.Entities;
 using EuroBank.Transferencias.Domain.ValueObjects;
@@ -27,10 +28,14 @@ public interface IRepositorioTransferencias
     /// </summary>
     Task<bool> TravarParaAvancarAsync(TransferenciaId id, DateTimeOffset agora, CancellationToken cancellationToken);
 
-    /// <summary>Soma o valor (sem tarifa) das outras transferências da conta que já consomem o limite do dia.</summary>
+    /// <summary>
+    /// Soma o valor debitado (sem tarifa) das outras transferências da conta que já consomem o limite do dia, na
+    /// moeda da conta.
+    /// </summary>
     Task<Dinheiro> SomarConsumoDoLimiteAsync(
         Guid contaOrigemId,
         DateOnly dia,
         TransferenciaId exceto,
+        Moeda moeda,
         CancellationToken cancellationToken);
 }

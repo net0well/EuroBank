@@ -15,7 +15,7 @@ public sealed class SolicitacaoTestes(PostgresFixture banco)
     [Fact]
     public async Task ParaJa_Responde202ComecaASagaEGravaODebitoNaOutbox()
     {
-        var conta = Guid.CreateVersion7();
+        var conta = (await banco.NovaContaAsync()).Id;
 
         var resposta = await _cliente.SolicitarAsync(Pedido(conta), Guid.CreateVersion7().ToString());
 
@@ -23,7 +23,8 @@ public sealed class SolicitacaoTestes(PostgresFixture banco)
         resposta.Headers.Location!.ToString().ShouldBe($"/transferencias/{transferencia.Id}");
         transferencia.Estado.ShouldBe("AguardandoDebito");
         transferencia.Tarifa.ShouldBe(2.50m);
-        transferencia.Moeda.ShouldBe("EUR");
+        transferencia.MoedaOrigem.ShouldBe("EUR");
+        transferencia.ValorDebitado.ShouldBe(100m);
         transferencia.TentativasNoPasso.ShouldBe(1);
         transferencia.PrazoDoPasso.ShouldNotBeNull();
 
@@ -43,7 +44,7 @@ public sealed class SolicitacaoTestes(PostgresFixture banco)
     [Fact]
     public async Task ParaDepois_FicaAgendadaSemComandoNaOutbox()
     {
-        var conta = Guid.CreateVersion7();
+        var conta = (await banco.NovaContaAsync()).Id;
         var amanha = DateTimeOffset.UtcNow.AddDays(1);
 
         var transferencia = await _cliente.SolicitarComSucessoAsync(Pedido(conta, executarEm: amanha));
@@ -58,7 +59,7 @@ public sealed class SolicitacaoTestes(PostgresFixture banco)
     public async Task MesmaIdempotencyKeyEMesmoCorpo_DevolveAMesmaTransferencia()
     {
         var chave = Guid.CreateVersion7().ToString();
-        var conta = Guid.CreateVersion7();
+        var conta = (await banco.NovaContaAsync()).Id;
 
         var primeira = await LerAsync(await _cliente.SolicitarAsync(Pedido(conta), chave), HttpStatusCode.Accepted);
         var segunda = await LerAsync(await _cliente.SolicitarAsync(Pedido(conta), chave), HttpStatusCode.Accepted);
@@ -73,7 +74,7 @@ public sealed class SolicitacaoTestes(PostgresFixture banco)
     public async Task MesmaIdempotencyKeyComOutroCorpo_Responde422()
     {
         var chave = Guid.CreateVersion7().ToString();
-        var conta = Guid.CreateVersion7();
+        var conta = (await banco.NovaContaAsync()).Id;
         await LerAsync(await _cliente.SolicitarAsync(Pedido(conta, valor: 100m), chave), HttpStatusCode.Accepted);
 
         await DeveSerProblemaAsync(
@@ -113,7 +114,7 @@ public sealed class SolicitacaoTestes(PostgresFixture banco)
     [Fact]
     public async Task PassandoDoLimiteDiario_TerminaRecusada_EATarifaNaoConta()
     {
-        var conta = Guid.CreateVersion7();
+        var conta = (await banco.NovaContaAsync()).Id;
         (await _cliente.SolicitarComSucessoAsync(Pedido(conta, valor: 4_900m))).Estado.ShouldBe("AguardandoDebito");
         (await _cliente.SolicitarComSucessoAsync(Pedido(conta, valor: 100m))).Estado.ShouldBe("AguardandoDebito");
 
@@ -126,7 +127,7 @@ public sealed class SolicitacaoTestes(PostgresFixture banco)
     [Fact]
     public async Task LimiteDiario_ConcorrenteNaMesmaConta_NuncaPassaDoLimite()
     {
-        var conta = Guid.CreateVersion7();
+        var conta = (await banco.NovaContaAsync()).Id;
 
         var respostas = await Task.WhenAll(Enumerable.Range(0, 6)
             .Select(_ => _cliente.SolicitarComSucessoAsync(Pedido(conta, valor: 1_000m))));

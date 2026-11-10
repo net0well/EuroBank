@@ -17,4 +17,10 @@ public enum MotivoTransferencia
 
     /// <summary>Contas recusou o débito por um motivo que a saga não conhece.</summary>
     RecusadaPorContas = 10,
+
+    /// <summary>O câmbio não cotou o par ou não respondeu depois dos reenvios.</summary>
+    CambioIndisponivel = 11,
+
+    /// <summary>Câmbio interno: a conta de destino recusou o crédito (encerrada).</summary>
+    DestinoEncerrado = 12,
 }

@@ -16,20 +16,38 @@ public sealed class ClienteTransferencias(HttpClient http)
         decimal valor = 100m,
         string iban = IbanComum,
         string? bic = "DEUTDEFF",
-        DateTimeOffset? executarEm = null) => new
+        DateTimeOffset? executarEm = null,
+        string? moedaDestino = null,
+        string? moedaDoValor = null) => new
         {
-            contaOrigemId = contaOrigemId ?? Guid.CreateVersion7(),
+            contaOrigemId = contaOrigemId ?? PostgresFixture.ContaPadrao,
             ibanDestino = iban,
             bic,
             nomeBeneficiario = "Bruno Externo",
             valor,
             executarEm,
             descricao = "Aluguel",
+            moedaDestino,
+            moedaDoValor,
         };
 
-    public Task<HttpResponseMessage> SolicitarAsync(object pedido, string? idempotencyKey)
+    public static object PedidoCambio(Guid contaOrigemId, string ibanDestino, decimal valor = 100m, string? moedaDoValor = null) => new
     {
-        var requisicao = new HttpRequestMessage(HttpMethod.Post, "/transferencias-externas") { Content = JsonContent.Create(pedido) };
+        contaOrigemId,
+        ibanDestino,
+        valor,
+        moedaDoValor,
+    };
+
+    public Task<HttpResponseMessage> SolicitarCambioAsync(object pedido) =>
+        Enviar("/transferencias-cambio", pedido, Guid.CreateVersion7().ToString());
+
+    public Task<HttpResponseMessage> SolicitarAsync(object pedido, string? idempotencyKey) =>
+        Enviar("/transferencias-externas", pedido, idempotencyKey);
+
+    private Task<HttpResponseMessage> Enviar(string rota, object pedido, string? idempotencyKey)
+    {
+        var requisicao = new HttpRequestMessage(HttpMethod.Post, rota) { Content = JsonContent.Create(pedido) };
         if (idempotencyKey is not null)
         {
             requisicao.Headers.Add("Idempotency-Key", idempotencyKey);
@@ -73,8 +91,13 @@ public sealed record TransferenciaResposta(
     string Bic,
     string NomeBeneficiario,
     decimal Valor,
+    string MoedaDoValor,
     decimal Tarifa,
-    string Moeda,
+    string MoedaOrigem,
+    decimal? ValorDebitado,
+    decimal? ValorDestino,
+    string MoedaDestino,
+    CotacaoResposta? Cotacao,
     DateTimeOffset? ExecutarEm,
     DateTimeOffset ExecutarEmEfetivo,
     string Estado,
@@ -84,5 +107,7 @@ public sealed record TransferenciaResposta(
     DateTimeOffset? PrazoDoPasso,
     int Versao,
     IReadOnlyList<PassoResposta> Historico);
+
+public sealed record CotacaoResposta(Guid Id, decimal Taxa, DateTimeOffset ValidaAte);
 
 public sealed record PassoResposta(int Ordem, string EstadoApos, string Descricao, DateTimeOffset OcorridoEm);
