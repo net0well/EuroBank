@@ -7,6 +7,7 @@
     <ProjectReference Include="..\..\src\Transferencias\EuroBank.Transferencias.Api\EuroBank.Transferencias.Api.csproj" />
     <ProjectReference Include="..\..\src\Transferencias\EuroBank.Transferencias.Worker\EuroBank.Transferencias.Worker.csproj" />
     <ProjectReference Include="..\..\src\Simuladores\EuroBank.Simuladores.BancoExterno\EuroBank.Simuladores.BancoExterno.csproj" />
+    <ProjectReference Include="..\..\src\Simuladores\EuroBank.Simuladores.Cambio\EuroBank.Simuladores.Cambio.csproj" />
   </ItemGroup>
 
   <ItemGroup>
