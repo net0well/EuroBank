@@ -209,6 +209,9 @@ public sealed class LaboratorioFixture : IAsyncLifetime
             ["Kafka:GrupoConsumidor"] = $"eurobank-banco-externo-e2e-{Guid.NewGuid():N}",
             ["BancoExterno:LatenciaMs"] = "200",
             ["BancoExterno:AtrasoFinal97Segundos"] = "5",
+            // O final 95 confirma depois de a saga desistir do banco e estornar (~15 s com os prazos acima).
+            ["BancoExterno:AtrasoFinal95Segundos"] = "25",
+            ["BancoExterno:AtrasoDevolucaoSegundos"] = "2",
         });
 
         Subir(new WebApplicationFactory<MarcadorCambio>(), new()
