@@ -6,7 +6,7 @@ using EuroBank.Transferencias.Domain.ValueObjects;
 
 namespace EuroBank.Transferencias.Application.Handlers;
 
-/// <summary>Respostas do banco externo: confirmação, recusa e status da consulta.</summary>
+/// <summary>Respostas do banco externo: confirmação, recusa, status da consulta e devolução.</summary>
 public sealed class RespostasBancoExternoManipulador(AplicadorRespostas aplicador, PoliticaSaga politica)
 {
     public Task Handle(LiquidacaoConfirmada resposta, CancellationToken cancellationToken) =>
@@ -21,6 +21,13 @@ public sealed class RespostasBancoExternoManipulador(AplicadorRespostas aplicado
             resposta.TransferenciaId,
             nameof(LiquidacaoRecusada),
             (transferencia, agora) => transferencia.RegistrarLiquidacaoRecusada(politica, agora),
+            cancellationToken);
+
+    public Task Handle(DevolucaoRecebida resposta, CancellationToken cancellationToken) =>
+        aplicador.AplicarAsync(
+            resposta.TransferenciaId,
+            "TransferenciaDevolvida",
+            (transferencia, agora) => transferencia.RegistrarDevolucaoRecebida(politica, agora),
             cancellationToken);
 
     public Task Handle(StatusLiquidacao resposta, CancellationToken cancellationToken)

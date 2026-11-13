@@ -3,5 +3,5 @@ using EuroBank.Shared.ValueObjects;
 
 namespace EuroBank.Contas.Domain.Exceptions;
 
-public sealed class ExcecaoContaComSaldo(Dinheiro saldo)
+public sealed class ExcecaoContaComSaldo(Saldo saldo)
     : ExcecaoRegraNegocio("conta_com_saldo", $"A conta só pode ser encerrada com saldo zero (saldo atual {saldo} EUR).");

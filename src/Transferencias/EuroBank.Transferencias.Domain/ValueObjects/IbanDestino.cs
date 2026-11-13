@@ -16,6 +16,9 @@ public sealed partial record IbanDestino
 
     public string Valor { get; }
 
+    /// <summary>Código ISO do país (os dois primeiros caracteres).</summary>
+    public string Pais => Valor[..2];
+
     /// <summary>IBANs do EuroBank: país PT e código de banco EURO logo depois dos dígitos verificadores.</summary>
     public bool EhEuroBank =>
         Valor.StartsWith(PaisEuroBank, StringComparison.Ordinal)

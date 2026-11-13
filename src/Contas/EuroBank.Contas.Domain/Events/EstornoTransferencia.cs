@@ -9,6 +9,6 @@ public sealed record EstornoTransferencia(
     Guid TransferenciaId,
     string NomeBeneficiario,
     Dinheiro Valor,
-    Dinheiro SaldoApos,
+    Saldo SaldoApos,
     int Versao,
     DateTimeOffset OcorridoEm) : IEventoDeConta;

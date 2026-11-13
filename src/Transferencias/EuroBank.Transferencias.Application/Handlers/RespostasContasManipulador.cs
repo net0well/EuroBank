@@ -5,7 +5,7 @@ using EuroBank.Transferencias.Domain.ValueObjects;
 
 namespace EuroBank.Transferencias.Application.Handlers;
 
-/// <summary>Respostas de Contas aos comandos da saga (débito, crédito e estorno).</summary>
+/// <summary>Respostas de Contas aos comandos da saga (débito, crédito, estorno, reconciliação e devolução).</summary>
 public sealed class RespostasContasManipulador(AplicadorRespostas aplicador, PoliticaSaga politica)
 {
     public Task Handle(DebitoRealizado resposta, CancellationToken cancellationToken) =>
@@ -41,6 +41,34 @@ public sealed class RespostasContasManipulador(AplicadorRespostas aplicador, Pol
             resposta.TransferenciaId,
             nameof(CreditoRecusado),
             (transferencia, agora) => transferencia.RegistrarCreditoRecusado(MotivoDe(resposta.Motivo), politica, agora),
+            cancellationToken);
+
+    public Task Handle(ReconciliacaoRealizada resposta, CancellationToken cancellationToken) =>
+        aplicador.AplicarAsync(
+            resposta.TransferenciaId,
+            nameof(ReconciliacaoRealizada),
+            (transferencia, agora) => transferencia.RegistrarReconciliacaoRealizada(agora),
+            cancellationToken);
+
+    public Task Handle(ReconciliacaoRecusada resposta, CancellationToken cancellationToken) =>
+        aplicador.AplicarAsync(
+            resposta.TransferenciaId,
+            nameof(ReconciliacaoRecusada),
+            (transferencia, agora) => transferencia.RegistrarReconciliacaoRecusada(MotivoDe(resposta.Motivo), agora),
+            cancellationToken);
+
+    public Task Handle(DevolucaoCreditada resposta, CancellationToken cancellationToken) =>
+        aplicador.AplicarAsync(
+            resposta.TransferenciaId,
+            nameof(DevolucaoCreditada),
+            (transferencia, agora) => transferencia.RegistrarDevolucaoCreditada(agora),
+            cancellationToken);
+
+    public Task Handle(DevolucaoRecusada resposta, CancellationToken cancellationToken) =>
+        aplicador.AplicarAsync(
+            resposta.TransferenciaId,
+            nameof(DevolucaoRecusada),
+            (transferencia, agora) => transferencia.RegistrarDevolucaoRecusada(MotivoDe(resposta.Motivo), agora),
             cancellationToken);
 
     /// <summary>Os motivos de Contas têm o mesmo nome dos da saga; um motivo novo não trava a saga.</summary>

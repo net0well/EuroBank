@@ -23,6 +23,10 @@ public sealed class RegrasLiquidacao(IOptions<OpcoesBancoExterno> opcoes, Random
             "98" => new DecisaoLiquidacao(ComportamentoLiquidacao.Silenciar, TimeSpan.Zero),
             "97" => new DecisaoLiquidacao(ComportamentoLiquidacao.Confirmar, TimeSpan.FromSeconds(configuracao.AtrasoFinal97Segundos)),
             "96" => new DecisaoLiquidacao(ComportamentoLiquidacao.LiquidarSemResponder, TimeSpan.Zero),
+            "95" => new DecisaoLiquidacao(
+                ComportamentoLiquidacao.ConfirmarDepoisDeNegar, TimeSpan.FromSeconds(configuracao.AtrasoFinal95Segundos)),
+            "94" => new DecisaoLiquidacao(
+                ComportamentoLiquidacao.ConfirmarEDevolver, latencia, TimeSpan.FromSeconds(configuracao.AtrasoDevolucaoSegundos)),
             _ => Sortear(configuracao, latencia),
         };
     }

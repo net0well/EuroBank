@@ -13,6 +13,6 @@ public sealed record TransferenciaCambioEnviada(
     Dinheiro Valor,
     Dinheiro Tarifa,
     Conversao Conversao,
-    Dinheiro SaldoApos,
+    Saldo SaldoApos,
     int Versao,
     DateTimeOffset OcorridoEm) : IEventoDeConta;

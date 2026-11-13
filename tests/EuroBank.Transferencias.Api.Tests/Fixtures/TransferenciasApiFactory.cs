@@ -15,6 +15,9 @@ public sealed class TransferenciasApiFactory(string connectionString) : WebAppli
         builder.UseSetting("ConnectionStrings:Transferencias", connectionString);
         builder.UseSetting("Seguranca:ApiKey", ApiKey);
         builder.UseSetting("OTEL_SDK_DISABLED", "true");
+
+        // Os testes não podem depender da hora em que rodam; o corte SEPA tem testes próprios com relógio falso.
+        builder.UseSetting("Sepa:AplicarHorarioDeCorte", "false");
     }
 
     /// <summary>Cliente HTTP que já envia o header X-Api-Key.</summary>

@@ -1,6 +1,9 @@
 namespace EuroBank.Transferencias.Domain.Enums;
 
-/// <summary>Por que a saga terminou Cancelada ou Recusada.</summary>
+/// <summary>
+/// Por que a saga terminou Cancelada, Recusada ou Divergente, ou por que uma Concluida ou Devolvida saiu do caminho
+/// feliz (Reconciliada, DevolvidaPeloBanco).
+/// </summary>
 public enum MotivoTransferencia
 {
     RecusadaPeloBanco = 1,
@@ -23,4 +26,19 @@ public enum MotivoTransferencia
 
     /// <summary>Câmbio interno: a conta de destino recusou o crédito (encerrada).</summary>
     DestinoEncerrado = 12,
+
+    /// <summary>A conta de origem está negativa por uma reconciliação: novas transferências são recusadas.</summary>
+    SaldoNegativo = 13,
+
+    /// <summary>Concluida depois de ficar Divergente: Contas debitou de novo valor e tarifa.</summary>
+    Reconciliada = 14,
+
+    /// <summary>Devolvida: o banco externo devolveu o valor depois da conclusão.</summary>
+    DevolvidaPeloBanco = 15,
+
+    /// <summary>Divergente: o banco confirmou a liquidação depois de a saga estornar o débito.</summary>
+    ConfirmadaAposEstorno = 16,
+
+    /// <summary>Divergente: o banco devolveu o valor, mas Contas não pôde creditar a conta de origem.</summary>
+    DevolucaoNaoCreditada = 17,
 }

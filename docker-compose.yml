@@ -245,6 +245,9 @@ services:
       ASPNETCORE_HTTP_PORTS: "8080"
       ConnectionStrings__Transferencias: "Host=postgres;Port=5432;Database=eurobank_transferencias;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
       Seguranca__ApiKey: ${TRANSFERENCIAS_API_KEY}
+      # false desliga o horário de corte SEPA (transferências em EUR depois das 16:00 UTC ou no fim de semana
+      # ficam para o próximo dia útil às 08:00 UTC).
+      Sepa__AplicarHorarioDeCorte: ${SEPA_HORARIO_DE_CORTE:-true}
       Saga__PrazoDebito: ${SAGA_PRAZO_DEBITO:-00:00:30}
       Saga__PrazoLiquidacao: ${SAGA_PRAZO_LIQUIDACAO:-00:00:30}
       Saga__PrazoConsulta: ${SAGA_PRAZO_CONSULTA:-00:00:15}
@@ -305,6 +308,8 @@ services:
       BancoExterno__LatenciaMs: ${BANCO_EXTERNO_LATENCIA_MS:-1000}
       BancoExterno__TaxaRecusa: ${BANCO_EXTERNO_TAXA_RECUSA:-0}
       BancoExterno__TaxaSilencio: ${BANCO_EXTERNO_TAXA_SILENCIO:-0}
+      BancoExterno__AtrasoFinal95Segundos: ${BANCO_EXTERNO_ATRASO_95:-300}
+      BancoExterno__AtrasoDevolucaoSegundos: ${BANCO_EXTERNO_ATRASO_DEVOLUCAO:-10}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
     healthcheck:
       test: ["CMD-SHELL", "curl -fs http://localhost:8080/health > /dev/null"]

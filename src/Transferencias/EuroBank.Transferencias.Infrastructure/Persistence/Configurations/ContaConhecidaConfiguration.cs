@@ -16,5 +16,6 @@ public sealed class ContaConhecidaConfiguration : IEntityTypeConfiguration<Conta
         builder.Property(conta => conta.Titular).HasColumnName("titular").HasMaxLength(140);
         builder.Property(conta => conta.Moeda).HasColumnName("moeda").HasConversion<string>().HasMaxLength(3);
         builder.Property(conta => conta.AbertaEm).HasColumnName("aberta_em");
+        builder.Property(conta => conta.EncerradaEm).HasColumnName("encerrada_em");
     }
 }

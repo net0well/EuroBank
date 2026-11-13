@@ -27,7 +27,7 @@ public sealed class TransferenciaExternaEnviadaManipulador(
             evento.Descricao,
             Dinheiro.De(evento.Valor, extrato.Moeda),
             Dinheiro.De(evento.Tarifa, extrato.Moeda),
-            Dinheiro.De(evento.SaldoApos, extrato.Moeda),
+            Saldo.De(evento.SaldoApos, extrato.Moeda),
             evento.OcorridoEm,
             evento is { MoedaDestino: { } moeda, ValorDestino: { } valor, Cotacao: { } cotacao }
                 ? new CambioDoLancamento(Moedas.Ler(moeda), valor, cotacao)

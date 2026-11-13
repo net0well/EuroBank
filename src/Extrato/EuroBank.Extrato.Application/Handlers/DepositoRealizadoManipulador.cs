@@ -18,7 +18,7 @@ public sealed class DepositoRealizadoManipulador(
         var extrato = await repositorio.ObterOuFalharAsync(evento.ContaId, cancellationToken);
 
         var resultado = extrato.RegistrarDeposito(
-            evento.Versao, Dinheiro.De(evento.Valor, extrato.Moeda), Dinheiro.De(evento.SaldoApos, extrato.Moeda), evento.OcorridoEm);
+            evento.Versao, Dinheiro.De(evento.Valor, extrato.Moeda), Saldo.De(evento.SaldoApos, extrato.Moeda), evento.OcorridoEm);
 
         if (resultado != ResultadoAplicacao.IgnoradoJaAplicado)
         {

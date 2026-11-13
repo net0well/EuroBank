@@ -1,15 +1,21 @@
 ### Roteiro da API de Transferências (VS Code REST Client, Rider ou Visual Studio)
 ### A saga roda em segundo plano: acompanhe pelo GET da transferência (estado e histórico) e, no Kafbat UI
 ### (http://localhost:8080), pelos tópicos:
-###   eurobank.contas.comandos          -> DebitarTransferenciaExterna, EstornarTransferencia, LiberarTravaTransferencia
-###   eurobank.contas.respostas         -> DebitoRealizado, DebitoRecusado, EstornoRealizado
+###   eurobank.contas.comandos          -> DebitarTransferenciaExterna, EstornarTransferencia, LiberarTravaTransferencia,
+###                                        DebitarReconciliacao, CreditarDevolucao
+###   eurobank.contas.respostas         -> DebitoRealizado, DebitoRecusado, EstornoRealizado, ReconciliacaoRealizada,
+###                                        ReconciliacaoRecusada, DevolucaoCreditada, DevolucaoRecusada
 ###   eurobank.banco-externo.comandos   -> LiquidarTransferencia, ConsultarLiquidacao
-###   eurobank.banco-externo.respostas  -> LiquidacaoConfirmada, LiquidacaoRecusada, StatusLiquidacao
+###   eurobank.banco-externo.respostas  -> LiquidacaoConfirmada, LiquidacaoRecusada, StatusLiquidacao, TransferenciaDevolvida
 ###   eurobank.cambio.comandos          -> CotarCambio
 ###   eurobank.cambio.respostas         -> CotacaoEmitida, CotacaoIndisponivel
-###   eurobank.transferencias.eventos   -> TransferenciaConcluida, TransferenciaCancelada, TransferenciaRecusada
+###   eurobank.transferencias.eventos   -> TransferenciaConcluida, TransferenciaCancelada, TransferenciaRecusada,
+###                                        TransferenciaDivergente, TransferenciaDevolvida
 ### O final do IBAN de destino comanda o banco externo simulado: 99 recusa, 98 nunca responde,
-### 97 responde em 45 s, 96 liquida mas a resposta se perde; os demais confirmam em 1 s.
+### 97 responde em 45 s, 96 liquida mas a resposta se perde, 95 nega na consulta e confirma depois de 5 min,
+### 94 confirma e devolve 10 s depois; os demais confirmam em 1 s.
+### Em EUR a transferência é SEPA: só para países da área SEPA e, depois das 16:00 UTC ou no fim de semana,
+### fica agendada para o próximo dia útil às 08:00 UTC (veja executarEmEfetivo na resposta).
 
 @api = http://localhost:5300
 @apiKey = transferencias-lab-key
@@ -81,7 +87,7 @@ Content-Type: application/json
 POST {{api}}/transferencias/{{agendada.response.body.id}}/cancelamento
 X-Api-Key: {{apiKey}}
 
-### Listar por conta e estado (Agendada, AguardandoDebito, AguardandoLiquidacao, Concluida, Cancelada...)
+### Listar por conta e estado (Agendada, AguardandoDebito, AguardandoLiquidacao, Concluida, Cancelada, Divergente, Devolvida...)
 GET {{api}}/transferencias?contaOrigemId={{contaOrigemId}}&status=Cancelada
 X-Api-Key: {{apiKey}}
 
@@ -121,3 +127,59 @@ Content-Type: application/json
 ### Cotação, valor debitado e valor creditado
 GET {{api}}/transferencias/{{cambio.response.body.id}}
 X-Api-Key: {{apiKey}}
+
+### Final 95: a saga estorna (a consulta diz NaoLiquidada) e, 5 min depois, o banco confirma: fica Divergente
+# @name divergente
+POST {{api}}/transferencias-externas
+X-Api-Key: {{apiKey}}
+Idempotency-Key: roteiro-005
+Content-Type: application/json
+
+{
+  "contaOrigemId": "{{contaOrigemId}}",
+  "ibanDestino": "DE89370400440532013095",
+  "bic": "DEUTDEFF",
+  "nomeBeneficiario": "Bruno Externo",
+  "valor": 100.00
+}
+
+### Divergentes à espera de reconciliação
+GET {{api}}/transferencias?status=Divergente
+X-Api-Key: {{apiKey}}
+
+### Reconciliação: debita de novo valor e tarifa, mesmo que a conta fique negativa (fora de Divergente: 409)
+POST {{api}}/transferencias-externas/{{divergente.response.body.id}}/reconciliacao
+X-Api-Key: {{apiKey}}
+
+### Final 94: conclui e, 10 s depois, o banco devolve; o valor volta à conta, a tarifa não
+# @name devolvida
+POST {{api}}/transferencias-externas
+X-Api-Key: {{apiKey}}
+Idempotency-Key: roteiro-006
+Content-Type: application/json
+
+{
+  "contaOrigemId": "{{contaOrigemId}}",
+  "ibanDestino": "DE89370400440532013094",
+  "bic": "DEUTDEFF",
+  "nomeBeneficiario": "Bruno Externo",
+  "valor": 100.00
+}
+
+###
+GET {{api}}/transferencias/{{devolvida.response.body.id}}
+X-Api-Key: {{apiKey}}
+
+### SEPA: em EUR, um IBAN de fora da área SEPA é recusado (422 pais_fora_da_sepa); BIC inválido também (bic_invalido)
+POST {{api}}/transferencias-externas
+X-Api-Key: {{apiKey}}
+Idempotency-Key: roteiro-007
+Content-Type: application/json
+
+{
+  "contaOrigemId": "{{contaOrigemId}}",
+  "ibanDestino": "US64SVBKUS6S3300958879",
+  "bic": "SVBKUS6S",
+  "nomeBeneficiario": "Bruno Externo",
+  "valor": 100.00
+}

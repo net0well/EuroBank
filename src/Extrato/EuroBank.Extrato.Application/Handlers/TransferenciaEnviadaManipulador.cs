@@ -22,7 +22,7 @@ public sealed class TransferenciaEnviadaManipulador(
             evento.TransferenciaId,
             evento.IbanDestino,
             Dinheiro.De(evento.Valor, extrato.Moeda),
-            Dinheiro.De(evento.SaldoApos, extrato.Moeda),
+            Saldo.De(evento.SaldoApos, extrato.Moeda),
             evento.OcorridoEm);
 
         if (resultado != ResultadoAplicacao.IgnoradoJaAplicado)

@@ -67,4 +67,8 @@ public sealed class TransferenciaDaConta
     }
 
     internal void Liberar() => Status = StatusTransferenciaDaConta.Liberada;
+
+    internal void Reconciliar() => Status = StatusTransferenciaDaConta.Reconciliada;
+
+    internal void Devolver() => Status = StatusTransferenciaDaConta.Devolvida;
 }

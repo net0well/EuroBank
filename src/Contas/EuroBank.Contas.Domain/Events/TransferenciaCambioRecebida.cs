@@ -12,6 +12,6 @@ public sealed record TransferenciaCambioRecebida(
     string? Descricao,
     Dinheiro Valor,
     Conversao Conversao,
-    Dinheiro SaldoApos,
+    Saldo SaldoApos,
     int Versao,
     DateTimeOffset OcorridoEm) : IEventoDeConta;

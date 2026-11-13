@@ -22,5 +22,7 @@ public static class TiposEventosContas
         ["EstornoTransferencia"] = typeof(EventoEstornoTransferencia),
         ["TransferenciaCambioEnviada"] = typeof(EventoTransferenciaCambioEnviada),
         ["TransferenciaCambioRecebida"] = typeof(EventoTransferenciaCambioRecebida),
+        ["DevolucaoTransferenciaExterna"] = typeof(EventoDevolucaoTransferenciaExterna),
+        ["DebitoReconciliacao"] = typeof(EventoDebitoReconciliacao),
     };
 }

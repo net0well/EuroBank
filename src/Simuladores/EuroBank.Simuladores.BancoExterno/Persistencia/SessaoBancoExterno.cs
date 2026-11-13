@@ -8,7 +8,8 @@ public sealed class SessaoBancoExterno(NpgsqlConnection conexao, NpgsqlTransacti
     : SessaoSimulador(conexao, transacao)
 {
     /// <summary>Grava a liquidação na primeira vez; reenvios do mesmo comando mantêm o registro original.</summary>
-    public async Task RegistrarLiquidacaoAsync(
+    /// <returns>true se foi o primeiro registro desta transferência.</returns>
+    public async Task<bool> RegistrarLiquidacaoAsync(
         Guid transferenciaId,
         string ibanDestino,
         decimal valor,
@@ -31,7 +32,7 @@ public sealed class SessaoBancoExterno(NpgsqlConnection conexao, NpgsqlTransacti
         comando.Parameters.AddWithValue("status", status);
         comando.Parameters.AddWithValue("silenciosa", silenciosa);
         comando.Parameters.AddWithValue("agora", agora);
-        await comando.ExecuteNonQueryAsync(cancellationToken);
+        return await comando.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
 
     public async Task<(string Status, bool Silenciosa)?> ObterLiquidacaoAsync(Guid transferenciaId, CancellationToken cancellationToken)

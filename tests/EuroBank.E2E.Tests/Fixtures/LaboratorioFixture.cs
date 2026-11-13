@@ -58,8 +58,11 @@ public sealed class LaboratorioFixture : IAsyncLifetime
         ["Saga:PrazoConsulta"] = "00:00:02",
         ["Saga:PrazoCredito"] = "00:00:05",
         ["Saga:PrazoEstorno"] = "00:00:05",
+        ["Saga:PrazoReconciliacao"] = "00:00:05",
+        ["Saga:PrazoCreditoDevolucao"] = "00:00:05",
         ["Saga:ReenviosPorPasso"] = "3",
         ["Varredura:Intervalo"] = "00:00:00.500",
+        ["Sepa:AplicarHorarioDeCorte"] = "false",
     };
 
     private readonly List<IAsyncDisposable> _aplicacoes = [];
@@ -206,6 +209,9 @@ public sealed class LaboratorioFixture : IAsyncLifetime
             ["Kafka:GrupoConsumidor"] = $"eurobank-banco-externo-e2e-{Guid.NewGuid():N}",
             ["BancoExterno:LatenciaMs"] = "200",
             ["BancoExterno:AtrasoFinal97Segundos"] = "5",
+            // O final 95 confirma depois de a saga desistir do banco e estornar (~15 s com os prazos acima).
+            ["BancoExterno:AtrasoFinal95Segundos"] = "25",
+            ["BancoExterno:AtrasoDevolucaoSegundos"] = "2",
         });
 
         Subir(new WebApplicationFactory<MarcadorCambio>(), new()

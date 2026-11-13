@@ -38,7 +38,15 @@ public sealed class ProcessadorBancoExternoTestes(BancoExternoFixture banco) : I
 
     private readonly ProcessadorComandos _processador = new(
         banco.Repositorio,
-        new RegrasLiquidacao(Options.Create(new OpcoesBancoExterno { LatenciaMs = 1000, AtrasoFinal97Segundos = 45 }), new Random(1)),
+        new RegrasLiquidacao(
+            Options.Create(new OpcoesBancoExterno
+            {
+                LatenciaMs = 1000,
+                AtrasoFinal97Segundos = 45,
+                AtrasoFinal95Segundos = 300,
+                AtrasoDevolucaoSegundos = 10,
+            }),
+            new Random(1)),
         new FakeTimeProvider(Agora),
         NullLogger<ProcessadorComandos>.Instance);
 
@@ -153,6 +161,41 @@ public sealed class ProcessadorBancoExternoTestes(BancoExternoFixture banco) : I
         resposta.Tipo.ShouldBe("StatusLiquidacao");
         using var payload = JsonDocument.Parse(resposta.Payload);
         payload.RootElement.GetProperty("status").GetString().ShouldBe("Liquidada");
+    }
+
+    [Fact]
+    public async Task Final95_ConsultaDizNaoLiquidada_MasAConfirmacaoChegaDepois()
+    {
+        var id = Guid.CreateVersion7();
+
+        await LiquidarAsync(id, "DE89370400440532013095");
+        await LiquidarAsync(id, "DE89370400440532013095");
+        await ConsultarAsync(id);
+
+        var respostas = await _repositorio.ListarRespostasAsync(id, Ct);
+        respostas.Count.ShouldBe(2);
+        using (var consulta = JsonDocument.Parse(respostas.Single(r => r.Tipo == "StatusLiquidacao").Payload))
+        {
+            consulta.RootElement.GetProperty("status").GetString().ShouldBe("NaoLiquidada");
+        }
+
+        // Uma confirmação só, mesmo com o reenvio, cinco minutos depois.
+        respostas.Single(r => r.Tipo == "LiquidacaoConfirmada").ResponderEm.ShouldBe(Agora.AddSeconds(300));
+    }
+
+    [Fact]
+    public async Task Final94_ConfirmaEDepoisDevolve()
+    {
+        var id = Guid.CreateVersion7();
+
+        await LiquidarAsync(id, "DE89370400440532013094");
+
+        var respostas = await _repositorio.ListarRespostasAsync(id, Ct);
+        respostas.Select(r => r.Tipo).ShouldBe(["LiquidacaoConfirmada", "TransferenciaDevolvida"]);
+        respostas[1].ResponderEm.ShouldBe(Agora.AddSeconds(11));
+        using var devolucao = JsonDocument.Parse(respostas[1].Payload);
+        devolucao.RootElement.GetProperty("valor").GetDecimal().ShouldBe(100m);
+        devolucao.RootElement.GetProperty("moeda").GetString().ShouldBe("EUR");
     }
 
     [Fact]

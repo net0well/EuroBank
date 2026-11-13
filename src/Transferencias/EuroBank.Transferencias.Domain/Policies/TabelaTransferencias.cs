@@ -31,8 +31,8 @@ public static class TabelaTransferencias
 
     /// <summary>
     /// Estados em que a transferência ocupa o limite: o débito já foi pedido e o dinheiro não vai voltar.
-    /// Agendadas e cotando ainda não ocupam (o limite é conferido antes do débito); estornos, cancelamentos e
-    /// recusas liberam.
+    /// Agendadas e cotando ainda não ocupam (o limite é conferido antes do débito); estornos, cancelamentos,
+    /// recusas, devoluções creditadas e divergências liberam. A reconciliação volta a ocupar (vai terminar Concluida).
     /// </summary>
     public static IReadOnlyList<EstadoTransferencia> EstadosQueConsomemLimite { get; } =
     [
@@ -42,5 +42,7 @@ public static class TabelaTransferencias
         EstadoTransferencia.ConsultandoLiquidacao,
         EstadoTransferencia.AguardandoCredito,
         EstadoTransferencia.Concluida,
+        EstadoTransferencia.Reconciliando,
+        EstadoTransferencia.AguardandoCreditoDevolucao,
     ];
 }
