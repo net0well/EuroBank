@@ -1,6 +1,7 @@
 using EuroBank.Shared.Enums;
 using EuroBank.Shared.ValueObjects;
 using EuroBank.Transferencias.Domain.Entities;
+using EuroBank.Transferencias.Domain.Enums;
 using EuroBank.Transferencias.Domain.ValueObjects;
 
 namespace EuroBank.Transferencias.Domain.Tests.Entities;
@@ -88,6 +89,33 @@ internal static class TransferenciaCenarios
     {
         var transferencia = AguardandoLiquidacao();
         transferencia.RegistrarLiquidacaoRecusada(Politica, Agora);
+        transferencia.LimparEventos();
+        return transferencia;
+    }
+
+    /// <summary>Externa estornada porque a consulta disse NaoLiquidada (o caminho do final 95).</summary>
+    public static Transferencia CanceladaSemRespostaDoBanco()
+    {
+        var transferencia = ConsultandoLiquidacao();
+        transferencia.RegistrarStatusLiquidacao(StatusLiquidacaoExterna.NaoLiquidada, Politica, Agora);
+        transferencia.RegistrarEstornoRealizado(Agora);
+        transferencia.LimparEventos();
+        return transferencia;
+    }
+
+    /// <summary>Confirmação do banco depois do estorno.</summary>
+    public static Transferencia Divergente()
+    {
+        var transferencia = CanceladaSemRespostaDoBanco();
+        transferencia.RegistrarLiquidacaoConfirmada(Agora);
+        transferencia.LimparEventos();
+        return transferencia;
+    }
+
+    public static Transferencia Concluida()
+    {
+        var transferencia = AguardandoLiquidacao();
+        transferencia.RegistrarLiquidacaoConfirmada(Agora);
         transferencia.LimparEventos();
         return transferencia;
     }

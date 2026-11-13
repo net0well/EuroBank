@@ -286,7 +286,7 @@ public sealed class Conta : RaizDeAgregado<ContaId>
 
     /// <summary>
     /// O banco externo devolveu uma transferência já concluída: credita o valor de volta, sem a tarifa (o serviço foi
-    /// prestado). Vale em conta bloqueada, como qualquer crédito.
+    /// prestado). Vale também depois de uma reconciliação e em conta bloqueada, como qualquer crédito.
     /// </summary>
     public ResultadoOperacao CreditarDevolucao(Guid transferenciaId, DateTimeOffset agora)
     {
@@ -296,7 +296,9 @@ public sealed class Conta : RaizDeAgregado<ContaId>
             return ResultadoOperacao.JaProcessada;
         }
 
-        if (transferencia.Status is not (StatusTransferenciaDaConta.Liberada or StatusTransferenciaDaConta.Pendente))
+        if (transferencia.Status is not (StatusTransferenciaDaConta.Liberada
+            or StatusTransferenciaDaConta.Pendente
+            or StatusTransferenciaDaConta.Reconciliada))
         {
             throw new ExcecaoTransferenciaNaoConcluida(transferenciaId);
         }

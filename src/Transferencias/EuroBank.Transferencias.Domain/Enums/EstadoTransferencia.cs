@@ -1,6 +1,9 @@
 namespace EuroBank.Transferencias.Domain.Enums;
 
-/// <summary>Estados da saga. Concluida, Cancelada e Recusada são finais.</summary>
+/// <summary>
+/// Estados da saga. Recusada e Devolvida são finais; Concluida e Cancelada também, salvo o que o banco externo ainda
+/// pode mandar depois (devolução, confirmação tardia). Divergente espera a reconciliação.
+/// </summary>
 public enum EstadoTransferencia
 {
     /// <summary>Esperando a hora de executar.</summary>
@@ -34,4 +37,19 @@ public enum EstadoTransferencia
 
     /// <summary>Câmbio interno: crédito pedido a Contas na conta de destino.</summary>
     AguardandoCredito = 11,
+
+    /// <summary>
+    /// O dinheiro não fecha e alguém precisa decidir: o banco confirmou a liquidação depois do estorno, ou devolveu o
+    /// valor e Contas não pôde creditá-lo. Fica listada até a reconciliação.
+    /// </summary>
+    Divergente = 12,
+
+    /// <summary>Reconciliação pedida a Contas: debitar de novo valor e tarifa, mesmo sem saldo.</summary>
+    Reconciliando = 13,
+
+    /// <summary>O banco externo devolveu a transferência: crédito do valor pedido a Contas na conta de origem.</summary>
+    AguardandoCreditoDevolucao = 14,
+
+    /// <summary>Terminou com o valor de volta na conta de origem (a tarifa não volta).</summary>
+    Devolvida = 15,
 }

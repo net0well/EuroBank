@@ -23,6 +23,15 @@ public sealed class ContasConhecidas(TransferenciasDbContext contexto) : IContas
             """,
             cancellationToken) == 1;
 
+    /// <summary>Só a primeira entrega muda a linha; uma conta que a projeção não conhece fica como está.</summary>
+    public async Task<bool> RegistrarEncerramentoAsync(Guid contaId, DateTimeOffset encerradaEm, CancellationToken cancellationToken) =>
+        await contexto.Database.ExecuteSqlAsync(
+            $"""
+            UPDATE contas_conhecidas SET encerrada_em = {encerradaEm}
+            WHERE id = {contaId} AND encerrada_em IS NULL
+            """,
+            cancellationToken) == 1;
+
     private static ContaEuroBank? ParaConta(ContaConhecida? conta) =>
-        conta is null ? null : new ContaEuroBank(conta.Id, conta.Iban, conta.Titular, conta.Moeda);
+        conta is null ? null : new ContaEuroBank(conta.Id, conta.Iban, conta.Titular, conta.Moeda, conta.EncerradaEm is not null);
 }

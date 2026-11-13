@@ -18,8 +18,10 @@ namespace EuroBank.Transferencias.Domain.Entities;
 /// </summary>
 /// <remarks>
 /// Externa: Agendada, [Cotando], AguardandoDebito, Debitada, AguardandoLiquidacao, [ConsultandoLiquidacao],
-/// Concluida. Câmbio interno: Agendada, Cotando, AguardandoDebito, Debitada, AguardandoCredito, Concluida.
-/// Falha depois do débito: AguardandoEstorno e Cancelada. Falha antes do débito: Recusada.
+/// Concluida e, se o banco devolver depois, AguardandoCreditoDevolucao e Devolvida. Câmbio interno: Agendada,
+/// Cotando, AguardandoDebito, Debitada, AguardandoCredito, Concluida. Falha depois do débito: AguardandoEstorno e
+/// Cancelada. Falha antes do débito: Recusada. Confirmação do banco depois do estorno: Divergente e, com a
+/// reconciliação pedida pela API, Reconciliando e Concluida (Reconciliada).
 /// </remarks>
 public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
 {
@@ -110,6 +112,12 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
     /// DebitoRealizado chegar depois, a saga estorna.
     /// </summary>
     public bool DebitoSemResposta { get; private set; }
+
+    /// <summary>
+    /// O banco confirmou a liquidação com o estorno já pedido (o comando está com Contas e não volta): quando o
+    /// estorno terminar, a transferência fica Divergente em vez de Cancelada.
+    /// </summary>
+    public bool LiquidacaoConfirmadaNoEstorno { get; private set; }
 
     /// <summary>Envios do comando do passo atual (1 é o envio original).</summary>
     public int TentativasNoPasso { get; private set; }
@@ -397,7 +405,7 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
     {
         if (!AguardaOBanco)
         {
-            return Ignorar("LiquidacaoConfirmada", agora);
+            return RegistrarLiquidacaoTardia("LiquidacaoConfirmada", agora);
         }
 
         Concluir("LiquidacaoConfirmada recebida do banco externo", agora);
@@ -420,7 +428,9 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
     {
         if (Estado != EstadoTransferencia.ConsultandoLiquidacao)
         {
-            return Ignorar($"StatusLiquidacao ({status})", agora);
+            return status == StatusLiquidacaoExterna.Liquidada
+                ? RegistrarLiquidacaoTardia($"StatusLiquidacao ({status})", agora)
+                : Ignorar($"StatusLiquidacao ({status})", agora);
         }
 
         var descricao = $"StatusLiquidacao recebido do banco externo: {status}";
@@ -451,14 +461,120 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
             return Ignorar("EstornoRealizado", agora);
         }
 
-        Cancelar(Motivo!.Value, "EstornoRealizado recebido de Contas", agora);
+        if (LiquidacaoConfirmadaNoEstorno)
+        {
+            Divergir(
+                MotivoTransferencia.ConfirmadaAposEstorno,
+                "EstornoRealizado recebido de Contas, mas o banco já tinha confirmado a liquidação",
+                agora);
+        }
+        else
+        {
+            Cancelar(Motivo!.Value, "EstornoRealizado recebido de Contas", agora);
+        }
+
+        return ResultadoPasso.Aplicado;
+    }
+
+    /// <summary>
+    /// Pedido pela API para uma Divergente por confirmação tardia: Contas debita de novo valor e tarifa, mesmo que a
+    /// conta fique negativa. Repetir com a reconciliação em andamento ou concluída não muda nada.
+    /// </summary>
+    /// <exception cref="ExcecaoReconciliacaoNaoPermitida">A transferência não está Divergente por confirmação tardia.</exception>
+    public void SolicitarReconciliacao(PoliticaSaga politica, DateTimeOffset agora)
+    {
+        switch (Estado)
+        {
+            case EstadoTransferencia.Divergente when Motivo == MotivoTransferencia.ConfirmadaAposEstorno:
+                AnotarPasso("Reconciliação pedida: valor e tarifa vão ser debitados de novo", agora);
+                EntrarNoPasso(EstadoTransferencia.Reconciliando, politica, agora);
+                break;
+            case EstadoTransferencia.Reconciliando:
+            case EstadoTransferencia.Concluida when Motivo == MotivoTransferencia.Reconciliada:
+                break;
+            default:
+                throw new ExcecaoReconciliacaoNaoPermitida(Estado, Motivo);
+        }
+    }
+
+    /// <summary>Sem LiberarTrava: o estorno já tirou a transferência da trava da conta.</summary>
+    public ResultadoPasso RegistrarReconciliacaoRealizada(DateTimeOffset agora)
+    {
+        if (Estado != EstadoTransferencia.Reconciliando)
+        {
+            return Ignorar("ReconciliacaoRealizada", agora);
+        }
+
+        Encerrar(
+            EstadoTransferencia.Concluida,
+            MotivoTransferencia.Reconciliada,
+            "ReconciliacaoRealizada recebida de Contas: valor e tarifa debitados de novo",
+            agora);
+        Registrar(new TransferenciaConcluida(Id, ContaOrigemId, ValorDebitado!, Tarifa, agora));
+        return ResultadoPasso.Aplicado;
+    }
+
+    /// <summary>Contas recusou (conta encerrada, por exemplo): continua Divergente, para outra tentativa ou tratamento manual.</summary>
+    public ResultadoPasso RegistrarReconciliacaoRecusada(MotivoTransferencia motivoDeContas, DateTimeOffset agora)
+    {
+        if (Estado != EstadoTransferencia.Reconciliando)
+        {
+            return Ignorar("ReconciliacaoRecusada", agora);
+        }
+
+        Encerrar(
+            EstadoTransferencia.Divergente,
+            MotivoTransferencia.ConfirmadaAposEstorno,
+            $"ReconciliacaoRecusada recebida de Contas: {motivoDeContas}",
+            agora);
+        return ResultadoPasso.Aplicado;
+    }
+
+    /// <summary>O banco externo devolveu uma transferência concluída: pede a Contas o crédito do valor na origem.</summary>
+    public ResultadoPasso RegistrarDevolucaoRecebida(PoliticaSaga politica, DateTimeOffset agora)
+    {
+        if (Estado != EstadoTransferencia.Concluida || Tipo != TipoTransferencia.Externa)
+        {
+            return Ignorar("TransferenciaDevolvida", agora);
+        }
+
+        AnotarPasso("TransferenciaDevolvida recebida do banco externo", agora);
+        EntrarNoPasso(EstadoTransferencia.AguardandoCreditoDevolucao, politica, agora);
+        return ResultadoPasso.Aplicado;
+    }
+
+    public ResultadoPasso RegistrarDevolucaoCreditada(DateTimeOffset agora)
+    {
+        if (Estado != EstadoTransferencia.AguardandoCreditoDevolucao)
+        {
+            return Ignorar("DevolucaoCreditada", agora);
+        }
+
+        Encerrar(
+            EstadoTransferencia.Devolvida,
+            MotivoTransferencia.DevolvidaPeloBanco,
+            "DevolucaoCreditada recebida de Contas: valor de volta na conta, sem a tarifa",
+            agora);
+        Registrar(new TransferenciaDevolvida(Id, ContaOrigemId, ValorDebitado!, agora));
+        return ResultadoPasso.Aplicado;
+    }
+
+    /// <summary>O valor voltou do banco, mas a conta não pôde recebê-lo (encerrada): fica Divergente.</summary>
+    public ResultadoPasso RegistrarDevolucaoRecusada(MotivoTransferencia motivoDeContas, DateTimeOffset agora)
+    {
+        if (Estado != EstadoTransferencia.AguardandoCreditoDevolucao)
+        {
+            return Ignorar("DevolucaoRecusada", agora);
+        }
+
+        Divergir(MotivoTransferencia.DevolucaoNaoCreditada, $"DevolucaoRecusada recebida de Contas: {motivoDeContas}", agora);
         return ResultadoPasso.Aplicado;
     }
 
     /// <summary>
     /// Chamado pela varredura. Com o prazo vencido, reenvia o comando do passo (id de mensagem novo; os
     /// participantes deduplicam pelo id da transferência) ou, esgotados os reenvios, segue o caminho de falha.
-    /// Crédito e estorno reenviam sem limite.
+    /// Crédito, estorno, reconciliação e crédito da devolução reenviam sem limite.
     /// </summary>
     public ResultadoPasso VerificarPrazo(PoliticaSaga politica, DateTimeOffset agora)
     {
@@ -467,8 +583,7 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
             return ResultadoPasso.Ignorado;
         }
 
-        if (Estado is EstadoTransferencia.AguardandoEstorno or EstadoTransferencia.AguardandoCredito
-            || TentativasNoPasso <= politica.ReenviosPorPasso)
+        if (ReenviaSemLimite || TentativasNoPasso <= politica.ReenviosPorPasso)
         {
             TentativasNoPasso++;
             PrazoDoPasso = agora + politica.PrazoDe(Estado);
@@ -603,6 +718,42 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
     private bool AguardaOBanco =>
         Estado is EstadoTransferencia.AguardandoLiquidacao or EstadoTransferencia.ConsultandoLiquidacao;
 
+    /// <summary>O estorno foi pedido porque o banco recusou ou não respondeu: a liquidação chegou a ser pedida.</summary>
+    private bool EstornouPorCausaDoBanco =>
+        Tipo == TipoTransferencia.Externa
+        && Motivo is MotivoTransferencia.RecusadaPeloBanco or MotivoTransferencia.SemRespostaDoBanco;
+
+    private bool ReenviaSemLimite =>
+        Estado is EstadoTransferencia.AguardandoEstorno
+            or EstadoTransferencia.AguardandoCredito
+            or EstadoTransferencia.Reconciliando
+            or EstadoTransferencia.AguardandoCreditoDevolucao;
+
+    /// <summary>
+    /// O banco disse que liquidou quando a saga já tinha desistido dele e pedido o estorno. Com o estorno em andamento,
+    /// só anota (o comando já está com Contas); depois dele, a transferência fica Divergente.
+    /// </summary>
+    private ResultadoPasso RegistrarLiquidacaoTardia(string resposta, DateTimeOffset agora)
+    {
+        if (EstornouPorCausaDoBanco && Estado == EstadoTransferencia.AguardandoEstorno && !LiquidacaoConfirmadaNoEstorno)
+        {
+            LiquidacaoConfirmadaNoEstorno = true;
+            AnotarPasso($"{resposta} recebido com o estorno em andamento: depois dele, a transferência fica Divergente", agora);
+            return ResultadoPasso.Aplicado;
+        }
+
+        if (EstornouPorCausaDoBanco && Estado == EstadoTransferencia.Cancelada)
+        {
+            Divergir(
+                MotivoTransferencia.ConfirmadaAposEstorno,
+                $"{resposta} recebido depois do estorno: o valor chegou ao destino e também voltou à conta",
+                agora);
+            return ResultadoPasso.Aplicado;
+        }
+
+        return Ignorar(resposta, agora);
+    }
+
     /// <summary>O limite diário é da moeda da conta e conta só o valor, sem a tarifa.</summary>
     private void PedirDebitoDentroDoLimite(Dinheiro jaTransferidoNoDia, PoliticaSaga politica, DateTimeOffset agora)
     {
@@ -640,6 +791,8 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
         EstadoTransferencia.ConsultandoLiquidacao => "ConsultarLiquidacao",
         EstadoTransferencia.AguardandoCredito => "CreditarTransferenciaCambio",
         EstadoTransferencia.AguardandoEstorno => "EstornarTransferencia",
+        EstadoTransferencia.Reconciliando => "DebitarReconciliacao",
+        EstadoTransferencia.AguardandoCreditoDevolucao => "CreditarDevolucao",
         _ => throw new UnreachableException($"O estado {estado} não envia comando."),
     };
 
@@ -676,6 +829,8 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
                 TentativasNoPasso,
                 agora),
             EstadoTransferencia.AguardandoEstorno => new EstornoSolicitado(Id, ContaOrigemId, TentativasNoPasso, agora),
+            EstadoTransferencia.Reconciliando => new ReconciliacaoSolicitada(Id, ContaOrigemId, TentativasNoPasso, agora),
+            EstadoTransferencia.AguardandoCreditoDevolucao => new CreditoDevolucaoSolicitado(Id, ContaOrigemId, TentativasNoPasso, agora),
             _ => throw new UnreachableException($"O estado {Estado} não envia comando."),
         };
 
@@ -693,6 +848,12 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
     {
         Encerrar(EstadoTransferencia.Cancelada, motivo, descricao, agora);
         Registrar(new TransferenciaCancelada(Id, ContaOrigemId, motivo, agora));
+    }
+
+    private void Divergir(MotivoTransferencia motivo, string descricao, DateTimeOffset agora)
+    {
+        Encerrar(EstadoTransferencia.Divergente, motivo, descricao, agora);
+        Registrar(new TransferenciaDivergente(Id, ContaOrigemId, motivo, agora));
     }
 
     private void Recusar(MotivoTransferencia motivo, string descricao, DateTimeOffset agora)

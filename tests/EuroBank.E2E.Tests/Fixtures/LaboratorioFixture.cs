@@ -58,6 +58,8 @@ public sealed class LaboratorioFixture : IAsyncLifetime
         ["Saga:PrazoConsulta"] = "00:00:02",
         ["Saga:PrazoCredito"] = "00:00:05",
         ["Saga:PrazoEstorno"] = "00:00:05",
+        ["Saga:PrazoReconciliacao"] = "00:00:05",
+        ["Saga:PrazoCreditoDevolucao"] = "00:00:05",
         ["Saga:ReenviosPorPasso"] = "3",
         ["Varredura:Intervalo"] = "00:00:00.500",
         ["Sepa:AplicarHorarioDeCorte"] = "false",

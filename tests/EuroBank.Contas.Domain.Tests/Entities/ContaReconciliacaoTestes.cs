@@ -149,4 +149,15 @@ public sealed class ContaReconciliacaoTestes
 
         Should.Throw<ExcecaoContaEncerrada>(() => conta.CreditarDevolucao(transferenciaId, Agora));
     }
+
+    [Fact]
+    public void Devolucao_DepoisDaReconciliacao_CreditaOValor()
+    {
+        var (conta, transferenciaId) = EstornadaCom(saldoFinal: 0m);
+        conta.DebitarReconciliacao(transferenciaId, Agora);
+
+        conta.CreditarDevolucao(transferenciaId, Agora).ShouldBe(ResultadoOperacao.Aplicada);
+
+        conta.Saldo.ShouldBe(Saldo.De(-2.50m, conta.Moeda));
+    }
 }

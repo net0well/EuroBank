@@ -185,6 +185,10 @@ namespace EuroBank.Transferencias.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("idempotency_key");
 
+                    b.Property<bool>("LiquidacaoConfirmadaNoEstorno")
+                        .HasColumnType("boolean")
+                        .HasColumnName("liquidacao_confirmada_no_estorno");
+
                     b.Property<string>("MoedaDestino")
                         .IsRequired()
                         .HasMaxLength(3)
@@ -303,6 +307,10 @@ namespace EuroBank.Transferencias.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("AbertaEm")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("aberta_em");
+
+                    b.Property<DateTimeOffset?>("EncerradaEm")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("encerrada_em");
 
                     b.Property<string>("Iban")
                         .IsRequired()

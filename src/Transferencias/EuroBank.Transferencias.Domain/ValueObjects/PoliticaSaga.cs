@@ -23,9 +23,13 @@ public sealed record PoliticaSaga
 
     public TimeSpan PrazoEstorno { get; init; } = TimeSpan.FromSeconds(30);
 
+    public TimeSpan PrazoReconciliacao { get; init; } = TimeSpan.FromSeconds(30);
+
+    public TimeSpan PrazoCreditoDevolucao { get; init; } = TimeSpan.FromSeconds(30);
+
     /// <summary>
-    /// Reenvios depois do envio original. Crédito e estorno não têm limite: desistir deles deixaria dinheiro
-    /// em dois lugares ou em nenhum.
+    /// Reenvios depois do envio original. Crédito, estorno, reconciliação e crédito da devolução não têm
+    /// limite: desistir deles deixaria dinheiro em dois lugares ou em nenhum.
     /// </summary>
     public int ReenviosPorPasso { get; init; } = 3;
 
@@ -37,6 +41,8 @@ public sealed record PoliticaSaga
         EstadoTransferencia.ConsultandoLiquidacao => PrazoConsulta,
         EstadoTransferencia.AguardandoCredito => PrazoCredito,
         EstadoTransferencia.AguardandoEstorno => PrazoEstorno,
+        EstadoTransferencia.Reconciliando => PrazoReconciliacao,
+        EstadoTransferencia.AguardandoCreditoDevolucao => PrazoCreditoDevolucao,
         _ => throw new UnreachableException($"O estado {estado} não espera resposta."),
     };
 }

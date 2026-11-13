@@ -91,6 +91,20 @@ public sealed class MapeadorMensagensOutbox : IMapeadorMensagensOutbox
             new ComandoContaMensagem(e.TransferenciaId.Valor, e.ContaOrigemId),
             e,
             traceparent),
+        ReconciliacaoSolicitada e => Criar(
+            ComandosContas,
+            e.ContaOrigemId.ToString(),
+            "DebitarReconciliacao",
+            new ComandoContaMensagem(e.TransferenciaId.Valor, e.ContaOrigemId),
+            e,
+            traceparent),
+        CreditoDevolucaoSolicitado e => Criar(
+            ComandosContas,
+            e.ContaOrigemId.ToString(),
+            "CreditarDevolucao",
+            new ComandoContaMensagem(e.TransferenciaId.Valor, e.ContaOrigemId),
+            e,
+            traceparent),
         LiberacaoTravaSolicitada e => Criar(
             ComandosContas,
             e.ContaOrigemId.ToString(),
@@ -133,6 +147,21 @@ public sealed class MapeadorMensagensOutbox : IMapeadorMensagensOutbox
             e.TransferenciaId.ToString(),
             nameof(TransferenciaRecusada),
             new TransferenciaNaoConcluidaMensagem(e.TransferenciaId.Valor, e.ContaOrigemId, e.Motivo.ToString(), e.OcorridoEm),
+            e,
+            traceparent),
+        TransferenciaDivergente e => Criar(
+            EventosTransferencias,
+            e.TransferenciaId.ToString(),
+            nameof(TransferenciaDivergente),
+            new TransferenciaNaoConcluidaMensagem(e.TransferenciaId.Valor, e.ContaOrigemId, e.Motivo.ToString(), e.OcorridoEm),
+            e,
+            traceparent),
+        TransferenciaDevolvida e => Criar(
+            EventosTransferencias,
+            e.TransferenciaId.ToString(),
+            nameof(TransferenciaDevolvida),
+            new TransferenciaDevolvidaMensagem(
+                e.TransferenciaId.Valor, e.ContaOrigemId, e.ValorDevolvido.ToString(), e.ValorDevolvido.Moeda.ToString(), e.OcorridoEm),
             e,
             traceparent),
         _ => throw new InvalidOperationException($"O evento {evento.GetType().Name} não tem mapeamento para a outbox."),

@@ -1,6 +1,8 @@
 namespace EuroBank.Transferencias.Infrastructure.Outbox.TransferObjects;
 
-/// <summary>Payload de TransferenciaCancelada e TransferenciaRecusada (o header "tipo" diz qual das duas).</summary>
+/// <summary>
+/// Payload de TransferenciaCancelada, TransferenciaRecusada e TransferenciaDivergente (o header "tipo" diz qual).
+/// </summary>
 public sealed record TransferenciaNaoConcluidaMensagem(
     Guid TransferenciaId,
     Guid ContaOrigemId,

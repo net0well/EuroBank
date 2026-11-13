@@ -19,6 +19,10 @@ public sealed class OpcoesSaga
 
     public TimeSpan PrazoEstorno { get; set; } = PoliticaSaga.Padrao.PrazoEstorno;
 
+    public TimeSpan PrazoReconciliacao { get; set; } = PoliticaSaga.Padrao.PrazoReconciliacao;
+
+    public TimeSpan PrazoCreditoDevolucao { get; set; } = PoliticaSaga.Padrao.PrazoCreditoDevolucao;
+
     public int ReenviosPorPasso { get; set; } = PoliticaSaga.Padrao.ReenviosPorPasso;
 
     public PoliticaSaga ParaPolitica() => new()
@@ -29,6 +33,8 @@ public sealed class OpcoesSaga
         PrazoConsulta = PrazoConsulta,
         PrazoCredito = PrazoCredito,
         PrazoEstorno = PrazoEstorno,
+        PrazoReconciliacao = PrazoReconciliacao,
+        PrazoCreditoDevolucao = PrazoCreditoDevolucao,
         ReenviosPorPasso = ReenviosPorPasso,
     };
 }

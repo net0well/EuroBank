@@ -31,6 +31,15 @@ public static class TransferenciasEndpoints
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
+        app.MapPost("/transferencias-externas/{id:guid}/reconciliacao", ReconciliarAsync)
+            .WithTags("Transferências")
+            .WithName("ReconciliarTransferencia")
+            .WithSummary("Reconcilia uma Divergente (banco confirmou depois do estorno): debita de novo valor e tarifa")
+            .Produces<TransferenciaDto>(StatusCodes.Status202Accepted)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+
         var grupo = app.MapGroup("/transferencias").WithTags("Transferências");
 
         grupo.MapGet("/{id:guid}", ObterAsync)
@@ -117,6 +126,12 @@ public static class TransferenciasEndpoints
     private static async Task<IResult> CancelarAsync(Guid id, IMessageBus barramento, CancellationToken cancellationToken)
     {
         var transferencia = await barramento.InvokeAsync<TransferenciaDto>(new CancelarTransferencia(id), cancellationToken);
+        return TypedResults.Accepted($"/transferencias/{transferencia.Id}", transferencia);
+    }
+
+    private static async Task<IResult> ReconciliarAsync(Guid id, IMessageBus barramento, CancellationToken cancellationToken)
+    {
+        var transferencia = await barramento.InvokeAsync<TransferenciaDto>(new ReconciliarTransferencia(id), cancellationToken);
         return TypedResults.Accepted($"/transferencias/{transferencia.Id}", transferencia);
     }
 }
