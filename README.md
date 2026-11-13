@@ -9,8 +9,10 @@ contextos que conversam apenas por mensagens, mais um banco externo simulado:
 - **Extrato**: consome os eventos de Contas pelo Kafka e monta o extrato de cada conta, na moeda dela.
 - **Transferencias**: orquestra a transferência para um IBAN de outro banco (débito em Contas, liquidação no
   banco externo e, se a liquidação falhar, estorno do débito) e o câmbio entre contas EuroBank de moedas
-  diferentes (cotação, débito, crédito), com prazos, reenvios e cancelamento.
-- **Banco externo simulado**: um sistema "de fora" que liquida, recusa, atrasa ou some conforme o final do IBAN.
+  diferentes (cotação, débito, crédito), com prazos, reenvios, cancelamento, regras SEPA com horário de corte,
+  devolução pelo banco e reconciliação quando o dinheiro não fecha.
+- **Banco externo simulado**: um sistema "de fora" que liquida, recusa, atrasa, some, confirma tarde demais ou
+  devolve, conforme o final do IBAN.
 - **Câmbio simulado**: um provedor de cotações "de fora", com spread e cotação travada por 10 minutos.
 
 Nenhuma API do EuroBank fala com o Kafka. Cada uma grava a alteração e a mensagem na tabela `outbox` do seu
@@ -44,20 +46,20 @@ dois sistemas precisam ficar consistentes sem compartilhar uma transação:
 
 | Parte | O que faz |
 |---|---|
-| Domínio de Contas | Agregado `Conta` com estados (Ativa, Bloqueada, Encerrada), moeda escolhida na abertura, versão de negócio, value objects `Dinheiro` (valor e moeda; operar moedas diferentes é proibido), `Iban` (dígito verificador módulo 97) e `Titular`, serviço de domínio de transferência atômica entre contas da mesma moeda |
+| Domínio de Contas | Agregado `Conta` com estados (Ativa, Bloqueada, Encerrada), moeda escolhida na abertura, versão de negócio, value objects `Dinheiro` (valor e moeda; operar moedas diferentes é proibido), `Saldo` (pode ficar negativo, mas só por reconciliação), `Iban` (dígito verificador módulo 97) e `Titular`, serviço de domínio de transferência atômica entre contas da mesma moeda |
 | API de Contas | Minimal API com Wolverine como mediator, erros de domínio em ProblemDetails (400, 404, 409, 422), Swagger, seed de contas de exemplo |
 | Outbox | A unidade de trabalho grava conta e eventos na mesma transação, na ordem em que os eventos aconteceram |
 | Debezium | Dois conectores: Outbox Event Router (eventos de negócio) e CDC bruto da tabela `contas` (before e after) |
-| Extrato | Worker com Wolverine consumindo o Kafka: inbox durável, ordem por conta, retry, dead letter e a projeção do extrato com paginação, incluindo transferências externas com tarifa e estornos |
-| Sagas de transferência | Agregado `Transferencia` com a máquina de estados da externa e do câmbio interno, cotação antes do débito quando as moedas diferem (com recotação), prazo por passo, até 3 reenvios, consulta de status antes de estornar, cancelamento pelo cliente, agendamento, tarifa e limite diário por moeda; histórico de cada passo |
-| API de Transferências | `POST /transferencias-externas` e `POST /transferencias-cambio` com `Idempotency-Key`, consulta com histórico e cotação, listagem com filtros e cancelamento; o limite diário é conferido com um advisory lock por conta |
-| Worker de Transferências | Respostas de Contas, do câmbio e do banco externo (inbox durável), a projeção local das contas (eventos `ContaAberta`) e uma varredura que começa as agendadas e trata os prazos com `FOR UPDATE SKIP LOCKED` |
-| Worker de Contas | Executa os comandos da saga (debitar, creditar, estornar, liberar a trava) com idempotência pelo id da transferência e responde pela outbox; a trava semântica impede encerrar a conta no meio da saga |
+| Extrato | Worker com Wolverine consumindo o Kafka: inbox durável, ordem por conta, retry, dead letter e a projeção do extrato com paginação, incluindo transferências externas com tarifa, estornos, devoluções e reconciliações (com saldo negativo) |
+| Sagas de transferência | Agregado `Transferencia` com a máquina de estados da externa e do câmbio interno, cotação antes do débito quando as moedas diferem (com recotação), prazo por passo, até 3 reenvios, consulta de status antes de estornar, cancelamento pelo cliente, agendamento, tarifa e limite diário por moeda, validação SEPA e SWIFT com horário de corte, estado `Divergente` com reconciliação e devolução pelo banco externo; histórico de cada passo |
+| API de Transferências | `POST /transferencias-externas` e `POST /transferencias-cambio` com `Idempotency-Key`, consulta com histórico e cotação, listagem com filtros, cancelamento e `POST /transferencias-externas/{id}/reconciliacao`; o limite diário é conferido com um advisory lock por conta |
+| Worker de Transferências | Respostas de Contas, do câmbio e do banco externo (inbox durável), a projeção local das contas (eventos `ContaAberta` e `ContaEncerrada`) e uma varredura que começa as agendadas e trata os prazos com `FOR UPDATE SKIP LOCKED` |
+| Worker de Contas | Executa os comandos da saga (debitar, creditar, estornar, liberar a trava, debitar a reconciliação, creditar a devolução) com idempotência pelo id da transferência e responde pela outbox; a trava semântica impede encerrar a conta no meio da saga |
 | Simuladores | Banco externo e câmbio com Confluent.Kafka e Npgsql puros, sem Wolverine e sem EF: inbox escrita à mão e respostas agendadas no banco, compartilhadas pelos dois |
 | Segurança | Uma API key por API (`X-Api-Key`), com `/health` e Swagger abertos |
 | Infraestrutura | Docker Compose com PostgreSQL em replicação lógica, Kafka em modo KRaft, Kafka Connect, Kafbat UI e Jaeger, com os databases, os tópicos e os conectores criados automaticamente |
 | Observabilidade | Serilog estruturado e OpenTelemetry, com o `traceparent` levado pela outbox até o consumidor e de volta nas respostas da saga |
-| Testes | 366 testes: unitários, de integração com Testcontainers e ponta a ponta com Debezium real, incluindo cada caminho das sagas |
+| Testes | 445 testes: unitários, de integração com Testcontainers e ponta a ponta com Debezium real, incluindo cada caminho das sagas |
 | Carga | Script k6 que gera operações em paralelo e confere se o Extrato convergiu para Contas |
 
 ## Como funciona
@@ -94,9 +96,9 @@ dados a outros sistemas (data warehouse, índice de busca, cache). Aqui os dois 
 ### O caminho de uma transferência externa
 
 1. A API de Transferências recebe `POST /transferencias-externas` com o header `Idempotency-Key`. O agregado
-   `Transferencia` valida o pedido (IBAN de outro banco, BIC, valor), calcula a tarifa e, se for para já,
-   confere o limite diário e pede o débito. Estado e comando `DebitarTransferenciaExterna` vão juntos para o
-   banco: a saga e a outbox, na mesma transação.
+   `Transferencia` valida o pedido (IBAN de outro banco, BIC, valor e, em euro, as regras SEPA), calcula a
+   tarifa e, se for para já, confere o limite diário e pede o débito. Estado e comando
+   `DebitarTransferenciaExterna` vão juntos para o banco: a saga e a outbox, na mesma transação.
 2. O Debezium publica o comando em `eurobank.contas.comandos`, com o id da conta como chave. O worker de Contas
    debita valor e tarifa, guarda o id da transferência (idempotência e trava contra encerramento) e responde
    `DebitoRealizado` pela outbox de Contas, em `eurobank.contas.respostas`.
@@ -107,6 +109,9 @@ dados a outros sistemas (data warehouse, índice de busca, cache). Aqui os dois 
 5. Em paralelo, a varredura do worker acompanha os prazos. Sem resposta no prazo, o comando é reenviado (com id
    novo; os participantes deduplicam pelo id da transferência). Esgotados os reenvios da liquidação, a saga
    consulta o status no banco antes de decidir pelo estorno.
+6. O banco ainda pode falar depois do fim da saga: confirmar uma transferência já estornada (a saga fica
+   `Divergente`) ou devolver uma já concluída (a saga pede o crédito a Contas e termina `Devolvida`). Veja
+   [Divergência, reconciliação e devolução](#divergência-reconciliação-e-devolução).
 
 ```mermaid
 stateDiagram-v2
@@ -132,10 +137,19 @@ stateDiagram-v2
     ConsultandoLiquidacao --> Concluida: Liquidada
     ConsultandoLiquidacao --> AguardandoEstorno: NaoLiquidada ou sem resposta
     AguardandoEstorno --> Cancelada: EstornoRealizado
+    AguardandoEstorno --> Divergente: EstornoRealizado, com o banco já tendo confirmado
     Recusada --> AguardandoEstorno: DebitoRealizado tardio
+    Cancelada --> Divergente: LiquidacaoConfirmada tardia
+    Divergente --> Reconciliando: POST reconciliacao
+    Reconciliando --> Concluida: ReconciliacaoRealizada (Reconciliada)
+    Reconciliando --> Divergente: ReconciliacaoRecusada
+    Concluida --> AguardandoCreditoDevolucao: TransferenciaDevolvida
+    AguardandoCreditoDevolucao --> Devolvida: DevolucaoCreditada
+    AguardandoCreditoDevolucao --> Divergente: DevolucaoRecusada
     Concluida --> [*]
     Cancelada --> [*]
     Recusada --> [*]
+    Devolvida --> [*]
 ```
 
 O banco externo simulado decide pelo final do IBAN de destino, para cada caminho poder ser reproduzido:
@@ -146,11 +160,44 @@ O banco externo simulado decide pelo final do IBAN de destino, para cada caminho
 | `98` | nunca responde, nem à consulta | `Cancelada` (`SemRespostaDoBanco`), depois dos reenvios e das consultas |
 | `97` | responde em 45 s, depois do primeiro prazo | `Concluida`, com um reenvio e a resposta duplicada ignorada |
 | `96` | liquida, mas a resposta se perde | `Concluida` pela consulta de status, sem estorno |
+| `95` | a consulta diz NaoLiquidada, mas confirma depois de 5 min | `Cancelada` com estorno e, com a confirmação, `Divergente`; reconciliada, `Concluida` (`Reconciliada`) |
+| `94` | confirma e, 10 s depois, devolve | `Concluida` e depois `Devolvida` (`DevolvidaPeloBanco`), com o valor de volta e sem a tarifa |
 | outros | confirma em 1 s | `Concluida` |
 
-Prazos padrão: cotação 30 s, débito 30 s, liquidação 30 s, consulta 15 s, crédito 30 s e estorno 30 s, com até 3
-reenvios por passo. Crédito e estorno reenviam sem limite: desistir deles deixaria o dinheiro em dois lugares ou
-em nenhum.
+Prazos padrão: cotação 30 s, débito 30 s, liquidação 30 s, consulta 15 s, crédito 30 s, estorno 30 s,
+reconciliação 30 s e crédito da devolução 30 s, com até 3 reenvios por passo. Crédito, estorno, reconciliação e
+crédito da devolução reenviam sem limite: desistir deles deixaria o dinheiro em dois lugares ou em nenhum.
+
+### SEPA, SWIFT e horário de corte
+
+Toda externa exige um BIC válido (8 ou 11 caracteres, no formato SWIFT). Quando a moeda de destino é o euro, a
+transferência é SEPA:
+
+- o IBAN de destino precisa ser de um país da área SEPA (os 27 da União Europeia, mais Islândia, Liechtenstein,
+  Noruega, Suíça, Reino Unido, Mônaco, San Marino, Andorra e Vaticano); fora dela, 422 (`pais_fora_da_sepa`);
+- pedidos depois das 16:00 UTC, ou no sábado e no domingo, ficam agendados para o próximo dia útil às 08:00 UTC
+  (`executarEmEfetivo` na resposta). Outras moedas não têm horário de corte.
+
+O horário de corte pode ser desligado com `Sepa:AplicarHorarioDeCorte=false` (no compose, `SEPA_HORARIO_DE_CORTE`),
+para os testes e os exercícios não dependerem da hora em que rodam.
+
+### Divergência, reconciliação e devolução
+
+O fim da saga não é o fim da conversa com o banco externo:
+
+- **Confirmação depois do estorno** (final `95`). A saga desistiu do banco, a consulta disse `NaoLiquidada`, o
+  débito foi estornado e só então chega a `LiquidacaoConfirmada`: o valor está com o beneficiário e de volta na
+  conta. A transferência fica `Divergente` (`ConfirmadaAposEstorno`), listada em
+  `GET /transferencias?status=Divergente`. Se a confirmação chega com o estorno ainda em andamento, a saga só
+  anota (o comando já está com Contas e não volta) e fica `Divergente` quando o estorno termina.
+- **Reconciliação.** `POST /transferencias-externas/{id}/reconciliacao` pede a Contas que debite de novo valor e
+  tarifa, mesmo sem saldo: é o único caminho que deixa uma conta negativa. A saga termina `Concluida`
+  (`Reconciliada`). Com a conta de origem encerrada, 422 (`conta_origem_encerrada`); fora de `Divergente`, 409.
+- **Saldo negativo.** Enquanto a conta estiver negativa, saques, transferências e novas externas são recusados
+  (`SaldoNegativo`); depósitos e créditos são aceitos, e encerrar exige saldo zero.
+- **Devolução** (final `94`). O banco devolve uma transferência concluída (`TransferenciaDevolvida`). A saga pede a
+  Contas o crédito do valor, sem a tarifa (o serviço foi prestado), e termina `Devolvida`. Se Contas não puder
+  creditar (conta encerrada), a transferência fica `Divergente` (`DevolucaoNaoCreditada`) para tratamento manual.
 
 ### Transferências com câmbio
 
@@ -178,10 +225,10 @@ tarifa.
 | GBP | 2,20 | 4.300 |
 | BRL | 15,00 | 30.000 |
 
-Transferencias não consulta Contas: mantém uma **projeção local das contas** (id, IBAN, titular e moeda) a partir
-dos eventos `ContaAberta` de `eurobank.contas.eventos`. Uma conta recém-aberta pode levar um instante para chegar
-à projeção; até lá, o pedido recebe 422 (`conta_origem_desconhecida`) e pode ser repetido com a mesma
-`Idempotency-Key`.
+Transferencias não consulta Contas: mantém uma **projeção local das contas** (id, IBAN, titular, moeda e se foi
+encerrada) a partir dos eventos `ContaAberta` e `ContaEncerrada` de `eurobank.contas.eventos`. Uma conta
+recém-aberta pode levar um instante para chegar à projeção; até lá, o pedido recebe 422
+(`conta_origem_desconhecida`) e pode ser repetido com a mesma `Idempotency-Key`.
 
 ## O que o laboratório revelou
 
@@ -230,6 +277,12 @@ Problemas reais encontrados durante a construção, cada um com um teste que o r
 14. **Um conversor do EF não enxerga outra coluna.** Com o `Dinheiro` levando a moeda, o saldo não podia mais
     ser convertido sozinho de `numeric` para `Dinheiro`. Os agregados guardam o número num campo privado e
     montam o `Dinheiro` com a moeda da conta.
+15. **Regra que depende do relógio quebra teste na hora errada.** Com o horário de corte SEPA, a mesma
+    transferência fica para já ou para o próximo dia útil conforme a hora em que o teste roda. Os testes de
+    domínio e de API controlam o tempo com `FakeTimeProvider`; os demais desligam o corte por configuração.
+16. **Compensação pedida não se desfaz.** Se a confirmação do banco chega com o estorno já a caminho de Contas,
+    não há como retirar o comando do Kafka. A saga anota a confirmação, deixa o estorno terminar e só então
+    marca a transferência como `Divergente`, para a reconciliação corrigir.
 
 ## Arquitetura
 
@@ -271,7 +324,7 @@ flowchart LR
     xr --> tworker
     cr --> tworker
     br --> tworker
-    ce -->|ContaAberta| tworker
+    ce -->|ContaAberta e ContaEncerrada| tworker
 ```
 
 ## Tecnologias
@@ -364,7 +417,9 @@ Pontos do código que valem a leitura:
   idempotente.
 - `src/Transferencias/EuroBank.Transferencias.Domain/Entities/Transferencia.cs`: a saga como agregado; cada
   resposta e cada prazo vencido decide o próximo comando, e o que não cabe no estado atual é ignorado e anotado
-  no histórico.
+  no histórico. A confirmação tardia, a reconciliação e a devolução estão no mesmo agregado.
+- `src/Transferencias/EuroBank.Transferencias.Domain/ValueObjects/PoliticaSepa.cs`: o horário de corte SEPA e o
+  próximo dia útil.
 - `src/Transferencias/EuroBank.Transferencias.Infrastructure/Persistence/Repositories/RepositorioTransferencias.cs`:
   o advisory lock do limite diário e o `FOR UPDATE SKIP LOCKED` da varredura.
 - `src/Simuladores/EuroBank.Simuladores.Comum/RepositorioSimulador.cs` e
@@ -402,7 +457,10 @@ perda, a duplicata barrada pela inbox e as mensagens inválidas no dead letter. 
 cobrem cada final de IBAN do banco externo, as recusas (saldo, conta bloqueada ou encerrada, limite diário), o
 agendamento, os dois tipos de cancelamento, a `Idempotency-Key` e a trava que impede encerrar a conta. Para o
 câmbio: a externa em outra moeda com o extrato mostrando a cotação, o par indisponível, o câmbio entre contas
-EuroBank (concluído e com o destino encerrado) e a transferência síncrona entre moedas recusada.
+EuroBank (concluído e com o destino encerrado) e a transferência síncrona entre moedas recusada. Para a fase de
+SEPA e devolução: a confirmação tardia que leva a `Divergente`, a reconciliação que deixa a conta negativa (e a
+transferência seguinte recusada por `SaldoNegativo`) e a devolução que credita o valor sem a tarifa; o horário
+de corte é testado com o relógio controlado.
 
 ## Roteiro de exercícios
 
@@ -496,8 +554,8 @@ continuam chegando ao Kafka: o Debezium lê o INSERT no WAL, não a tabela.
 
 ### 9. Um caminho da saga por final de IBAN
 
-Pelo `http/transferencias.http`, peça transferências para IBANs terminados em `00`, `99`, `98`, `97` e `96` (uma
-`Idempotency-Key` diferente em cada pedido) e acompanhe cada uma pelo `GET /transferencias/{id}`: o histórico
+Pelo `http/transferencias.http`, peça transferências para IBANs terminados em `00`, `99`, `98`, `97`, `96`, `95` e
+`94` (uma `Idempotency-Key` diferente em cada pedido) e acompanhe cada uma pelo `GET /transferencias/{id}`: o histórico
 mostra cada comando enviado, cada reenvio, cada resposta recebida e as respostas ignoradas. No Kafbat UI, siga
 os comandos e as respostas pelos tópicos `eurobank.contas.*` e `eurobank.banco-externo.*`. Os finais `98` e `96`
 levam cerca de 2 minutos com os prazos padrão; para encurtar:
@@ -539,6 +597,33 @@ e o valor de destino em dólar; no Kafbat UI, o `CotarCambio` em `eurobank.cambi
 `eurobank.cambio.respostas`. Os extratos das duas contas mostram os dois lados, cada um na sua moeda. Para ver a
 recusa por câmbio, abra uma conta em BRL e mande para fora com `moedaDestino` igual a `GBP`.
 
+### 13. Divergência e reconciliação
+
+Pelo `http/transferencias.http`, abra uma conta com 102,50 EUR e mande 100 EUR para um IBAN terminado em `95`.
+A saga estorna e, quando o banco confirma, fica `Divergente`. Saque parte do dinheiro estornado e peça a
+reconciliação: a conta fica negativa, o extrato mostra o `DebitoReconciliacao` com o saldo negativo, e a próxima
+transferência dessa conta termina `Recusada` (`SaldoNegativo`). Um depósito que cubra o negativo libera a conta.
+A confirmação do final `95` leva 5 minutos; para encurtar, reduza também os prazos da saga, porque a confirmação
+precisa chegar depois do estorno (com os prazos padrão, a saga estorna em cerca de 2 minutos; com estes, em
+cerca de 25 segundos):
+
+```bash
+SAGA_PRAZO_LIQUIDACAO=00:00:05 SAGA_PRAZO_CONSULTA=00:00:03 docker compose up -d transferencias-api transferencias-worker
+BANCO_EXTERNO_ATRASO_95=40 docker compose up -d banco-externo-simulador
+```
+
+### 14. Devolução e horário de corte
+
+Mande 100 EUR para um IBAN terminado em `94`: a saga conclui e, 10 segundos depois, termina `Devolvida`, com os
+100 EUR de volta e a tarifa cobrada. No Kafbat UI, siga a `TransferenciaDevolvida` em
+`eurobank.banco-externo.respostas` e o `CreditarDevolucao` em `eurobank.contas.comandos`. Depois, com o corte SEPA
+ligado (o padrão), peça uma transferência em euro depois das 16:00 UTC ou no fim de semana: ela fica `Agendada`,
+com `executarEmEfetivo` no próximo dia útil às 08:00 UTC. Para desligar o corte:
+
+```bash
+SEPA_HORARIO_DE_CORTE=false docker compose up -d transferencias-api
+```
+
 ## Laboratório e produção
 
 Atalhos que este laboratório toma de propósito:
@@ -557,16 +642,18 @@ Atalhos que este laboratório toma de propósito:
 | Orquestrador próprio, com varredura a cada 2 s | Igual, ou um motor de workflow (Temporal, Camunda) quando os processos são muitos e longos |
 | Câmbio simulado com taxas fixas e spread único | Provedor de cotações real, com taxas que mudam a cada segundo e spread por cliente e por valor |
 | Projeção local de contas montada só pelos eventos que o worker viu | Tópico com retenção longa ou compactado, ou um snapshot inicial da projeção antes de consumir |
+| Horário de corte fixo (16:00 UTC, sem feriados) e lista fixa de países SEPA | Calendário TARGET2 com feriados, cortes por esquema (SCT, SCT Inst) e dados de referência mantidos à parte |
+| Reconciliação pedida pela API, sem aprovação e sem limite para o negativo | Fila de exceções operacionais com aprovação, limite de crédito e cobrança do saldo negativo |
 
 ## Próximos passos
 
 Prontas: a **saga orquestrada** de transferência externa (prazos, reenvios, consulta antes de estornar,
-cancelamento, agendamento, tarifa, limite diário e `Idempotency-Key`) e o **câmbio** (contas em quatro moedas,
-cotação travada com spread, externa em outra moeda e câmbio entre contas EuroBank). As próximas:
+cancelamento, agendamento, tarifa, limite diário e `Idempotency-Key`), o **câmbio** (contas em quatro moedas,
+cotação travada com spread, externa em outra moeda e câmbio entre contas EuroBank) e as regras **SEPA e SWIFT**
+com horário de corte, a **devolução** pelo banco externo e o estado **`Divergente`** com reconciliação e saldo
+negativo controlado. A próxima:
 
-1. Validações SEPA e SWIFT com horário de corte, devolução pelo banco externo, estado `Divergente` com
-   reconciliação e saldo negativo controlado.
-2. Notificações por e-mail (Mailpit), cenário de carga das sagas no k6 e diagramas de sequência.
+1. Notificações por e-mail (Mailpit), cenário de carga das sagas no k6 e diagramas de sequência.
 
 Depois disso, um contexto de **antifraude** com regras e machine learning (ML.NET), comunicação gRPC entre os
 serviços e Redis.
