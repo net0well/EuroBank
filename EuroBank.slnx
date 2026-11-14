@@ -1,5 +1,8 @@
 <Solution>
   <Folder Name="/src/" />
+  <Folder Name="/src/Antifraude/">
+    <Project Path="src/Antifraude/EuroBank.Antifraude.Domain/EuroBank.Antifraude.Domain.csproj" />
+  </Folder>
   <Folder Name="/src/Contas/">
     <Project Path="src/Contas/EuroBank.Contas.Api/EuroBank.Contas.Api.csproj" />
     <Project Path="src/Contas/EuroBank.Contas.Application/EuroBank.Contas.Application.csproj" />
@@ -35,6 +38,7 @@
     <Project Path="src/Transferencias/EuroBank.Transferencias.Worker/EuroBank.Transferencias.Worker.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/EuroBank.Antifraude.Domain.Tests/EuroBank.Antifraude.Domain.Tests.csproj" />
     <Project Path="tests/EuroBank.Contas.Api.Tests/EuroBank.Contas.Api.Tests.csproj" />
     <Project Path="tests/EuroBank.Contas.Domain.Tests/EuroBank.Contas.Domain.Tests.csproj" />
     <Project Path="tests/EuroBank.Contas.Worker.Tests/EuroBank.Contas.Worker.Tests.csproj" />
