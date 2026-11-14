@@ -7,4 +7,5 @@ public sealed record TransferenciaNaoConcluidaMensagem(
     Guid TransferenciaId,
     Guid ContaOrigemId,
     string Motivo,
+    ResumoTransferenciaMensagem Resumo,
     DateTimeOffset OcorridoEm);

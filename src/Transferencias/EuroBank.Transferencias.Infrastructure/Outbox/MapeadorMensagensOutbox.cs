@@ -3,6 +3,7 @@ using EuroBank.Shared.Domain;
 using EuroBank.Shared.Persistence.Outbox;
 using EuroBank.Transferencias.Domain.Enums;
 using EuroBank.Transferencias.Domain.Events;
+using EuroBank.Transferencias.Domain.ValueObjects;
 using EuroBank.Transferencias.Infrastructure.Outbox.TransferObjects;
 
 namespace EuroBank.Transferencias.Infrastructure.Outbox;
@@ -132,28 +133,38 @@ public sealed class MapeadorMensagensOutbox : IMapeadorMensagensOutbox
             e.TransferenciaId.ToString(),
             nameof(TransferenciaConcluida),
             new TransferenciaConcluidaMensagem(
-                e.TransferenciaId.Valor, e.ContaOrigemId, e.Valor.ToString(), e.Tarifa.ToString(), e.Valor.Moeda.ToString(), e.OcorridoEm),
+                e.TransferenciaId.Valor,
+                e.ContaOrigemId,
+                e.Valor.ToString(),
+                e.Tarifa.ToString(),
+                e.Valor.Moeda.ToString(),
+                e.Motivo?.ToString(),
+                Resumo(e.Resumo),
+                e.OcorridoEm),
             e,
             traceparent),
         TransferenciaCancelada e => Criar(
             EventosTransferencias,
             e.TransferenciaId.ToString(),
             nameof(TransferenciaCancelada),
-            new TransferenciaNaoConcluidaMensagem(e.TransferenciaId.Valor, e.ContaOrigemId, e.Motivo.ToString(), e.OcorridoEm),
+            new TransferenciaNaoConcluidaMensagem(
+                e.TransferenciaId.Valor, e.ContaOrigemId, e.Motivo.ToString(), Resumo(e.Resumo), e.OcorridoEm),
             e,
             traceparent),
         TransferenciaRecusada e => Criar(
             EventosTransferencias,
             e.TransferenciaId.ToString(),
             nameof(TransferenciaRecusada),
-            new TransferenciaNaoConcluidaMensagem(e.TransferenciaId.Valor, e.ContaOrigemId, e.Motivo.ToString(), e.OcorridoEm),
+            new TransferenciaNaoConcluidaMensagem(
+                e.TransferenciaId.Valor, e.ContaOrigemId, e.Motivo.ToString(), Resumo(e.Resumo), e.OcorridoEm),
             e,
             traceparent),
         TransferenciaDivergente e => Criar(
             EventosTransferencias,
             e.TransferenciaId.ToString(),
             nameof(TransferenciaDivergente),
-            new TransferenciaNaoConcluidaMensagem(e.TransferenciaId.Valor, e.ContaOrigemId, e.Motivo.ToString(), e.OcorridoEm),
+            new TransferenciaNaoConcluidaMensagem(
+                e.TransferenciaId.Valor, e.ContaOrigemId, e.Motivo.ToString(), Resumo(e.Resumo), e.OcorridoEm),
             e,
             traceparent),
         TransferenciaDevolvida e => Criar(
@@ -161,11 +172,33 @@ public sealed class MapeadorMensagensOutbox : IMapeadorMensagensOutbox
             e.TransferenciaId.ToString(),
             nameof(TransferenciaDevolvida),
             new TransferenciaDevolvidaMensagem(
-                e.TransferenciaId.Valor, e.ContaOrigemId, e.ValorDevolvido.ToString(), e.ValorDevolvido.Moeda.ToString(), e.OcorridoEm),
+                e.TransferenciaId.Valor,
+                e.ContaOrigemId,
+                e.ValorDevolvido.ToString(),
+                e.ValorDevolvido.Moeda.ToString(),
+                Resumo(e.Resumo),
+                e.OcorridoEm),
             e,
             traceparent),
         _ => throw new InvalidOperationException($"O evento {evento.GetType().Name} não tem mapeamento para a outbox."),
     };
+
+    private static ResumoTransferenciaMensagem Resumo(ResumoTransferencia resumo) =>
+        new(
+            resumo.Tipo.ToString(),
+            resumo.NomeTitular,
+            resumo.NomeBeneficiario,
+            resumo.IbanDestino,
+            resumo.Valor.ToString(),
+            resumo.Valor.Moeda.ToString(),
+            resumo.Tarifa.ToString(),
+            resumo.Tarifa.Moeda.ToString(),
+            resumo.ValorDebitado?.ToString(),
+            resumo.ValorDestino?.ToString(),
+            resumo.MoedaDestino.ToString(),
+            resumo.Taxa,
+            resumo.Descricao,
+            resumo.EmailNotificacao);
 
     private static MensagemOutbox Criar<TPayload>(
         string tipoAgregado,

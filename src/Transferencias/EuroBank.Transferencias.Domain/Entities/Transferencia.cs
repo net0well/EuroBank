@@ -510,7 +510,7 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
             MotivoTransferencia.Reconciliada,
             "ReconciliacaoRealizada recebida de Contas: valor e tarifa debitados de novo",
             agora);
-        Registrar(new TransferenciaConcluida(Id, ContaOrigemId, ValorDebitado!, Tarifa, agora));
+        Registrar(new TransferenciaConcluida(Id, ContaOrigemId, ValorDebitado!, Tarifa, Motivo, Resumir(), agora));
         return ResultadoPasso.Aplicado;
     }
 
@@ -555,7 +555,7 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
             MotivoTransferencia.DevolvidaPeloBanco,
             "DevolucaoCreditada recebida de Contas: valor de volta na conta, sem a tarifa",
             agora);
-        Registrar(new TransferenciaDevolvida(Id, ContaOrigemId, ValorDebitado!, agora));
+        Registrar(new TransferenciaDevolvida(Id, ContaOrigemId, ValorDebitado!, Resumir(), agora));
         return ResultadoPasso.Aplicado;
     }
 
@@ -841,26 +841,41 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
     {
         Encerrar(EstadoTransferencia.Concluida, motivo: null, descricao, agora);
         Registrar(new LiberacaoTravaSolicitada(Id, ContaOrigemId, agora));
-        Registrar(new TransferenciaConcluida(Id, ContaOrigemId, ValorDebitado!, Tarifa, agora));
+        Registrar(new TransferenciaConcluida(Id, ContaOrigemId, ValorDebitado!, Tarifa, Motivo, Resumir(), agora));
     }
 
     private void Cancelar(MotivoTransferencia motivo, string descricao, DateTimeOffset agora)
     {
         Encerrar(EstadoTransferencia.Cancelada, motivo, descricao, agora);
-        Registrar(new TransferenciaCancelada(Id, ContaOrigemId, motivo, agora));
+        Registrar(new TransferenciaCancelada(Id, ContaOrigemId, motivo, Resumir(), agora));
     }
 
     private void Divergir(MotivoTransferencia motivo, string descricao, DateTimeOffset agora)
     {
         Encerrar(EstadoTransferencia.Divergente, motivo, descricao, agora);
-        Registrar(new TransferenciaDivergente(Id, ContaOrigemId, motivo, agora));
+        Registrar(new TransferenciaDivergente(Id, ContaOrigemId, motivo, Resumir(), agora));
     }
 
     private void Recusar(MotivoTransferencia motivo, string descricao, DateTimeOffset agora)
     {
         Encerrar(EstadoTransferencia.Recusada, motivo, descricao, agora);
-        Registrar(new TransferenciaRecusada(Id, ContaOrigemId, motivo, agora));
+        Registrar(new TransferenciaRecusada(Id, ContaOrigemId, motivo, Resumir(), agora));
     }
+
+    /// <summary>O retrato que os eventos finais levam para fora do contexto.</summary>
+    private ResumoTransferencia Resumir() => new(
+        Tipo,
+        NomeOrigem,
+        NomeBeneficiario,
+        IbanDestino.Valor,
+        Valor,
+        Tarifa,
+        ValorDebitado,
+        ValorDestino,
+        MoedaDestino,
+        Cotacao?.Taxa,
+        Descricao,
+        EmailNotificacao);
 
     private void Encerrar(EstadoTransferencia estado, MotivoTransferencia? motivo, string descricao, DateTimeOffset agora)
     {

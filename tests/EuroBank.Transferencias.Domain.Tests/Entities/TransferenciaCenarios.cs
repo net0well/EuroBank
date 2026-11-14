@@ -21,6 +21,8 @@ internal static class TransferenciaCenarios
 
     public const string IbanComum = "DE89370400440532013000";
 
+    public const string EmailCliente = "ana@exemplo.com";
+
     public static Transferencia NovaExterna(
         decimal valor = 100m,
         DateTimeOffset? executarEm = null,
@@ -40,7 +42,7 @@ internal static class TransferenciaCenarios
             Dinheiro.De(valor, moedaDoValor ?? conta.Moeda),
             moedaDestino ?? conta.Moeda,
             "Aluguel",
-            null,
+            EmailCliente,
             "chave-1",
             "hash-1",
             executarEm,
@@ -49,7 +51,7 @@ internal static class TransferenciaCenarios
 
     public static Transferencia NovoCambioInterno(decimal valor = 100m, Moeda moedaDoValor = Moeda.USD) =>
         Transferencia.SolicitarCambioInterno(
-            Origem, DestinoEmDolar, Dinheiro.De(valor, moedaDoValor), null, null, "chave-2", "hash-2", null, Agora);
+            Origem, DestinoEmDolar, Dinheiro.De(valor, moedaDoValor), null, EmailCliente, "chave-2", "hash-2", null, Agora);
 
     /// <summary>Cotação de 100 USD saindo de EUR a 1,0692 (93,53 EUR), válida por 10 minutos.</summary>
     public static Transferencia CotarCem(Transferencia transferencia, DateTimeOffset? agora = null, decimal jaTransferido = 0m) =>

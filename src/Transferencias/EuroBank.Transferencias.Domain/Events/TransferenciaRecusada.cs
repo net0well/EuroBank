@@ -7,4 +7,5 @@ public sealed record TransferenciaRecusada(
     TransferenciaId TransferenciaId,
     Guid ContaOrigemId,
     MotivoTransferencia Motivo,
+    ResumoTransferencia Resumo,
     DateTimeOffset OcorridoEm) : IEventoDeTransferencia;

@@ -8,4 +8,5 @@ public sealed record TransferenciaDevolvida(
     TransferenciaId TransferenciaId,
     Guid ContaOrigemId,
     Dinheiro ValorDevolvido,
+    ResumoTransferencia Resumo,
     DateTimeOffset OcorridoEm) : IEventoDeTransferencia;
