@@ -549,8 +549,13 @@ flowchart LR
 ## Como subir
 
 ```bash
+cp .env.example .env
 docker compose up -d --build
 ```
+
+O `.env` (fora do git) leva o usuário do Postgres, as API keys e, se precisar, outras portas do host; o
+`.env.example` já vem com os valores de laboratório que os roteiros `.http` e o k6 usam. No PowerShell:
+`Copy-Item .env.example .env`.
 
 A ordem de subida é controlada pelo compose: Postgres, Kafka e Redis, criação dos databases e dos tópicos com 3
 partições, Kafka Connect, registro dos conectores, APIs de Contas (aplica as migrations e cria as contas de
