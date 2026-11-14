@@ -112,6 +112,14 @@ namespace EuroBank.Transferencias.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<DateTimeOffset?>("AnaliseRiscoAte")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("analise_risco_ate");
+
+                    b.Property<Guid?>("AnaliseRiscoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("analise_risco_id");
+
                     b.Property<DateTimeOffset>("AtualizadaEm")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("atualizada_em");
@@ -124,6 +132,10 @@ namespace EuroBank.Transferencias.Infrastructure.Persistence.Migrations
                     b.Property<bool>("CancelamentoSolicitado")
                         .HasColumnType("boolean")
                         .HasColumnName("cancelamento_solicitado");
+
+                    b.Property<Guid?>("CasoRevisaoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("caso_revisao_id");
 
                     b.Property<Guid?>("ContaDestinoId")
                         .HasColumnType("uuid")
@@ -227,6 +239,10 @@ namespace EuroBank.Transferencias.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("PrazoDoPasso")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("prazo_do_passo");
+
+                    b.Property<bool>("RiscoAprovado")
+                        .HasColumnType("boolean")
+                        .HasColumnName("risco_aprovado");
 
                     b.Property<DateTimeOffset>("SolicitadaEm")
                         .HasColumnType("timestamp with time zone")

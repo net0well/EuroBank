@@ -41,4 +41,13 @@ public enum MotivoTransferencia
 
     /// <summary>Divergente: o banco devolveu o valor, mas Contas não pôde creditar a conta de origem.</summary>
     DevolucaoNaoCreditada = 17,
+
+    /// <summary>O antifraude recusou, pelas regras ou pelo analista.</summary>
+    RecusadaPeloAntifraude = 18,
+
+    /// <summary>O antifraude não respondeu até o prazo da análise (fail-closed).</summary>
+    AntifraudeIndisponivel = 19,
+
+    /// <summary>O caso de revisão passou do prazo sem decisão do analista.</summary>
+    RevisaoExpirada = 20,
 }

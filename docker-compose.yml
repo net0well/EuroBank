@@ -252,6 +252,8 @@ services:
       Saga__PrazoDebito: ${SAGA_PRAZO_DEBITO:-00:00:30}
       Saga__PrazoLiquidacao: ${SAGA_PRAZO_LIQUIDACAO:-00:00:30}
       Saga__PrazoConsulta: ${SAGA_PRAZO_CONSULTA:-00:00:15}
+      # Igual na API e no worker: os dois começam sagas. false volta ao fluxo sem antifraude.
+      Saga__AnaliseRiscoAtiva: ${SAGA_ANALISE_RISCO:-true}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
     healthcheck:
       test: ["CMD-SHELL", "curl -fs http://localhost:8080/health > /dev/null"]
@@ -259,15 +261,19 @@ services:
       timeout: 5s
       retries: 30
 
-  # Conduz as sagas depois do primeiro passo: respostas de Contas e do banco externo (inbox durável no banco
-  # de Transferencias) e a varredura de agendadas e prazos (FOR UPDATE SKIP LOCKED: pode escalar).
-  # Espera a API ficar saudável, porque é ela que aplica as migrations.
+  # Conduz as sagas depois do primeiro passo: respostas de Contas, do câmbio e do banco externo e decisões do
+  # antifraude (inbox durável no banco de Transferencias) e a varredura de agendadas, análises de risco (gRPC no
+  # antifraude) e prazos (FOR UPDATE SKIP LOCKED: pode escalar).
+  # Espera a API ficar saudável, porque é ela que aplica as migrations, e o antifraude, para as primeiras
+  # transferências não serem recusadas por ele ainda estar subindo.
   transferencias-worker:
     build:
       context: .
       dockerfile: src/Transferencias/EuroBank.Transferencias.Worker/Dockerfile
     depends_on:
       transferencias-api:
+        condition: service_healthy
+      antifraude-api:
         condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
@@ -279,6 +285,11 @@ services:
       Saga__PrazoDebito: ${SAGA_PRAZO_DEBITO:-00:00:30}
       Saga__PrazoLiquidacao: ${SAGA_PRAZO_LIQUIDACAO:-00:00:30}
       Saga__PrazoConsulta: ${SAGA_PRAZO_CONSULTA:-00:00:15}
+      Saga__AnaliseRiscoAtiva: ${SAGA_ANALISE_RISCO:-true}
+      # gRPC em h2c na porta interna do antifraude. Estrategia: Retry, Hedging ou Nenhuma.
+      Antifraude__Endereco: http://antifraude-api:8081
+      Antifraude__ApiKey: ${ANTIFRAUDE_API_KEY}
+      Antifraude__Estrategia: ${ANTIFRAUDE_ESTRATEGIA:-Retry}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
     healthcheck:
       test: ["CMD-SHELL", "curl -fs http://localhost:8080/health > /dev/null"]

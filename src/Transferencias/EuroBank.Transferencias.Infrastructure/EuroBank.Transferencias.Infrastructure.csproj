@@ -1,5 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <PropertyGroup>
+    <!-- O .proto do antifraude importa google/api/annotations.proto (rotas do transcoding): vem do Google.Api.CommonProtos. -->
+    <IncludeGoogleApiCommonProtos>true</IncludeGoogleApiCommonProtos>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- O mesmo arquivo do serviço, só com o cliente: uma fonte de verdade para o contrato, sem assembly compartilhado. -->
+    <Protobuf Include="..\..\Antifraude\EuroBank.Antifraude.Api\Protos\antifraude.proto" GrpcServices="Client" Link="Protos\antifraude.proto" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\EuroBank.Transferencias.Application\EuroBank.Transferencias.Application.csproj" />
     <ProjectReference Include="..\..\Shared\EuroBank.Shared.Persistence\EuroBank.Shared.Persistence.csproj" />
@@ -9,5 +19,9 @@
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+    <PackageReference Include="Grpc.Net.ClientFactory" />
+    <PackageReference Include="Google.Protobuf" />
+    <PackageReference Include="Google.Api.CommonProtos" />
+    <PackageReference Include="Grpc.Tools" PrivateAssets="all" />
   </ItemGroup>
 </Project>

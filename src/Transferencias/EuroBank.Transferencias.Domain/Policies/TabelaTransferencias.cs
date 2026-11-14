@@ -30,12 +30,15 @@ public static class TabelaTransferencias
     public static Dinheiro LimiteDiario(Moeda moeda) => Dinheiro.De(Limites[moeda], moeda);
 
     /// <summary>
-    /// Estados em que a transferência ocupa o limite: o débito já foi pedido e o dinheiro não vai voltar.
+    /// Estados em que a transferência ocupa o limite: o débito já foi pedido e o dinheiro não vai voltar, ou o
+    /// limite já foi conferido e a saga espera o antifraude (para duas transferências em análise não passarem juntas).
     /// Agendadas e cotando ainda não ocupam (o limite é conferido antes do débito); estornos, cancelamentos,
     /// recusas, devoluções creditadas e divergências liberam. A reconciliação volta a ocupar (vai terminar Concluida).
     /// </summary>
     public static IReadOnlyList<EstadoTransferencia> EstadosQueConsomemLimite { get; } =
     [
+        EstadoTransferencia.AnalisandoRisco,
+        EstadoTransferencia.EmAnaliseManual,
         EstadoTransferencia.AguardandoDebito,
         EstadoTransferencia.Debitada,
         EstadoTransferencia.AguardandoLiquidacao,

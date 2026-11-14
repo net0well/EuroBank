@@ -1,8 +1,10 @@
+using EuroBank.Antifraude.Grpc;
 using EuroBank.Shared.Domain;
 using EuroBank.Shared.Persistence.Outbox;
 using EuroBank.Shared.Persistence.Transactions;
 using EuroBank.Transferencias.Application.Interfaces;
 using EuroBank.Transferencias.Domain.Repositories;
+using EuroBank.Transferencias.Infrastructure.Clients;
 using EuroBank.Transferencias.Infrastructure.Options;
 using EuroBank.Transferencias.Infrastructure.Outbox;
 using EuroBank.Transferencias.Infrastructure.Persistence;
@@ -37,6 +39,31 @@ public static class DependencyInjection
         services.AddScoped<IFilaOutbox, FilaOutbox>();
         services.AddScoped<IUnidadeDeTrabalho, UnidadeDeTrabalhoComOutbox<TransferenciasDbContext>>();
         services.AddScoped<IExecutorTransacional, ExecutorTransacionalEf<TransferenciasDbContext>>();
+        services.AdicionarClienteAntifraude();
         return services;
+    }
+
+    /// <summary>
+    /// Cliente gRPC do antifraude, registrado também na API: a varredura (e o que depende dela) é validada quando o
+    /// container é montado. Só o worker chama de fato.
+    /// </summary>
+    private static void AdicionarClienteAntifraude(this IServiceCollection services)
+    {
+        services.AddOptions<OpcoesAntifraude>().BindConfiguration(OpcoesAntifraude.Secao);
+        services
+            .AddGrpcClient<AntifraudeService.AntifraudeServiceClient>((provedor, cliente) =>
+                cliente.Address = provedor.GetRequiredService<IOptions<OpcoesAntifraude>>().Value.Endereco)
+            .ConfigureChannel((provedor, canal) =>
+            {
+                // No laboratório o canal é h2c (sem TLS): sem esta opção, a API key não iria na chamada.
+                canal.UnsafeUseInsecureChannelCallCredentials = true;
+                canal.ServiceConfig = ConfiguracaoCanalAntifraude.Criar(provedor.GetRequiredService<IOptions<OpcoesAntifraude>>().Value);
+            })
+            .AddCallCredentials((_, metadata, provedor) =>
+            {
+                metadata.Add("x-api-key", provedor.GetRequiredService<IOptions<OpcoesAntifraude>>().Value.ApiKey);
+                return Task.CompletedTask;
+            });
+        services.AddScoped<IAvaliacaoRisco, AvaliacaoRiscoGrpc>();
     }
 }

@@ -15,6 +15,9 @@ public static class TiposRespostasSaga
     /// <summary>Eventos de Contas: só ContaAberta e ContaEncerrada interessam (alimentam a projeção local de contas).</summary>
     public const string TopicoEventosContas = "eurobank.contas.eventos";
 
+    /// <summary>Eventos do Antifraude: só AnaliseDecidida interessa (a decisão do analista ou a expiração do caso).</summary>
+    public const string TopicoAntifraude = "eurobank.antifraude.eventos";
+
     public static IReadOnlyDictionary<string, Type> Contas { get; } = new Dictionary<string, Type>(StringComparer.Ordinal)
     {
         [nameof(DebitoRealizado)] = typeof(DebitoRealizado),
@@ -49,5 +52,11 @@ public static class TiposRespostasSaga
     {
         ["ContaAberta"] = typeof(EventoContaAberta),
         ["ContaEncerrada"] = typeof(EventoContaEncerrada),
+    };
+
+    /// <summary>CasoAberto fica de fora: a saga já sabe do caso pela resposta do Avaliar.</summary>
+    public static IReadOnlyDictionary<string, Type> Antifraude { get; } = new Dictionary<string, Type>(StringComparer.Ordinal)
+    {
+        ["AnaliseDecidida"] = typeof(EventoAnaliseDecidida),
     };
 }

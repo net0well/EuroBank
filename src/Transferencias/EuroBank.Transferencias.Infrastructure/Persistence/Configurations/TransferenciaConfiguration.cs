@@ -63,6 +63,11 @@ public sealed class TransferenciaConfiguration : IEntityTypeConfiguration<Transf
         builder.Property(transferencia => transferencia.CancelamentoSolicitado).HasColumnName("cancelamento_solicitado");
         builder.Property(transferencia => transferencia.DebitoSemResposta).HasColumnName("debito_sem_resposta");
         builder.Property(transferencia => transferencia.LiquidacaoConfirmadaNoEstorno).HasColumnName("liquidacao_confirmada_no_estorno");
+        builder.Property(transferencia => transferencia.AnaliseRiscoId).HasColumnName("analise_risco_id");
+        builder.Property(transferencia => transferencia.CasoRevisaoId).HasColumnName("caso_revisao_id");
+        builder.Property(transferencia => transferencia.RiscoAprovado).HasColumnName("risco_aprovado");
+        builder.Property(transferencia => transferencia.AnaliseRiscoAte).HasColumnName("analise_risco_ate");
+        builder.Ignore(transferencia => transferencia.AguardaOAntifraude);
         builder.Property(transferencia => transferencia.TentativasNoPasso).HasColumnName("tentativas_no_passo");
         builder.Property(transferencia => transferencia.PrazoDoPasso).HasColumnName("prazo_do_passo");
         builder.Property(transferencia => transferencia.AtualizadaEm).HasColumnName("atualizada_em");

@@ -21,16 +21,22 @@ public sealed class AplicadorRespostas(
     TimeProvider relogio,
     ILogger<AplicadorRespostas> logger)
 {
+    /// <param name="nivelSeDesconhecida">
+    /// Nível do registro quando a transferência não existe aqui. Aviso para respostas de comandos; Debug para eventos
+    /// que também falam de operações de outros contextos (os saques, no antifraude).
+    /// </param>
     public Task AplicarAsync(
         Guid transferenciaId,
         string resposta,
         Func<Transferencia, DateTimeOffset, ResultadoPasso> aplicar,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        LogLevel nivelSeDesconhecida = LogLevel.Warning) =>
         AplicarComLimiteAsync(
             transferenciaId,
             resposta,
             consultaLimite: false,
             (transferencia, _, agora) => aplicar(transferencia, agora),
+            nivelSeDesconhecida,
             cancellationToken);
 
     /// <summary>
@@ -42,13 +48,14 @@ public sealed class AplicadorRespostas(
         string resposta,
         Func<Transferencia, Dinheiro, DateTimeOffset, ResultadoPasso> aplicar,
         CancellationToken cancellationToken) =>
-        AplicarComLimiteAsync(transferenciaId, resposta, consultaLimite: true, aplicar, cancellationToken);
+        AplicarComLimiteAsync(transferenciaId, resposta, consultaLimite: true, aplicar, LogLevel.Warning, cancellationToken);
 
     private Task AplicarComLimiteAsync(
         Guid transferenciaId,
         string resposta,
         bool consultaLimite,
         Func<Transferencia, Dinheiro, DateTimeOffset, ResultadoPasso> aplicar,
+        LogLevel nivelSeDesconhecida,
         CancellationToken cancellationToken) =>
         executor.ExecutarAsync(
             async token =>
@@ -57,7 +64,7 @@ public sealed class AplicadorRespostas(
                 if (transferencia is null)
                 {
                     // Resposta de uma transferência que este banco não conhece (ex.: comando enviado à mão no laboratório).
-                    logger.LogWarning("{Resposta} da transferência desconhecida {TransferenciaId} ignorada", resposta, transferenciaId);
+                    logger.Log(nivelSeDesconhecida, "{Resposta} da transferência desconhecida {TransferenciaId} ignorada", resposta, transferenciaId);
                     return;
                 }
 
