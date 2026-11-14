@@ -23,6 +23,10 @@
     <PackageVersion Include="WolverineFx.RuntimeCompilation" Version="6.60.0" />
   </ItemGroup>
 
+  <ItemGroup Label="Redis">
+    <PackageVersion Include="StackExchange.Redis" Version="2.13.23" />
+  </ItemGroup>
+
   <ItemGroup Label="E-mail">
     <PackageVersion Include="MailKit" Version="4.18.2" />
   </ItemGroup>
@@ -43,6 +47,7 @@
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.11.0" />
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.16.0" />
     <PackageVersion Include="Testcontainers.Kafka" Version="4.16.0" />
+    <PackageVersion Include="Testcontainers.Redis" Version="4.16.0" />
     <PackageVersion Include="Confluent.Kafka" Version="2.16.0" />
     <PackageVersion Include="OpenTelemetry" Version="1.20.1" />
   </ItemGroup>

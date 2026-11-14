@@ -1,11 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\EuroBank.Antifraude.Domain\EuroBank.Antifraude.Domain.csproj" />
+    <ProjectReference Include="..\EuroBank.Antifraude.Application\EuroBank.Antifraude.Application.csproj" />
     <ProjectReference Include="..\..\Shared\EuroBank.Shared.Persistence\EuroBank.Shared.Persistence.csproj" />
+    <ProjectReference Include="..\..\Shared\EuroBank.Shared.Messaging\EuroBank.Shared.Messaging.csproj" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="StackExchange.Redis" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <!-- Mesma versão do EF que o Design usa na compilação, repassada a quem referencia este projeto. -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />

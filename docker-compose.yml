@@ -286,6 +286,63 @@ services:
       timeout: 5s
       retries: 30
 
+  # ---------------------------------------------------------------------------------------------------------
+  # Antifraude
+  # ---------------------------------------------------------------------------------------------------------
+
+  # Perfil de comportamento das contas (e, depois, cache e controles das APIs). Sem volume nem persistência: o perfil
+  # é derivado dos eventos e se reconstrói reprocessando o tópico. Porta do host configurável (REDIS_PORTA_HOST).
+  redis:
+    image: redis:8.10.3
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "${REDIS_PORTA_HOST:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # UI do Redis em http://localhost:5540, já com a conexão "eurobank" (redis:6379): veja as chaves
+  # antifraude:{conta}:perfil, :saidas e :beneficiarios.
+  redisinsight:
+    image: redis/redisinsight:3.8.0
+    ports:
+      - "${REDISINSIGHT_PORTA:-5540}:5540"
+    environment:
+      RI_REDIS_HOST: redis
+      RI_REDIS_PORT: "6379"
+      RI_REDIS_ALIAS: eurobank
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # Mantém no Redis o perfil de cada conta (eurobank.contas.eventos, sem inbox: a versão da conta no Redis descarta
+  # o repetido). Para reconstruir: apague o Redis e volte o offset do grupo eurobank-antifraude-worker.
+  antifraude-worker:
+    build:
+      context: .
+      dockerfile: src/Antifraude/EuroBank.Antifraude.Worker/Dockerfile
+    depends_on:
+      postgres-init:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_HTTP_PORTS: "8080"
+      ConnectionStrings__Antifraude: "Host=postgres;Port=5432;Database=eurobank_antifraude;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      ConnectionStrings__Redis: "redis:6379"
+      Kafka__BootstrapServers: kafka:29092
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8080/health > /dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
   # E-mail em pt-BR para quem pediu (emailNotificacao) a partir dos eventos finais das sagas
   # (eurobank.transferencias.eventos), com inbox durável e a tabela notificacoes (chave = id do evento) no database
   # eurobank_notificacoes. SMTP fora do ar: novas tentativas em 5 s, 30 s e 2 min, depois dead letter; a saga não
