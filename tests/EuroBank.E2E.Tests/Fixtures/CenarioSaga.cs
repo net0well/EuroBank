@@ -42,7 +42,8 @@ public sealed class CenarioSaga(LaboratorioFixture lab)
         DateTimeOffset? executarEm = null,
         string? idempotencyKey = null,
         string? moedaDestino = null,
-        string? moedaDoValor = null) =>
+        string? moedaDoValor = null,
+        string? emailNotificacao = null) =>
         EnviarAsync(
             "/transferencias-externas",
             new
@@ -55,6 +56,7 @@ public sealed class CenarioSaga(LaboratorioFixture lab)
                 executarEm,
                 moedaDestino,
                 moedaDoValor,
+                emailNotificacao,
             },
             idempotencyKey ?? Guid.CreateVersion7().ToString());
 
@@ -64,9 +66,17 @@ public sealed class CenarioSaga(LaboratorioFixture lab)
         decimal valor,
         DateTimeOffset? executarEm = null,
         string? moedaDestino = null,
-        string? moedaDoValor = null) =>
+        string? moedaDoValor = null,
+        string? emailNotificacao = null) =>
         await LerAsync(
-            await SolicitarAsync(contaId, finalIban, valor, executarEm, moedaDestino: moedaDestino, moedaDoValor: moedaDoValor),
+            await SolicitarAsync(
+                contaId,
+                finalIban,
+                valor,
+                executarEm,
+                moedaDestino: moedaDestino,
+                moedaDoValor: moedaDoValor,
+                emailNotificacao: emailNotificacao),
             HttpStatusCode.Accepted);
 
     public async Task<TransferenciaE2E> SolicitarCambioComSucessoAsync(Guid contaId, string ibanDestino, decimal valor, string? moedaDoValor) =>
