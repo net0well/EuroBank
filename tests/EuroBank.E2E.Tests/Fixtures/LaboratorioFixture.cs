@@ -6,6 +6,8 @@ using Confluent.Kafka.Admin;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using DotNet.Testcontainers.Networks;
+using EuroBank.Antifraude.Api;
+using EuroBank.Antifraude.Worker;
 using EuroBank.Contas.Api;
 using EuroBank.Contas.Worker;
 using EuroBank.Extrato.Worker;
@@ -13,12 +15,16 @@ using EuroBank.Notificacoes.Worker;
 using EuroBank.Simuladores.BancoExterno;
 using EuroBank.Simuladores.Cambio;
 using EuroBank.Transferencias.Api;
+using EuroBank.Transferencias.Infrastructure.Options;
 using EuroBank.Transferencias.Worker;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Http;
 using Npgsql;
 using Testcontainers.Kafka;
 using Testcontainers.PostgreSql;
+using Testcontainers.Redis;
 
 [assembly: AssemblyFixture(typeof(EuroBank.E2E.Tests.Fixtures.LaboratorioFixture))]
 
@@ -26,13 +32,27 @@ namespace EuroBank.E2E.Tests.Fixtures;
 
 /// <summary>
 /// O laboratório inteiro para os testes ponta a ponta: Postgres com replicação lógica, Kafka e Kafka Connect com
-/// Debezium e o Mailpit (containers), os mesmos conectores de infra/connect/conectores, e as aplicações
-/// in-process (APIs, workers e simuladores).
+/// Debezium, Redis e o Mailpit (containers), os mesmos conectores de infra/connect/conectores, e as aplicações
+/// in-process (APIs, workers e simuladores). A saga passa pelo antifraude: o worker de Transferências chama o gRPC
+/// pelo TestServer da API do antifraude.
 /// </summary>
 public sealed class LaboratorioFixture : IAsyncLifetime
 {
     public const string TopicoOutbox = "eurobank.contas.eventos";
     public const string TopicoCdc = "eurobank.cdc.public.contas";
+
+    public const string ApiKeyAntifraude = "chave-e2e-antifraude";
+
+    /// <summary>País de risco só deste laboratório (país SEPA, para caber numa transferência em EUR).</summary>
+    public const string IbanPaisDeRisco = "MT84MALT011000012345MTLCAST001S";
+
+    /// <summary>
+    /// Regras de comportamento em modo sombra: aparecem nas análises, mas não pontuam. Os testes de saga usam contas
+    /// novas, várias transferências seguidas e saldos justos, o que levaria quase tudo para a revisão; as decisões do
+    /// antifraude são exercitadas pela lista de bloqueio (regra dura) e pelo país de risco somado ao beneficiário novo.
+    /// </summary>
+    private static readonly string[] RegrasEmSombra =
+        ["ValorAcimaDaMedia", "Velocidade", "Esvaziamento", "TesteDeCartao", "ContaRecemAberta", "HorarioIncomum"];
 
     /// <summary>Mesmos tópicos do kafka-init do compose, com 3 partições.</summary>
     private static readonly string[] Topicos =
@@ -63,6 +83,10 @@ public sealed class LaboratorioFixture : IAsyncLifetime
         ["Saga:PrazoReconciliacao"] = "00:00:05",
         ["Saga:PrazoCreditoDevolucao"] = "00:00:05",
         ["Saga:ReenviosPorPasso"] = "3",
+        ["Saga:AnaliseRiscoAtiva"] = "true",
+        ["Saga:PrazoAnaliseRisco"] = "00:00:06",
+        ["Saga:IntervaloAnaliseRisco"] = "00:00:01",
+        ["Saga:IntervaloConsultaRevisao"] = "00:00:05",
         ["Varredura:Intervalo"] = "00:00:00.500",
         ["Sepa:AplicarHorarioDeCorte"] = "false",
     };
@@ -74,7 +98,9 @@ public sealed class LaboratorioFixture : IAsyncLifetime
     private readonly KafkaContainer _kafka;
     private readonly IContainer _connect;
     private readonly IContainer _mailpit;
+    private readonly RedisContainer _redis = new RedisBuilder("redis:8.10.3").Build();
     private readonly ActivityListener _ouvinteAtividades;
+    private WebApplicationFactory<MarcadorAntifraudeApi> _antifraude = null!;
     private WebApplicationFactory<MarcadorContasApi> _contas = null!;
     private WebApplicationFactory<MarcadorExtratoWorker> _extrato = null!;
 
@@ -137,6 +163,12 @@ public sealed class LaboratorioFixture : IAsyncLifetime
 
     public HttpClient Transferencias { get; private set; } = null!;
 
+    /// <summary>REST do analista (e o JSON transcoding do gRPC) na API do antifraude.</summary>
+    public HttpClient Antifraude { get; private set; } = null!;
+
+    /// <summary>Ligado, as chamadas do worker de Transferências ao antifraude falham como se ele estivesse fora do ar.</summary>
+    public bool AntifraudeForaDoAr { get; set; }
+
     /// <summary>API HTTP do Mailpit (mensagens recebidas pelo SMTP).</summary>
     public HttpClient Mailpit { get; private set; } = null!;
 
@@ -153,6 +185,9 @@ public sealed class LaboratorioFixture : IAsyncLifetime
 
     public string ConnectionStringContas => _postgres.GetConnectionString();
 
+    public string ConnectionStringAntifraude =>
+        new NpgsqlConnectionStringBuilder(_postgres.GetConnectionString()) { Database = "eurobank_antifraude" }.ConnectionString;
+
     public string ConnectionStringNotificacoes =>
         new NpgsqlConnectionStringBuilder(_postgres.GetConnectionString()) { Database = "eurobank_notificacoes" }.ConnectionString;
 
@@ -165,7 +200,7 @@ public sealed class LaboratorioFixture : IAsyncLifetime
     public async ValueTask InitializeAsync()
     {
         await _rede.CreateAsync();
-        await Task.WhenAll(_postgres.StartAsync(), _kafka.StartAsync(), _mailpit.StartAsync());
+        await Task.WhenAll(_postgres.StartAsync(), _kafka.StartAsync(), _mailpit.StartAsync(), _redis.StartAsync());
         Mailpit = new HttpClient { BaseAddress = new Uri($"http://{_mailpit.Hostname}:{_mailpit.GetMappedPublicPort(8025)}") };
 
         await CriarBancosAsync();
@@ -204,6 +239,8 @@ public sealed class LaboratorioFixture : IAsyncLifetime
             ["Kafka:GrupoConsumidor"] = $"eurobank-contas-worker-e2e-{Guid.NewGuid():N}",
         });
 
+        await SubirAntifraudeAsync();
+
         var transferencias = Subir(new WebApplicationFactory<MarcadorTransferenciasApi>(), new(ConfiguracaoSaga)
         {
             ["ConnectionStrings:Transferencias"] = ConnectionStringTransferencias,
@@ -212,12 +249,20 @@ public sealed class LaboratorioFixture : IAsyncLifetime
         Transferencias = transferencias.CreateClient();
         Transferencias.DefaultRequestHeaders.Add("X-Api-Key", "chave-e2e-transferencias");
 
-        Subir(new WebApplicationFactory<MarcadorTransferenciasWorker>(), new(ConfiguracaoSaga)
-        {
-            ["ConnectionStrings:Transferencias"] = ConnectionStringTransferencias,
-            ["Kafka:BootstrapServers"] = BootstrapKafka,
-            ["Kafka:GrupoConsumidor"] = $"eurobank-transferencias-worker-e2e-{Guid.NewGuid():N}",
-        });
+        Subir(
+            new WebApplicationFactory<MarcadorTransferenciasWorker>(),
+            new(ConfiguracaoSaga)
+            {
+                ["ConnectionStrings:Transferencias"] = ConnectionStringTransferencias,
+                ["Kafka:BootstrapServers"] = BootstrapKafka,
+                ["Kafka:GrupoConsumidor"] = $"eurobank-transferencias-worker-e2e-{Guid.NewGuid():N}",
+                ["Antifraude:Endereco"] = _antifraude.Server.BaseAddress.ToString(),
+                ["Antifraude:ApiKey"] = ApiKeyAntifraude,
+            },
+            services => services.Configure<HttpClientFactoryOptions>(
+                OpcoesAntifraude.NomeCliente,
+                opcoes => opcoes.HttpMessageHandlerBuilderActions.Add(construtor =>
+                    construtor.PrimaryHandler = new InterruptorAntifraude(() => AntifraudeForaDoAr, _antifraude.Server.CreateHandler()))));
 
         Subir(new WebApplicationFactory<MarcadorBancoExterno>(), new()
         {
@@ -240,6 +285,42 @@ public sealed class LaboratorioFixture : IAsyncLifetime
         });
 
         Subir(new WebApplicationFactory<MarcadorNotificacoesWorker>(), ConfiguracaoNotificacoes($"eurobank-notificacoes-e2e-{Guid.NewGuid():N}"));
+    }
+
+    /// <summary>
+    /// API (aplica as migrations e semeia regras e listas) e worker do antifraude. Os casos expiram em 20 s, para o
+    /// teste da expiração caber no tempo; as regras de comportamento ficam em sombra e Malta entra como país de risco.
+    /// </summary>
+    private async Task SubirAntifraudeAsync()
+    {
+        var redis = _redis.GetConnectionString();
+        _antifraude = Subir(new WebApplicationFactory<MarcadorAntifraudeApi>(), new()
+        {
+            ["ConnectionStrings:Antifraude"] = ConnectionStringAntifraude,
+            ["ConnectionStrings:Redis"] = redis,
+            ["Seguranca:ApiKey"] = ApiKeyAntifraude,
+            ["Revisao:PrazoCaso"] = "00:00:20",
+        });
+        Antifraude = _antifraude.CreateClient();
+        Antifraude.DefaultRequestHeaders.Add("x-api-key", ApiKeyAntifraude);
+
+        foreach (var codigo in RegrasEmSombra)
+        {
+            var regra = await Antifraude.GetFromJsonAsync<JsonElement>($"/regras/{codigo}");
+            var ajuste = new { peso = regra.GetProperty("peso").GetInt32(), ativa = true, sombra = true };
+            (await Antifraude.PutAsJsonAsync($"/regras/{codigo}", ajuste)).EnsureSuccessStatusCode();
+        }
+
+        (await Antifraude.PostAsJsonAsync("/listas/paises-risco", new { codigo = IbanPaisDeRisco[..2] })).EnsureSuccessStatusCode();
+
+        Subir(new WebApplicationFactory<MarcadorAntifraudeWorker>(), new()
+        {
+            ["ConnectionStrings:Antifraude"] = ConnectionStringAntifraude,
+            ["ConnectionStrings:Redis"] = redis,
+            ["Kafka:BootstrapServers"] = BootstrapKafka,
+            ["Kafka:GrupoConsumidor"] = $"eurobank-antifraude-worker-e2e-{Guid.NewGuid():N}",
+            ["Expiracao:Intervalo"] = "00:00:01",
+        });
     }
 
     /// <summary>
@@ -296,7 +377,10 @@ public sealed class LaboratorioFixture : IAsyncLifetime
     }
 
     /// <summary>Sobe uma aplicação in-process (Development, sem OTLP) e já cria o host, para ela começar a consumir.</summary>
-    private WebApplicationFactory<T> Subir<T>(WebApplicationFactory<T> fabrica, Dictionary<string, string> configuracao)
+    private WebApplicationFactory<T> Subir<T>(
+        WebApplicationFactory<T> fabrica,
+        Dictionary<string, string> configuracao,
+        Action<IServiceCollection>? servicos = null)
         where T : class
     {
         var aplicacao = fabrica.WithWebHostBuilder(builder =>
@@ -306,6 +390,11 @@ public sealed class LaboratorioFixture : IAsyncLifetime
             foreach (var (chave, valor) in configuracao)
             {
                 builder.UseSetting(chave, valor);
+            }
+
+            if (servicos is not null)
+            {
+                builder.ConfigureServices(servicos);
             }
         });
         using var _ = aplicacao.CreateClient();
@@ -407,6 +496,7 @@ public sealed class LaboratorioFixture : IAsyncLifetime
         Contas?.Dispose();
         Extrato?.Dispose();
         Transferencias?.Dispose();
+        Antifraude?.Dispose();
         Mailpit?.Dispose();
         foreach (var aplicacao in Enumerable.Reverse(_aplicacoes))
         {
@@ -425,6 +515,7 @@ public sealed class LaboratorioFixture : IAsyncLifetime
 
         await _connect.DisposeAsync();
         await _mailpit.DisposeAsync();
+        await _redis.DisposeAsync();
         await _kafka.DisposeAsync();
         await _postgres.DisposeAsync();
         await _rede.DisposeAsync();

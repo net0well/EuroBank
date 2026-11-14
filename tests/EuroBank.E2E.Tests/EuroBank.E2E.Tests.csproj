@@ -1,6 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Antifraude\EuroBank.Antifraude.Api\EuroBank.Antifraude.Api.csproj" />
+    <ProjectReference Include="..\..\src\Antifraude\EuroBank.Antifraude.Worker\EuroBank.Antifraude.Worker.csproj" />
     <ProjectReference Include="..\..\src\Contas\EuroBank.Contas.Api\EuroBank.Contas.Api.csproj" />
     <ProjectReference Include="..\..\src\Contas\EuroBank.Contas.Worker\EuroBank.Contas.Worker.csproj" />
     <ProjectReference Include="..\..\src\Extrato\EuroBank.Extrato.Worker\EuroBank.Extrato.Worker.csproj" />
@@ -15,6 +17,7 @@
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="Testcontainers.Kafka" />
+    <PackageReference Include="Testcontainers.Redis" />
     <PackageReference Include="Confluent.Kafka" />
     <PackageReference Include="OpenTelemetry" />
   </ItemGroup>

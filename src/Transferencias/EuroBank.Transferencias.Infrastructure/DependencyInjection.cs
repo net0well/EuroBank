@@ -51,7 +51,7 @@ public static class DependencyInjection
     {
         services.AddOptions<OpcoesAntifraude>().BindConfiguration(OpcoesAntifraude.Secao);
         services
-            .AddGrpcClient<AntifraudeService.AntifraudeServiceClient>((provedor, cliente) =>
+            .AddGrpcClient<AntifraudeService.AntifraudeServiceClient>(OpcoesAntifraude.NomeCliente, (provedor, cliente) =>
                 cliente.Address = provedor.GetRequiredService<IOptions<OpcoesAntifraude>>().Value.Endereco)
             .ConfigureChannel((provedor, canal) =>
             {

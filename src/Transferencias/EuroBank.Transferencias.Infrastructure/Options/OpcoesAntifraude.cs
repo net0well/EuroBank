@@ -7,6 +7,9 @@ public sealed class OpcoesAntifraude
 {
     public const string Secao = "Antifraude";
 
+    /// <summary>Nome do cliente no IHttpClientFactory (os testes ponta a ponta trocam o handler por este nome).</summary>
+    public const string NomeCliente = "antifraude";
+
     public Uri Endereco { get; set; } = new("http://localhost:5410");
 
     /// <summary>Vai no metadata x-api-key de toda chamada.</summary>
