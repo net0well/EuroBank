@@ -4,8 +4,8 @@ services:
   # ---------------------------------------------------------------------------------------------------------
   # PostgreSQL com replicação lógica (wal_level=logical): é daqui que o Debezium lê as mudanças (WAL).
   # Um database por contexto: eurobank_contas (contas + outbox), eurobank_extrato (projeção),
-  # eurobank_transferencias (sagas + outbox), eurobank_notificacoes (e-mails enviados) e os dos simuladores
-  # (eurobank_banco_externo e eurobank_cambio).
+  # eurobank_transferencias (sagas + outbox), eurobank_notificacoes (e-mails enviados), eurobank_antifraude
+  # (análises, casos, regras + outbox) e os dos simuladores (eurobank_banco_externo e eurobank_cambio).
   # ---------------------------------------------------------------------------------------------------------
   postgres:
     image: postgres:18.6

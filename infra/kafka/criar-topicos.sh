@@ -14,7 +14,8 @@ for topico in \
   eurobank.banco-externo.respostas \
   eurobank.transferencias.eventos \
   eurobank.cambio.comandos \
-  eurobank.cambio.respostas
+  eurobank.cambio.respostas \
+  eurobank.antifraude.eventos
 do
   $TOPICOS --bootstrap-server "$BOOTSTRAP" --create --if-not-exists \
     --topic "$topico" --partitions 3 --replication-factor 1

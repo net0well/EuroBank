@@ -45,6 +45,7 @@ public sealed class LaboratorioFixture : IAsyncLifetime
         "eurobank.transferencias.eventos",
         "eurobank.cambio.comandos",
         "eurobank.cambio.respostas",
+        "eurobank.antifraude.eventos",
     ];
 
     /// <summary>
@@ -328,7 +329,7 @@ public sealed class LaboratorioFixture : IAsyncLifetime
         await using var conexao = new NpgsqlConnection(ConnectionStringContas);
         await conexao.OpenAsync();
         string[] bancos =
-            ["eurobank_extrato", "eurobank_transferencias", "eurobank_banco_externo", "eurobank_cambio", "eurobank_notificacoes"];
+            ["eurobank_extrato", "eurobank_transferencias", "eurobank_banco_externo", "eurobank_cambio", "eurobank_notificacoes", "eurobank_antifraude"];
         foreach (var banco in bancos)
         {
             await using var comando = new NpgsqlCommand($"CREATE DATABASE {banco}", conexao);

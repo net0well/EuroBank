@@ -3,6 +3,8 @@ using EuroBank.Antifraude.Domain.Events;
 using EuroBank.Antifraude.Domain.Exceptions;
 using EuroBank.Antifraude.Domain.ValueObjects;
 using EuroBank.Shared.Domain;
+using EuroBank.Shared.Enums;
+using EuroBank.Shared.ValueObjects;
 
 namespace EuroBank.Antifraude.Domain.Entities;
 
@@ -16,6 +18,13 @@ public sealed class Analise : RaizDeAgregado<AnaliseId>
 {
     private List<SinalRegra> _sinais = [];
 
+    // O contexto é guardado campo a campo (o valor só como número; a moeda numa coluna própria).
+    private TipoOperacao _tipoOperacao;
+    private decimal _valor;
+    private Moeda _moeda;
+    private string? _ibanDestino;
+    private DateTimeOffset _momento;
+
     private Analise()
     {
         // Usado pelo EF Core.
@@ -23,7 +32,10 @@ public sealed class Analise : RaizDeAgregado<AnaliseId>
 
     public Guid OperacaoId { get; private set; }
 
-    public ContextoOperacao Contexto { get; private set; } = null!;
+    public Guid ContaId { get; private set; }
+
+    public ContextoOperacao Contexto =>
+        new(OperacaoId, _tipoOperacao, ContaId, Dinheiro.De(_valor, _moeda), _ibanDestino, _momento);
 
     public IReadOnlyList<SinalRegra> Sinais => _sinais.AsReadOnly();
 
@@ -51,7 +63,12 @@ public sealed class Analise : RaizDeAgregado<AnaliseId>
         {
             Id = AnaliseId.Nova(),
             OperacaoId = contexto.OperacaoId,
-            Contexto = contexto,
+            ContaId = contexto.ContaId,
+            _tipoOperacao = contexto.Tipo,
+            _valor = contexto.Valor.Valor,
+            _moeda = contexto.Valor.Moeda,
+            _ibanDestino = contexto.IbanDestino,
+            _momento = contexto.Momento,
             _sinais = [.. resultado.Sinais],
             ScoreFinal = resultado.ScoreFinal,
             Decisao = resultado.Decisao,
@@ -100,6 +117,6 @@ public sealed class Analise : RaizDeAgregado<AnaliseId>
         DecididaEm = agora;
         Analista = analista;
         Justificativa = justificativa;
-        Registrar(new AnaliseDecidida(Id, OperacaoId, Contexto.ContaId, decisao, origem, ScoreFinal, analista, justificativa, agora));
+        Registrar(new AnaliseDecidida(Id, OperacaoId, ContaId, decisao, origem, ScoreFinal, analista, justificativa, agora));
     }
 }
