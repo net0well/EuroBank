@@ -1,8 +1,8 @@
 using EuroBank.Antifraude.Infrastructure;
+using EuroBank.Antifraude.Infrastructure.Health;
 using EuroBank.Antifraude.Infrastructure.Messaging;
 using EuroBank.Antifraude.Infrastructure.Perfil;
 using EuroBank.Antifraude.Infrastructure.Persistence;
-using EuroBank.Antifraude.Worker.Health;
 using EuroBank.Shared.Web.Extensions;
 using JasperFx.Resources;
 using Wolverine;

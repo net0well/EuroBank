@@ -1,9 +1,9 @@
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using StackExchange.Redis;
 
-namespace EuroBank.Antifraude.Worker.Health;
+namespace EuroBank.Antifraude.Infrastructure.Health;
 
-/// <summary>O worker só serve se o Redis responder: é lá que o perfil das contas mora.</summary>
+/// <summary>A API e o worker só servem se o Redis responder: é lá que o perfil das contas mora.</summary>
 public sealed class VerificacaoRedis(IConnectionMultiplexer redis) : IHealthCheck
 {
     public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)

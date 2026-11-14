@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <PackageReference Include="StackExchange.Redis" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.Abstractions" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <!-- Mesma versão do EF que o Design usa na compilação, repassada a quem referencia este projeto. -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />

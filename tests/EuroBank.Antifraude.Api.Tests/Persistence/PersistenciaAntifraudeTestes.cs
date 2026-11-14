@@ -17,7 +17,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace EuroBank.Antifraude.Api.Tests.Persistence;
 
 /// <summary>Análises, casos, regras, configuração e listas no Postgres, com os eventos na outbox.</summary>
-public sealed class PersistenciaAntifraudeTestes(PostgresFixture banco)
+public sealed class PersistenciaAntifraudeTestes(AntifraudeFixture banco)
 {
     private static readonly DateTimeOffset Agora = new(2026, 11, 14, 15, 0, 0, TimeSpan.Zero);
 

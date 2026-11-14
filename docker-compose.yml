@@ -317,19 +317,47 @@ services:
       redis:
         condition: service_healthy
 
+  # O AntifraudeService: gRPC na 5410 (HTTP/2 sem TLS, com reflection e grpc.health.v1) e, na 5400 (HTTP/1.1), o mesmo
+  # serviço por JSON transcoding, o REST do analista e o Swagger. Aplica as migrations e os dados iniciais ao subir.
+  antifraude-api:
+    build:
+      context: .
+      dockerfile: src/Antifraude/EuroBank.Antifraude.Api/Dockerfile
+    ports:
+      - "5400:8080"
+      - "5410:8081"
+    depends_on:
+      connect-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      Kestrel__Endpoints__Rest__Url: http://+:8080
+      Kestrel__Endpoints__Grpc__Url: http://+:8081
+      ConnectionStrings__Antifraude: "Host=postgres;Port=5432;Database=eurobank_antifraude;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      ConnectionStrings__Redis: "redis:6379"
+      Seguranca__ApiKey: ${ANTIFRAUDE_API_KEY}
+      Revisao__PrazoCaso: ${ANTIFRAUDE_PRAZO_REVISAO:-00:30:00}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+    healthcheck:
+      test: ["CMD", "grpc_health_probe", "-addr=localhost:8081"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
   # Mantém no Redis o perfil de cada conta (eurobank.contas.eventos, sem inbox: a versão da conta no Redis descarta
   # o repetido). Para reconstruir: apague o Redis e volte o offset do grupo eurobank-antifraude-worker.
+  # Espera a API ficar saudável, porque é ela que aplica as migrations do banco do Antifraude.
   antifraude-worker:
     build:
       context: .
       dockerfile: src/Antifraude/EuroBank.Antifraude.Worker/Dockerfile
     depends_on:
-      postgres-init:
-        condition: service_completed_successfully
+      antifraude-api:
+        condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
-      redis:
-        condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_HTTP_PORTS: "8080"

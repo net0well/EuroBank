@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/" />
   <Folder Name="/src/Antifraude/">
+    <Project Path="src/Antifraude/EuroBank.Antifraude.Api/EuroBank.Antifraude.Api.csproj" />
     <Project Path="src/Antifraude/EuroBank.Antifraude.Application/EuroBank.Antifraude.Application.csproj" />
     <Project Path="src/Antifraude/EuroBank.Antifraude.Domain/EuroBank.Antifraude.Domain.csproj" />
     <Project Path="src/Antifraude/EuroBank.Antifraude.Infrastructure/EuroBank.Antifraude.Infrastructure.csproj" />
