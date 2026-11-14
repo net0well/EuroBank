@@ -10,9 +10,9 @@ using EuroBank.Transferencias.Worker.Services;
 using JasperFx.Resources;
 using Wolverine;
 
-// Worker do orquestrador: aplica as respostas de Contas, do câmbio e do banco externo (Kafka, com inbox durável),
-// mantém a projeção local de contas (eventos ContaAberta) e roda a varredura que começa as agendadas e trata os
-// prazos. Os comandos seguintes saem pela outbox, como na API.
+// Worker do orquestrador: aplica as respostas de Contas, do câmbio e do banco externo e as decisões do antifraude
+// (Kafka, com inbox durável), mantém a projeção local de contas (eventos ContaAberta) e roda a varredura que começa
+// as agendadas, chama o antifraude pelo gRPC e trata os prazos. Os comandos seguintes saem pela outbox, como na API.
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AdicionarObservabilidade("eurobank-transferencias-worker");
@@ -41,6 +41,7 @@ builder.Host.UseWolverine(opcoes =>
     opcoes.OuvirTopicoDebezium(TiposRespostasSaga.TopicoBancoExterno, TiposRespostasSaga.BancoExterno);
     opcoes.OuvirTopicoDebezium(TiposRespostasSaga.TopicoCambio, TiposRespostasSaga.Cambio);
     opcoes.OuvirTopicoDebezium(TiposRespostasSaga.TopicoEventosContas, TiposRespostasSaga.EventosContas);
+    opcoes.OuvirTopicoDebezium(TiposRespostasSaga.TopicoAntifraude, TiposRespostasSaga.Antifraude);
     opcoes.AplicarPoliticaDeErros();
 });
 

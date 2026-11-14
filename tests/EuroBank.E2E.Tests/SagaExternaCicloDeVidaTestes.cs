@@ -47,7 +47,9 @@ public sealed class SagaExternaCicloDeVidaTestes(LaboratorioFixture lab)
         var conta = await _cenario.AbrirContaAsync(1_000m);
         var pedido = await _cenario.SolicitarComSucessoAsync(conta, "00", 100m);
 
-        // O pedido acabou de sair: o débito ainda está a caminho de Contas (Debezium, Kafka, worker).
+        // Depois do antifraude, o débito sai e leva dois saltos do Debezium até a resposta voltar: o cancelamento
+        // entra logo que a saga pede o débito.
+        await _cenario.EsperarEstadoAsync(pedido.Id, "AguardandoDebito", Limite, TimeSpan.FromMilliseconds(20));
         var anotado = await LerAsync(await _cenario.CancelarAsync(pedido.Id), HttpStatusCode.Accepted);
         anotado.CancelamentoSolicitado.ShouldBeTrue();
 

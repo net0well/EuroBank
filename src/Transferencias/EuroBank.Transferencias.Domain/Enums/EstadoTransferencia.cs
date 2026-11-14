@@ -52,4 +52,10 @@ public enum EstadoTransferencia
 
     /// <summary>Terminou com o valor de volta na conta de origem (a tarifa não volta).</summary>
     Devolvida = 15,
+
+    /// <summary>Logo antes do débito: a varredura pede ao antifraude a análise de risco.</summary>
+    AnalisandoRisco = 16,
+
+    /// <summary>O antifraude mandou para revisão: a saga espera a decisão do analista (ou a expiração do caso).</summary>
+    EmAnaliseManual = 17,
 }

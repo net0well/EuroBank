@@ -29,6 +29,8 @@ public static class TransferenciaMapeador
         transferencia.Estado.ToString(),
         transferencia.Motivo?.ToString(),
         transferencia.CancelamentoSolicitado,
+        transferencia.AnaliseRiscoId,
+        transferencia.CasoRevisaoId,
         transferencia.TentativasNoPasso,
         transferencia.PrazoDoPasso,
         transferencia.Versao,

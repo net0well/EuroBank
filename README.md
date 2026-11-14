@@ -1,8 +1,9 @@
 # EuroBank
 
 Laboratório de estudo de **CDC (Change Data Capture)** com **Debezium**, **Kafka** e **.NET 10**, organizado em
-DDD com Clean Architecture, e de **saga orquestrada** sobre essa mesma base. É um banco fictício com quatro
-contextos que conversam apenas por mensagens, mais dois sistemas "de fora" simulados:
+DDD com Clean Architecture, de **saga orquestrada** sobre essa mesma base e de **antifraude** com gRPC e Redis no
+meio da saga. É um banco fictício com cinco contextos que conversam por mensagens (e, da saga para o antifraude, por
+gRPC), mais dois sistemas "de fora" simulados:
 
 - **Contas**: abre contas em EUR, USD, GBP ou BRL, deposita, saca, transfere, bloqueia, desbloqueia e encerra.
   Grava no PostgreSQL.
@@ -10,7 +11,10 @@ contextos que conversam apenas por mensagens, mais dois sistemas "de fora" simul
 - **Transferencias**: orquestra a transferência para um IBAN de outro banco (débito em Contas, liquidação no
   banco externo e, se a liquidação falhar, estorno do débito) e o câmbio entre contas EuroBank de moedas
   diferentes (cotação, débito, crédito), com prazos, reenvios, cancelamento, regras SEPA com horário de corte,
-  devolução pelo banco e reconciliação quando o dinheiro não fecha.
+  devolução pelo banco e reconciliação quando o dinheiro não fecha. Antes de cada débito, pergunta ao antifraude.
+- **Antifraude**: analisa o risco de cada transferência com regras duras e com peso, sobre um perfil de
+  comportamento de cada conta mantido no Redis; aprova, recusa ou manda para a fila de um analista humano. Atende a
+  saga por gRPC e o analista por REST.
 - **Banco externo simulado**: um sistema "de fora" que liquida, recusa, atrasa, some, confirma tarde demais ou
   devolve, conforme o final do IBAN.
 - **Câmbio simulado**: um provedor de cotações "de fora", com spread e cotação travada por 10 minutos.
@@ -19,7 +23,8 @@ contextos que conversam apenas por mensagens, mais dois sistemas "de fora" simul
 
 Nenhuma API do EuroBank fala com o Kafka. Cada uma grava a alteração e a mensagem na tabela `outbox` do seu
 banco, na mesma transação, e o Debezium lê essas mudanças no log de transações (WAL) do PostgreSQL e as publica
-no Kafka. Tudo sobe com um único `docker compose up`.
+no Kafka. A única chamada síncrona entre contextos é a do worker de Transferências ao antifraude, por gRPC. Tudo
+sobe com um único `docker compose up`.
 
 ## Por que este laboratório existe
 
@@ -43,6 +48,9 @@ dois sistemas precisam ficar consistentes sem compartilhar uma transação:
    o próprio banco de dados. O orquestrador é um agregado DDD com o estado no PostgreSQL; comandos e respostas
    passam pela mesma combinação de outbox, Debezium e Kafka. Respostas que não chegam, chegam atrasadas ou
    chegam duas vezes são o caso normal, não a exceção.
+8. **Pôr uma decisão síncrona dentro de um fluxo assíncrono.** A saga pergunta ao antifraude por gRPC, com
+   deadline, retry ou hedging e fail-closed quando ele cai; a resposta pode ser "espere um analista", e essa espera
+   de até 30 minutos não segura nada além do limite diário.
 
 ## O que foi construído
 
@@ -53,16 +61,19 @@ dois sistemas precisam ficar consistentes sem compartilhar uma transação:
 | Outbox | A unidade de trabalho grava conta e eventos na mesma transação, na ordem em que os eventos aconteceram |
 | Debezium | Dois conectores: Outbox Event Router (eventos de negócio) e CDC bruto da tabela `contas` (before e after) |
 | Extrato | Worker com Wolverine consumindo o Kafka: inbox durável, ordem por conta, retry, dead letter e a projeção do extrato com paginação, incluindo transferências externas com tarifa, estornos, devoluções e reconciliações (com saldo negativo) |
-| Sagas de transferência | Agregado `Transferencia` com a máquina de estados da externa e do câmbio interno, cotação antes do débito quando as moedas diferem (com recotação), prazo por passo, até 3 reenvios, consulta de status antes de estornar, cancelamento pelo cliente, agendamento, tarifa e limite diário por moeda, validação SEPA e SWIFT com horário de corte, estado `Divergente` com reconciliação e devolução pelo banco externo; histórico de cada passo |
+| Sagas de transferência | Agregado `Transferencia` com a máquina de estados da externa e do câmbio interno, cotação antes do débito quando as moedas diferem (com recotação), análise de risco logo antes do débito (`AnalisandoRisco` e `EmAnaliseManual`, com recotação se a cotação vencer na revisão), prazo por passo, até 3 reenvios, consulta de status antes de estornar, cancelamento pelo cliente, agendamento, tarifa e limite diário por moeda, validação SEPA e SWIFT com horário de corte, estado `Divergente` com reconciliação e devolução pelo banco externo; histórico de cada passo |
 | API de Transferências | `POST /transferencias-externas` e `POST /transferencias-cambio` com `Idempotency-Key`, consulta com histórico e cotação, listagem com filtros, cancelamento e `POST /transferencias-externas/{id}/reconciliacao`; o limite diário é conferido com um advisory lock por conta |
-| Worker de Transferências | Respostas de Contas, do câmbio e do banco externo (inbox durável), a projeção local das contas (eventos `ContaAberta` e `ContaEncerrada`) e uma varredura que começa as agendadas e trata os prazos com `FOR UPDATE SKIP LOCKED` |
+| Worker de Transferências | Respostas de Contas, do câmbio e do banco externo e decisões do antifraude (inbox durável), a projeção local das contas (eventos `ContaAberta` e `ContaEncerrada`) e uma varredura que começa as agendadas, chama o antifraude pelo gRPC (deadline de 2 s, retry ou hedging no canal) e trata os prazos com `FOR UPDATE SKIP LOCKED` |
 | Worker de Contas | Executa os comandos da saga (debitar, creditar, estornar, liberar a trava, debitar a reconciliação, creditar a devolução) com idempotência pelo id da transferência e responde pela outbox; a trava semântica impede encerrar a conta no meio da saga |
+| Domínio do Antifraude | Agregados `Analise` (uma por operação) e `CasoRevisao` (aberto, em análise, aprovado, recusado, expirado ou cancelado pelo cliente, com justificativa obrigatória e auditoria), 9 regras configuráveis (uma dura e oito com peso, com modo sombra), configuração de decisão versionada (limiares 30 e 70) e o motor que soma os pontos e decide |
+| API do Antifraude | `AntifraudeService` em gRPC (`Avaliar` idempotente, `ObterAnalise`, `Simular`) com API key por interceptor, erros de domínio em status gRPC, reflection, `grpc.health.v1` e JSON transcoding; REST do analista (fila, detalhe, atribuição e decisão de casos, regras, limiares, listas de bloqueio e de países de risco, fraudes confirmadas, visão geral das últimas 24 h) |
+| Worker do Antifraude | Perfil de comportamento de cada conta no Redis (saídas de 31 dias, beneficiários, saldo e idade da conta, atualizados por scripts Lua a partir de `eurobank.contas.eventos`), expiração dos casos sem decisão e fechamento do caso quando o cliente cancela a transferência (`eurobank.transferencias.eventos`) |
 | Simuladores | Banco externo e câmbio com Confluent.Kafka e Npgsql puros, sem Wolverine e sem EF: inbox escrita à mão e respostas agendadas no banco, compartilhadas pelos dois |
 | Notificações | Worker com Wolverine consumindo `eurobank.transferencias.eventos`: e-mail em pt-BR (HTML e texto, pelo MailKit) para o Mailpit, inbox durável mais a tabela `notificacoes` com o id do evento como chave (reprocessar o tópico não repete e-mail), novas tentativas agendadas quando o SMTP falha e dead letter depois delas |
-| Segurança | Uma API key por API (`X-Api-Key`), com `/health` e Swagger abertos |
-| Infraestrutura | Docker Compose com PostgreSQL em replicação lógica, Kafka em modo KRaft, Kafka Connect, Kafbat UI, Jaeger e Mailpit, com os databases, os tópicos e os conectores criados automaticamente |
+| Segurança | Uma API key por API (`X-Api-Key`; no gRPC, o metadata `x-api-key`), com `/health`, Swagger, reflection e `grpc.health.v1` abertos |
+| Infraestrutura | Docker Compose com PostgreSQL em replicação lógica, Kafka em modo KRaft, Kafka Connect, Kafbat UI, Jaeger, Mailpit, Redis e RedisInsight, com os databases, os tópicos e os conectores criados automaticamente |
 | Observabilidade | Serilog estruturado e OpenTelemetry, com o `traceparent` levado pela outbox até o consumidor e de volta nas respostas da saga |
-| Testes | 501 testes: unitários, de integração com Testcontainers e ponta a ponta com Debezium real, incluindo cada caminho das sagas e os e-mails no Mailpit |
+| Testes | 708 testes: unitários, de integração com Testcontainers e ponta a ponta com Debezium real, incluindo cada caminho das sagas, os e-mails no Mailpit e as decisões do antifraude no meio da saga |
 | Carga | Script k6 que mistura operações de Contas com sagas externas e de câmbio e, no fim, confere que todas as sagas terminaram, que o Extrato convergiu e que nenhum dinheiro sumiu, moeda a moeda |
 
 ## Como funciona
@@ -100,25 +111,28 @@ dados a outros sistemas (data warehouse, índice de busca, cache). Aqui os dois 
 
 1. A API de Transferências recebe `POST /transferencias-externas` com o header `Idempotency-Key`. O agregado
    `Transferencia` valida o pedido (IBAN de outro banco, BIC, valor e, em euro, as regras SEPA), calcula a
-   tarifa e, se for para já, confere o limite diário e pede o débito. Estado e comando
-   `DebitarTransferenciaExterna` vão juntos para o banco: a saga e a outbox, na mesma transação.
-2. O Debezium publica o comando em `eurobank.contas.comandos`, com o id da conta como chave. O worker de Contas
+   tarifa e, se for para já, confere o limite diário e fica `AnalisandoRisco`.
+2. A varredura do worker chama `Avaliar` no antifraude pelo gRPC. Aprovada, a saga pede o débito: estado e comando
+   `DebitarTransferenciaExterna` vão juntos para o banco, a saga e a outbox na mesma transação. Recusada, termina
+   `Recusada` sem tocar na conta; em revisão, espera o analista (veja [Antifraude](#antifraude)).
+3. O Debezium publica o comando em `eurobank.contas.comandos`, com o id da conta como chave. O worker de Contas
    debita valor e tarifa, guarda o id da transferência (idempotência e trava contra encerramento) e responde
    `DebitoRealizado` pela outbox de Contas, em `eurobank.contas.respostas`.
-3. O worker de Transferências aplica a resposta e pede a liquidação ao banco externo
+4. O worker de Transferências aplica a resposta e pede a liquidação ao banco externo
    (`eurobank.banco-externo.comandos`). O banco simulado responde em `eurobank.banco-externo.respostas`.
-4. Com `LiquidacaoConfirmada`, a saga termina `Concluida` e manda `LiberarTravaTransferencia` a Contas. Com
+5. Com `LiquidacaoConfirmada`, a saga termina `Concluida` e manda `LiberarTravaTransferencia` a Contas. Com
    `LiquidacaoRecusada`, pede o estorno e termina `Cancelada` quando Contas confirmar a devolução.
-5. Em paralelo, a varredura do worker acompanha os prazos. Sem resposta no prazo, o comando é reenviado (com id
+6. Em paralelo, a varredura do worker acompanha os prazos. Sem resposta no prazo, o comando é reenviado (com id
    novo; os participantes deduplicam pelo id da transferência). Esgotados os reenvios da liquidação, a saga
    consulta o status no banco antes de decidir pelo estorno.
-6. O banco ainda pode falar depois do fim da saga: confirmar uma transferência já estornada (a saga fica
+7. O banco ainda pode falar depois do fim da saga: confirmar uma transferência já estornada (a saga fica
    `Divergente`) ou devolver uma já concluída (a saga pede o crédito a Contas e termina `Devolvida`). Veja
    [Divergência, reconciliação e devolução](#divergência-reconciliação-e-devolução).
-7. O evento final da saga vai para `eurobank.transferencias.eventos`, e o worker de notificações manda o e-mail.
+8. O evento final da saga vai para `eurobank.transferencias.eventos`, e o worker de notificações manda o e-mail.
 
 A conversa entre os participantes, no caminho feliz e na recusa pelo banco (cada mensagem sai de uma outbox, passa
-pelo Debezium e pelo Kafka; só o banco externo publica direto, por ser um sistema de fora):
+pelo Debezium e pelo Kafka; só o banco externo publica direto, por ser um sistema de fora, e o antifraude responde
+na própria chamada gRPC):
 
 ```mermaid
 sequenceDiagram
@@ -126,12 +140,15 @@ sequenceDiagram
     actor Cliente
     participant API as API de Transferências
     participant TW as Worker de Transferências
+    participant AF as Antifraude
     participant CW as Worker de Contas
     participant Banco as Banco externo
     participant NW as Worker de Notificações
     Cliente->>API: POST /transferencias-externas (Idempotency-Key)
-    API-->>Cliente: 202 AguardandoDebito
-    API->>CW: DebitarTransferenciaExterna (eurobank.contas.comandos)
+    API-->>Cliente: 202 AnalisandoRisco
+    TW->>AF: Avaliar (gRPC, deadline 2 s)
+    AF-->>TW: Aprovada
+    TW->>CW: DebitarTransferenciaExterna (eurobank.contas.comandos)
     CW->>TW: DebitoRealizado (eurobank.contas.respostas)
     TW->>Banco: LiquidarTransferencia (eurobank.banco-externo.comandos)
     alt o banco confirma
@@ -152,14 +169,23 @@ Os estados da saga, com todos os caminhos:
 ```mermaid
 stateDiagram-v2
     [*] --> Agendada
-    Agendada --> AguardandoDebito: na hora, mesma moeda (limite diário ok)
+    Agendada --> AnalisandoRisco: na hora, mesma moeda (limite diário ok)
     Agendada --> Cotando: na hora, moedas diferentes
     Agendada --> Recusada: limite diário excedido
     Agendada --> Cancelada: cancelamento
-    Cotando --> AguardandoDebito: CotacaoEmitida (limite diário ok)
+    Cotando --> AnalisandoRisco: CotacaoEmitida (limite diário ok)
+    Cotando --> AguardandoDebito: CotacaoEmitida, risco já aprovado
     Cotando --> Cotando: cotação vencida
     Cotando --> Recusada: CotacaoIndisponivel, sem resposta ou limite
     Cotando --> Cancelada: cancelamento
+    AnalisandoRisco --> AguardandoDebito: Aprovada
+    AnalisandoRisco --> EmAnaliseManual: EmRevisao
+    AnalisandoRisco --> Recusada: Recusada ou antifraude fora do ar
+    AnalisandoRisco --> Cancelada: cancelamento
+    EmAnaliseManual --> AguardandoDebito: analista aprova
+    EmAnaliseManual --> Cotando: analista aprova, cotação vencida
+    EmAnaliseManual --> Recusada: analista recusa ou caso expira
+    EmAnaliseManual --> Cancelada: cancelamento
     AguardandoDebito --> Debitada: DebitoRealizado
     AguardandoDebito --> Recusada: DebitoRecusado ou sem resposta
     Debitada --> AguardandoLiquidacao: externa
@@ -189,6 +215,9 @@ stateDiagram-v2
     Divergente --> [*]
 ```
 
+Com a análise de risco desligada (`SAGA_ANALISE_RISCO=false` no compose), a saga vai direto de `Agendada` ou
+`Cotando` para `AguardandoDebito`, como antes do antifraude.
+
 O banco externo simulado decide pelo final do IBAN de destino, para cada caminho poder ser reproduzido:
 
 | Final | Comportamento | Fim da saga |
@@ -203,7 +232,9 @@ O banco externo simulado decide pelo final do IBAN de destino, para cada caminho
 
 Prazos padrão: cotação 30 s, débito 30 s, liquidação 30 s, consulta 15 s, crédito 30 s, estorno 30 s,
 reconciliação 30 s e crédito da devolução 30 s, com até 3 reenvios por passo. Crédito, estorno, reconciliação e
-crédito da devolução reenviam sem limite: desistir deles deixaria o dinheiro em dois lugares ou em nenhum.
+crédito da devolução reenviam sem limite: desistir deles deixaria o dinheiro em dois lugares ou em nenhum. Na
+análise de risco, com o antifraude fora do ar, a saga tenta de novo 2 s depois de cada falha, por até 30 s; em
+revisão, pergunta de novo a cada 2 min, caso o evento com a decisão do analista se perca.
 
 ### SEPA, SWIFT e horário de corte
 
@@ -286,6 +317,53 @@ e-mail precisa vem no evento (event-carried state transfer).
 - O SMTP não participa da transação: se o processo cair entre o servidor aceitar o e-mail e a notificação virar
   `Enviada`, sai uma segunda cópia. O `Message-ID` é o id do evento, então as duas cópias são identificáveis.
 
+### Antifraude
+
+A varredura do worker de Transferências chama `Avaliar` no `AntifraudeService` com o id da transferência, a conta,
+o valor que vai sair (na moeda da conta, sem a tarifa) e o IBAN de destino. O contrato está em
+[`antifraude.proto`](src/Antifraude/EuroBank.Antifraude.Api/Protos/antifraude.proto): o serviço e o cliente são
+gerados do mesmo arquivo, sem assembly compartilhado, e o valor viaja como `DecimalValue` (units e nanos), porque o
+protobuf não tem decimal. A chamada é idempotente pelo id da operação: repetida, devolve a mesma análise e o mesmo
+caso, com a decisão atual.
+
+O motor soma os pontos das regras que disparam e decide pelos limiares: abaixo de 30 aprova, de 30 a 69 manda para
+revisão, a partir de 70 recusa. A regra dura recusa sozinha.
+
+| Regra | Tipo | Pontos | Dispara quando |
+|---|---|---|---|
+| `ListaBloqueio` | dura | recusa | o IBAN de destino está na lista de bloqueio (`DE89370400440532013066` já vem nela) |
+| `ValorAcimaDaMedia` | peso | 25 | o valor passa de 5 vezes a média das saídas de 30 dias (com pelo menos 3 saídas) |
+| `Velocidade` | peso | 20 | 3 transferências em 10 minutos, contando a atual |
+| `Esvaziamento` | peso | 25 | o valor chega a 90% do saldo |
+| `BeneficiarioNovo` | peso | 10 | a conta nunca mandou para esse IBAN |
+| `TesteDeCartao` | peso | 20 | 3 valores abaixo de 10,00 em 15 minutos |
+| `ContaRecemAberta` | peso | 20 | conta com menos de 7 dias manda 1.000 ou mais |
+| `HorarioIncomum` | peso | 10 | hora do dia (UTC) sem saídas nos últimos 30 dias (com pelo menos 10 saídas) |
+| `PaisDeRisco` | peso | 30 | o país do IBAN está na lista de países de risco (IR, KP e MM já vêm nela) |
+
+Peso, parâmetros, ativação, modo sombra (a regra aparece na análise mas não pontua), limiares e listas mudam pela
+REST do analista e valem na próxima avaliação, sem reiniciar. O roteiro está em
+[`http/antifraude.http`](http/antifraude.http).
+
+- **Perfil no Redis.** O worker do antifraude mantém, por conta, as saídas de 31 dias num sorted set, os
+  beneficiários já usados e um hash com saldo, moeda, data de abertura e a versão da conta, a partir dos eventos de
+  `eurobank.contas.eventos`. Cada atualização é um script Lua atômico que só aplica eventos de versão nova da conta,
+  sem inbox: perder o Redis é voltar o offset do consumer group e reconstruir. Uma conta sem perfil é avaliada como
+  nova.
+- **Revisão.** Em revisão, a saga fica `EmAnaliseManual` e o caso entra na fila (`GET /casos`). O analista assume e
+  decide com justificativa (ao recusar, pode bloquear o IBAN). A decisão sai em `AnaliseDecidida`
+  (`eurobank.antifraude.eventos`, com o id da transferência como chave), e a saga segue para o débito ou termina
+  `Recusada` (`RecusadaPeloAntifraude`). Sem decisão em 30 minutos, o caso expira e a saga termina `Recusada`
+  (`RevisaoExpirada`). Se o cliente cancela durante a revisão, a saga termina `Cancelada` e o worker do antifraude
+  fecha o caso (`CanceladoPeloCliente`). Enquanto analisa ou espera o analista, a transferência ocupa o limite diário.
+- **Antifraude fora do ar.** A chamada tem deadline de 2 s, e o canal repete em `Unavailable` (retry com espera
+  crescente ou hedging, configurável por `ANTIFRAUDE_ESTRATEGIA`). Sem resposta, a saga tenta de novo 2 s depois de
+  cada falha e, passados 30 s, termina `Recusada` (`AntifraudeIndisponivel`): na dúvida, o dinheiro não sai (fail-closed).
+- **gRPC sem TLS.** No laboratório o canal é h2c (HTTP/2 sem TLS) na porta 5410. A API key vai como credencial da
+  chamada, que o cliente .NET só manda num canal inseguro com `UnsafeUseInsecureChannelCallCredentials`.
+- **O cliente não vê as regras.** O e-mail de uma recusa diz que a transferência não foi aprovada na análise de
+  segurança, sem dizer qual regra disparou.
+
 ## O que o laboratório revelou
 
 Problemas reais encontrados durante a construção, cada um com um teste que o reproduz:
@@ -359,6 +437,26 @@ Problemas reais encontrados durante a construção, cada um com um teste que o r
     num terminal em Latin-1, por exemplo), fazia as minimal APIs lançarem `BadHttpRequestException`, e o tratamento
     de erros respondia 500. Um tratador em `Shared.Web` transforma esse caso em 400 ProblemDetails
     (`requisicao_invalida`) nas três APIs.
+23. **O container de DI escolhe o construtor que conseguir.** O `MotorDecisao` tinha um construtor sem argumentos e
+    outro que recebe as regras; registrado pelo tipo, o container escolheu o segundo, com uma lista vazia, e nenhuma
+    regra era avaliada. O registro passou a usar uma fábrica explícita.
+24. **Nem toda falha de conexão vira `Unavailable`.** No teste ponta a ponta, o antifraude fora do ar foi simulado
+    com uma `HttpRequestException` simples, e o cliente gRPC a entregou como `Internal`, que a política de retry
+    do canal não repete. Uma conexão recusada de verdade (com a `SocketException` por dentro) chega como
+    `Unavailable`. A saga trata as duas como antifraude indisponível, mas só a segunda ganha as novas tentativas.
+    No compose, com o container do antifraude parado, a resolução do nome demora tanto que a maioria das chamadas
+    termina em `DeadlineExceeded`: o deadline curto é o que limita quanto tempo a linha da saga fica travada.
+25. **A decisão das regras chega duas vezes.** A resposta do `Avaliar` já traz a decisão, e o `AnaliseDecidida` da
+    outbox chega depois pelo Kafka. Aplicar os dois anotaria um "ignorado" no histórico de toda transferência; o
+    evento só age com a saga esperando o antifraude, que é quando ele traz a decisão do analista ou a expiração.
+26. **Tráfego de teste parece fraude.** Contas novas, várias transferências por minuto e saldos justos: com as
+    regras de comportamento valendo, quase toda saga dos testes ponta a ponta iria para a revisão (velocidade, conta
+    recém-aberta, esvaziamento). Lá, essas regras ficam em modo sombra, e as decisões são exercitadas pela lista de
+    bloqueio e por um país de risco. O teste do cancelamento com o débito a caminho também mudou: o débito agora
+    sai do worker, depois da análise, e o teste espera o pedido de débito antes de cancelar.
+27. **Um pacote pode travar a versão de outro.** O Grpc.Swagger, que põe as rotas do JSON transcoding no Swagger,
+    depende do Swashbuckle 6, e o repositório usa o 10. As rotas transcodificadas entram no Swagger por um filtro de
+    documento próprio.
 
 ## Arquitetura
 
@@ -406,6 +504,22 @@ flowchart LR
     nworker -->|SMTP| mailpit[Mailpit<br/>:8025]
 ```
 
+O antifraude na saga:
+
+```mermaid
+flowchart LR
+    tworker[Worker de Transferências<br/>varredura] -->|"gRPC Avaliar<br/>(h2c :5410, x-api-key)"| afapi[API do Antifraude<br/>REST :5400]
+    analista([Analista]) -->|REST /casos| afapi
+    afapi --> pga[(eurobank_antifraude<br/>análises, casos + outbox)]
+    afapi -->|lê o perfil| redis[(Redis)]
+    pga -->|Debezium| ae[[eurobank.antifraude.eventos]]
+    ae -->|AnaliseDecidida| tworker
+    ce[[eurobank.contas.eventos]] --> afworker[Worker do Antifraude<br/>perfil + expiração]
+    te[[eurobank.transferencias.eventos]] -->|cancelamento| afworker
+    afworker -->|scripts Lua| redis
+    afworker --> pga
+```
+
 ## Tecnologias
 
 | Peça | Versão |
@@ -419,6 +533,9 @@ flowchart LR
 | Confluent.Kafka (banco externo simulado) | 2.16 |
 | MailKit (notificações) | 4.18 |
 | Mailpit | 1.33 |
+| gRPC para .NET (com JSON transcoding) e Google.Protobuf | 2.85 e 3.36 |
+| Redis, RedisInsight e StackExchange.Redis | 8.10, 3.8 e 2.13 |
+| grpc_health_probe (healthcheck do antifraude) | 0.4.63 |
 | Kafbat UI | 1.5.0 |
 | Jaeger | 2.22 |
 | k6 | 2.3 |
@@ -432,19 +549,29 @@ flowchart LR
 ## Como subir
 
 ```bash
+cp .env.example .env
 docker compose up -d --build
 ```
 
-A ordem de subida é controlada pelo compose: Postgres e Kafka, criação dos databases e dos tópicos com 3
+O `.env` (fora do git) leva o usuário do Postgres, as API keys e, se precisar, outras portas do host; o
+`.env.example` já vem com os valores de laboratório que os roteiros `.http` e o k6 usam. No PowerShell:
+`Copy-Item .env.example .env`.
+
+A ordem de subida é controlada pelo compose: Postgres, Kafka e Redis, criação dos databases e dos tópicos com 3
 partições, Kafka Connect, registro dos conectores, APIs de Contas (aplica as migrations e cria as contas de
-exemplo Ana, Bruno e Carla) e de Transferências (aplica as migrations), e depois os workers (o de notificações
-aplica as próprias migrations), os simuladores e o Mailpit.
+exemplo Ana, Bruno e Carla), de Transferências (aplica as migrations) e do Antifraude (aplica as migrations e
+grava as regras, os limiares e as listas iniciais), e depois os workers (o de notificações aplica as próprias
+migrations; o de Transferências espera o antifraude responder no `grpc.health.v1`), os simuladores e o Mailpit.
 
 | Serviço | URL |
 |---|---|
 | API de Contas (Swagger) | http://localhost:5100/swagger |
 | Extrato (Swagger) | http://localhost:5200/swagger |
 | API de Transferências (Swagger) | http://localhost:5300/swagger |
+| API do Antifraude (Swagger da REST e das rotas do transcoding) | http://localhost:5400/swagger |
+| Antifraude em gRPC (h2c, com reflection) | `localhost:5410` |
+| RedisInsight (perfis do antifraude) | http://localhost:5540 (porta configurável em `.env`: `REDISINSIGHT_PORTA`) |
+| Redis | `localhost:6379` (porta configurável em `.env`: `REDIS_PORTA_HOST`) |
 | Kafbat UI (tópicos, mensagens, consumer groups, conectores) | http://localhost:8080 |
 | Kafka Connect (REST) | http://localhost:8083/connectors |
 | Jaeger (traces) | http://localhost:16686 |
@@ -453,15 +580,16 @@ aplica as próprias migrations), os simuladores e o Mailpit.
 | Kafka (para apps no host) | `localhost:9092` |
 
 As credenciais existem só para o ambiente local do laboratório. Se outro projeto já ocupa 8025 ou 1025 (um
-segundo Mailpit, por exemplo), defina `MAILPIT_PORTA_UI` e `MAILPIT_PORTA_SMTP` no `.env`.
+segundo Mailpit, por exemplo), defina `MAILPIT_PORTA_UI` e `MAILPIT_PORTA_SMTP` no `.env`; o mesmo vale para o
+Redis (`REDIS_PORTA_HOST`).
 
 As rotas de negócio exigem o header `X-Api-Key`, com uma chave por API, definidas no `.env`
-(`CONTAS_API_KEY`, `EXTRATO_API_KEY`, `TRANSFERENCIAS_API_KEY`). Sem a chave, a resposta é 401. O `/health` e o
-Swagger ficam abertos; no Swagger, use o botão Authorize. Os roteiros `.http` e o k6 já enviam as chaves de
-laboratório.
+(`CONTAS_API_KEY`, `EXTRATO_API_KEY`, `TRANSFERENCIAS_API_KEY`, `ANTIFRAUDE_API_KEY`). Sem a chave, a resposta é
+401 (no gRPC, `Unauthenticated`). O `/health`, o Swagger, a reflection e o `grpc.health.v1` ficam abertos; no
+Swagger, use o botão Authorize. Os roteiros `.http` e o k6 já enviam as chaves de laboratório.
 
-Roteiros de requisições prontos: [`http/contas.http`](http/contas.http), [`http/extrato.http`](http/extrato.http)
-e [`http/transferencias.http`](http/transferencias.http).
+Roteiros de requisições prontos: [`http/contas.http`](http/contas.http), [`http/extrato.http`](http/extrato.http),
+[`http/transferencias.http`](http/transferencias.http) e [`http/antifraude.http`](http/antifraude.http).
 
 Para recomeçar do zero (apaga os dados do laboratório): `docker compose down -v`.
 
@@ -476,6 +604,7 @@ src/
   Contas/   Domain | Application | Infrastructure | Api | Worker (comandos das sagas)
   Extrato/  Domain | Application | Infrastructure | Worker
   Transferencias/  Domain | Application | Infrastructure | Api | Worker (orquestrador das sagas)
+  Antifraude/  Domain | Application | Infrastructure | Api (gRPC e REST do analista) | Worker (perfil no Redis e expiração)
   Notificacoes/  Worker (e-mails dos eventos finais das sagas; um projeto só, com as pastas técnicas)
   Simuladores/  Comum | BancoExterno | Cambio (sistemas de fora: Confluent.Kafka e Npgsql puros, sem Wolverine e sem EF)
 tests/      testes unitários, de integração (Testcontainers) e ponta a ponta (Debezium de verdade)
@@ -505,6 +634,15 @@ Pontos do código que valem a leitura:
   no histórico. A confirmação tardia, a reconciliação e a devolução estão no mesmo agregado.
 - `src/Transferencias/EuroBank.Transferencias.Domain/ValueObjects/PoliticaSepa.cs`: o horário de corte SEPA e o
   próximo dia útil.
+- `src/Transferencias/EuroBank.Transferencias.Application/Services/VarreduraTransferencias.cs` e
+  `src/Transferencias/EuroBank.Transferencias.Infrastructure/Clients/`: a varredura chamando o antifraude e o
+  cliente gRPC com deadline, retry ou hedging e a API key como credencial da chamada.
+- `src/Antifraude/EuroBank.Antifraude.Api/Protos/antifraude.proto`: o contrato, com as rotas do JSON transcoding.
+- `src/Antifraude/EuroBank.Antifraude.Domain/Services/MotorDecisao.cs` e a pasta `Rules/` ao lado: cada regra
+  avalia o contexto da operação e o perfil, e o motor soma e decide.
+- `src/Antifraude/EuroBank.Antifraude.Api/Interceptors/`: a API key e o mapeamento das exceções para status gRPC.
+- `src/Antifraude/EuroBank.Antifraude.Infrastructure/Perfil/PerfisContasRedis.cs`: os scripts Lua que mantêm o
+  perfil de cada conta, com a versão da conta como deduplicação.
 - `src/Transferencias/EuroBank.Transferencias.Infrastructure/Persistence/Repositories/RepositorioTransferencias.cs`:
   o advisory lock do limite diário e o `FOR UPDATE SKIP LOCKED` da varredura.
 - `src/Simuladores/EuroBank.Simuladores.Comum/RepositorioSimulador.cs` e
@@ -522,18 +660,27 @@ Pontos do código que valem a leitura:
 A infra continua no Docker; só as aplicações rodam no host.
 
 ```bash
-docker compose stop contas-api extrato-worker transferencias-api transferencias-worker notificacoes-worker
+docker compose stop contas-api extrato-worker transferencias-api transferencias-worker notificacoes-worker antifraude-api antifraude-worker
 dotnet run --project src/Contas/EuroBank.Contas.Api
 dotnet run --project src/Extrato/EuroBank.Extrato.Worker
+dotnet run --project src/Antifraude/EuroBank.Antifraude.Api
+dotnet run --project src/Antifraude/EuroBank.Antifraude.Worker
 dotnet run --project src/Transferencias/EuroBank.Transferencias.Api
 dotnet run --project src/Transferencias/EuroBank.Transferencias.Worker
 dotnet run --project src/Notificacoes/EuroBank.Notificacoes.Worker
 ```
 
-Os `appsettings.json` já apontam para `localhost:5434` (Postgres) e `localhost:9092` (Kafka), e as portas
-continuam 5100, 5200 e 5300 (os workers de Contas e de Transferências ficam em 5101 e 5301, o de notificações
-em 5501, o banco externo simulado em 5401 e o câmbio simulado em 5402). O worker de notificações manda os e-mails
-para `localhost:1025`, o SMTP do Mailpit.
+Os `appsettings.json` já apontam para `localhost:5434` (Postgres), `localhost:9092` (Kafka) e `localhost:6379`
+(Redis), e as portas continuam 5100, 5200 e 5300 (os workers de Contas e de Transferências ficam em 5101 e 5301,
+o de notificações em 5501, o banco externo simulado em 5401, o câmbio simulado em 5402, a API do antifraude em
+5400 para a REST e 5410 para o gRPC, e o worker do antifraude em 5403). O worker de notificações manda os e-mails
+para `localhost:1025`, o SMTP do Mailpit. Com outra porta para o Redis no `.env`, rode as duas aplicações do
+antifraude com `ConnectionStrings__Redis=localhost:<porta>`.
+
+Fora do compose, a análise de risco começa desligada (`Saga:AnaliseRiscoAtiva=false` nos `appsettings.json`). Para
+a saga passar pelo antifraude, rode a API e o worker de Transferências com `Saga__AnaliseRiscoAtiva=true` (os dois
+começam sagas, então a configuração precisa ser igual); o worker já aponta para `localhost:5410` com a chave de
+laboratório.
 
 ## Testes
 
@@ -555,9 +702,26 @@ de corte é testado com o relógio controlado. Para as notificações: o e-mail 
 uma recusada no Mailpit, nenhum e-mail sem `emailNotificacao`, e o tópico relido por outro consumer group, com a
 inbox apagada, sem nenhum e-mail repetido. Os testes do worker cobrem os modelos em pt-BR (inclusive o escape do
 HTML), a deduplicação, as novas tentativas agendadas até o dead letter e o envio pelo MailKit para um Mailpit de
-verdade.
+verdade. Para o antifraude: cada regra e o motor no domínio; o gRPC (idempotência, API key, erros em status gRPC,
+reflection, health e transcoding) e a REST do analista com Postgres e Redis reais; o perfil no Redis montado pelos
+eventos, com Redis apagado e reconstruído; a expiração e o fechamento no cancelamento; e, ponta a ponta, a saga
+aprovada, recusada pela lista de bloqueio, em revisão com o analista aprovando ou recusando, o caso expirando, o
+cancelamento na revisão fechando o caso, uma análise só para a mesma operação e o antifraude fora do ar recusando
+depois do prazo.
 
 ## Roteiro de exercícios
+
+Com o antifraude ligado (o padrão do compose), os exercícios da saga que fazem várias transferências seguidas da
+mesma conta vão parar na revisão a partir da terceira em 10 minutos (velocidade 20 mais beneficiário novo 10).
+Aprove pelo `http/antifraude.http`, ponha a regra `Velocidade` em modo sombra, ou desligue a análise para esses
+exercícios:
+
+```bash
+SAGA_ANALISE_RISCO=false docker compose up -d transferencias-api transferencias-worker
+```
+
+Depois das 16:00 UTC ou no fim de semana, as transferências em euro ficam `Agendadas` para o próximo dia útil
+(horário de corte SEPA); para os exercícios, suba a API com `SEPA_HORARIO_DE_CORTE=false` (veja o exercício 14).
 
 ### 1. Seguir uma operação até o extrato
 
@@ -623,11 +787,17 @@ sempre caem na mesma partição e continuam em ordem. Para voltar a uma instânc
 ### 6. Carga com k6
 
 ```bash
-SEPA_HORARIO_DE_CORTE=false docker compose up -d transferencias-api
+export SEPA_HORARIO_DE_CORTE=false SAGA_ANALISE_RISCO=false
+docker compose up -d transferencias-api transferencias-worker
 docker compose --profile carga run --rm k6
 docker compose --profile carga run --rm -e VUS=20 -e DURACAO=2m k6
 docker compose --profile carga run --rm -e FINAIS_LENTOS=true k6
 ```
+
+(No PowerShell: `$env:SEPA_HORARIO_DE_CORTE="false"; $env:SAGA_ANALISE_RISCO="false"`.) As variáveis ficam exportadas
+no shell de propósito: o `run` sobe de novo as dependências do k6 quando a configuração delas difere da do shell, e
+uma variável passada só no `up` voltaria ao padrão. Para religar o antifraude e o corte depois:
+`unset SEPA_HORARIO_DE_CORTE SAGA_ANALISE_RISCO` e `docker compose up -d transferencias-api transferencias-worker`.
 
 O script abre contas nas quatro moedas e mistura depósitos, saques, transferências internas, externas (finais
 `00`, `99`, `97`, `96` e `94`; com `FINAIS_LENTOS=true`, também `98` e `95`, e a espera passa de 3 para 7
@@ -643,7 +813,9 @@ aparecem no Mailpit). No fim:
 
 O corte SEPA precisa estar desligado: com ele, as externas em euro feitas depois das 16:00 UTC ou no fim de
 semana ficariam agendadas para o próximo dia útil. O k6 confere isso antes de gerar carga, com uma transferência
-de 1 EUR, e aborta com a instrução se ela ficar `Agendada`.
+de 1 EUR, e aborta com a instrução se ela ficar `Agendada`. A análise de risco também fica desligada por enquanto:
+o script faz dezenas de transferências por conta nova, e a regra de velocidade mandaria quase todas para a
+revisão, que o k6 não sabe decidir. A carga com o antifraude no caminho é a próxima etapa do k6.
 
 Numa máquina de desenvolvimento, 10 usuários virtuais durante 1 minuto fizeram cerca de 140 operações por segundo
 e iniciaram 1.926 sagas: 1.504 concluídas, 134 canceladas, 130 devolvidas e 158 recusadas. Todas chegaram ao
@@ -764,7 +936,9 @@ Use uma conta com pelo menos 5.100 EUR (deposite antes pelo `http/contas.http`) 
 `http/transferencias.http`: 4.950 EUR e depois 100 EUR. A segunda termina `Recusada` (`LimiteDiarioExcedido`) sem
 chegar a Contas, e a tarifa não conta para o limite. O limite é por conta, na moeda dela (tabela em
 [Transferências com câmbio](#transferências-com-câmbio)), e por dia UTC da execução; transferências canceladas,
-recusadas, divergentes ou devolvidas não ocupam o limite.
+recusadas, divergentes ou devolvidas não ocupam o limite. Com o antifraude ligado, a de 4.950 vai para a revisão
+(conta recém-aberta 20 mais beneficiário novo 10) e, ainda esperando o analista, já ocupa o limite: a de 100 é
+recusada do mesmo jeito.
 
 ### 17. Notificações por e-mail
 
@@ -794,6 +968,81 @@ docker compose start notificacoes-worker
 Nenhum e-mail se repete, mesmo com a inbox apagada: o log do worker mostra `já notificado ... ignorado`, porque a
 tabela `notificacoes` guarda o id de cada evento já notificado.
 
+### 18. Uma transferência na fila do analista
+
+Num laboratório novo, as contas de exemplo têm menos de 7 dias. Deposite 1.000 EUR na conta da Ana (fica com
+2.000) e mande 1.000 EUR para um IBAN que ela nunca usou: conta recém-aberta (20) mais beneficiário novo (10) dá
+30, e a saga fica `EmAnaliseManual`, com o `casoRevisaoId`. Pelo `http/antifraude.http`, veja o caso na fila, o
+detalhe com os pontos de cada regra, assuma e decida. No Kafbat UI, siga o `CasoAberto` e o `AnaliseDecidida` em
+`eurobank.antifraude.eventos`; a saga segue para o débito (ou termina `Recusada`, `RecusadaPeloAntifraude`) logo
+que o evento chega. Sem decisão, o caso expira em 30 minutos e a saga termina `Recusada` (`RevisaoExpirada`); para
+ver isso sem esperar tanto:
+
+```bash
+ANTIFRAUDE_PRAZO_REVISAO=00:01:00 docker compose up -d antifraude-api antifraude-worker
+```
+
+Cancele uma transferência em revisão pelo `http/transferencias.http`: ela termina `Cancelada`, e o caso some da
+fila (`GET /casos?status=CanceladoPeloCliente`).
+
+### 19. Regras, limiares e listas sem reiniciar
+
+Mande uma transferência para `DE89370400440532013066`, que vem na lista de bloqueio: `Recusada`
+(`RecusadaPeloAntifraude`) sem passar por Contas. Inclua Malta na lista de países de risco
+(`POST /listas/paises-risco`) e mande para `MT84MALT011000012345MTLCAST001S` (BIC `MALTMTMT`): 30 do país mais 10
+do beneficiário novo, revisão. Ponha a regra `PaisDeRisco` em modo sombra (`PUT /regras/PaisDeRisco`) e repita: a
+regra continua aparecendo nos sinais da análise, com os pontos que daria, mas a transferência é aprovada. Com
+`POST /v1/simulacoes` (JSON transcoding do `Simular`), veja a decisão de uma operação sem gravar análise nem abrir
+caso.
+
+### 20. Antifraude fora do ar
+
+```bash
+docker compose stop antifraude-api
+# peça uma transferência pelo transferencias.http e acompanhe o histórico
+docker compose logs --tail 20 transferencias-worker
+docker compose start antifraude-api
+```
+
+O histórico mostra cada tentativa com o status da chamada (`Antifraude indisponível (DeadlineExceeded)`), uma nova
+2 segundos depois de cada falha, e, passados 30 segundos, a saga termina `Recusada` (`AntifraudeIndisponivel`), sem
+tocar na conta. Com o container parado, o nome `antifraude-api` deixa de existir na rede do compose e a resolução
+demora: quase toda chamada gasta o deadline de 2 s inteiro, e só algumas falham antes, como `Unavailable`
+(`Name or service not known`, no log). Para comparar as estratégias do canal gRPC:
+`ANTIFRAUDE_ESTRATEGIA=Hedging` (ou `Nenhuma`) em `docker compose up -d transferencias-worker`.
+
+### 21. O gRPC na linha de comando
+
+O serviço tem reflection, então o `grpcurl` descobre os métodos sem o `.proto`:
+
+```bash
+docker run --rm --network eurobank_default fullstorydev/grpcurl:v1.9.3 -plaintext antifraude-api:8081 list
+docker run --rm --network eurobank_default fullstorydev/grpcurl:v1.9.3 -plaintext antifraude-api:8081 grpc.health.v1.Health/Check
+docker run --rm --network eurobank_default fullstorydev/grpcurl:v1.9.3 -plaintext -H "x-api-key: antifraude-lab-key" \
+  -d '{"operacao_id":"00000000-0000-0000-0000-000000000002","tipo_operacao":"TIPO_OPERACAO_EXTERNA","conta_id":"00000000-0000-0000-0000-000000000003","valor":{"units":"1500"},"moeda":"EUR","iban_destino":"DE89370400440532013000"}' \
+  antifraude-api:8081 eurobank.antifraude.v1.AntifraudeService/Simular
+```
+
+Sem o header, a resposta é `Unauthenticated`. A conta inventada não tem perfil e é avaliada como nova: conta
+recém-aberta e beneficiário novo pontuam.
+
+### 22. O perfil no Redis
+
+Abra o RedisInsight em http://localhost:5540 e procure `antifraude:*`: para cada conta, o hash `perfil` (saldo,
+moeda, abertura e a versão da conta), o sorted set `saidas` (cada membro é transferência, valor e IBAN; a
+pontuação é o instante da saída) e o set `beneficiarios`. Médias, velocidade e horários saem dessas saídas na hora
+da avaliação. Para ver a reconstrução, apague o Redis e volte o offset do worker:
+
+```bash
+docker compose stop antifraude-worker
+docker compose exec redis redis-cli FLUSHALL
+docker compose exec kafka /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server kafka:29092 \
+  --group eurobank-antifraude-worker --topic eurobank.contas.eventos --reset-offsets --to-earliest --execute
+docker compose start antifraude-worker
+```
+
+Os perfis voltam iguais: o script Lua só aplica cada evento uma vez, pela versão da conta.
+
 ## Laboratório e produção
 
 Atalhos que este laboratório toma de propósito:
@@ -816,6 +1065,12 @@ Atalhos que este laboratório toma de propósito:
 | Reconciliação pedida pela API, sem aprovação e sem limite para o negativo | Fila de exceções operacionais com aprovação, limite de crédito e cobrança do saldo negativo |
 | Mailpit aceita qualquer e-mail, sem TLS e sem autenticação | Provedor de e-mail com TLS, SPF, DKIM e DMARC, tratamento de bounces e preferências de comunicação do cliente |
 | E-mail do cliente dentro do evento no Kafka | Dados pessoais fora dos eventos (o consumidor busca por id num serviço com controle de acesso), ou tópico com retenção curta e criptografia |
+| gRPC em h2c, com a API key em texto aberto no metadata | TLS, ou mTLS entre os serviços, e tokens de curta duração |
+| A chamada ao antifraude acontece com a linha da saga travada (deadline de 2 s) | Igual, com deadline curto, ou a chamada fora da transação e a decisão aplicada depois pela versão da saga |
+| Redis com um nó, sem persistência | Réplica com Sentinel ou Cluster: o perfil se reconstrói pelos eventos, mas a reconstrução leva tempo e, até lá, toda conta parece nova |
+| Regras, limiares e listas mudam pela API, sem aprovação | Mudança de regra com revisão, teste em modo sombra antes de valer e trilha de auditoria de quem mudou |
+| Fail-closed fixo depois de 30 s | Política por valor e tipo de operação (deixar passar valores baixos, por exemplo), com alerta quando o antifraude cai |
+| Lista de países de risco e de bloqueio mantidas à mão | Listas de sanções e de jurisdições de alto risco (GAFI, reguladores) atualizadas por fonte oficial |
 
 ## Próximos passos
 
@@ -823,8 +1078,11 @@ Prontas: a **saga orquestrada** de transferência externa (prazos, reenvios, con
 cancelamento, agendamento, tarifa, limite diário e `Idempotency-Key`), o **câmbio** (contas em quatro moedas,
 cotação travada com spread, externa em outra moeda e câmbio entre contas EuroBank) e as regras **SEPA e SWIFT**
 com horário de corte, a **devolução** pelo banco externo, o estado **`Divergente`** com reconciliação e saldo
-negativo controlado, as **notificações** por e-mail e o **cenário de carga** que confere o dinheiro de todas as
-sagas.
+negativo controlado, as **notificações** por e-mail, o **cenário de carga** que confere o dinheiro de todas as
+sagas e o **antifraude** com regras, perfil no Redis, revisão humana e gRPC no meio da saga.
 
-A próxima: um contexto de **antifraude** com regras e machine learning (ML.NET), comunicação gRPC entre os
-serviços e Redis.
+As próximas, no antifraude: o Redis no restante do laboratório (cache do Extrato com estratégias comparáveis,
+`Idempotency-Key`, cotações e rate limit), machine learning com ML.NET (dados sintéticos, treino, modelo em
+produção com challenger em sombra e drift), o painel do analista, dispositivo e localização, o saque em Contas
+passando pelo antifraude, alta disponibilidade do Redis, métricas e a carga com o antifraude no caminho. Depois,
+uma interface em Vue para a análise de fraude e para acompanhar o fluxo de ponta a ponta.

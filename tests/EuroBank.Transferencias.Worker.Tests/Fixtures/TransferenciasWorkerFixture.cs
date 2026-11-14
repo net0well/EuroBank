@@ -1,6 +1,7 @@
 using EuroBank.Shared.Domain;
 using EuroBank.Shared.Enums;
 using EuroBank.Shared.ValueObjects;
+using EuroBank.Transferencias.Application.Interfaces;
 using EuroBank.Transferencias.Domain.Entities;
 using EuroBank.Transferencias.Domain.Repositories;
 using EuroBank.Transferencias.Domain.ValueObjects;
@@ -10,6 +11,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Time.Testing;
 using Testcontainers.PostgreSql;
 using Wolverine;
@@ -19,8 +21,9 @@ using Wolverine;
 namespace EuroBank.Transferencias.Worker.Tests.Fixtures;
 
 /// <summary>
-/// Worker de Transferências in-process contra um Postgres real, com o Kafka desligado e um relógio falso: os
-/// testes entregam as respostas pelo barramento e chamam a varredura direto, avançando o tempo à mão.
+/// Worker de Transferências in-process contra um Postgres real, com o Kafka desligado, um relógio falso e um
+/// antifraude falso: os testes entregam as respostas pelo barramento e chamam a varredura direto, avançando o tempo
+/// à mão.
 /// </summary>
 public sealed class TransferenciasWorkerFixture : IAsyncLifetime
 {
@@ -33,6 +36,8 @@ public sealed class TransferenciasWorkerFixture : IAsyncLifetime
     private WebApplicationFactory<MarcadorTransferenciasWorker> _worker = null!;
 
     public FakeTimeProvider Relogio { get; } = new(new DateTimeOffset(2026, 11, 9, 10, 0, 0, TimeSpan.Zero));
+
+    public AntifraudeFalso Antifraude { get; } = new();
 
     public string ConnectionString => _container.GetConnectionString();
 
@@ -58,6 +63,8 @@ public sealed class TransferenciasWorkerFixture : IAsyncLifetime
             {
                 services.DisableAllExternalWolverineTransports();
                 services.AddSingleton<TimeProvider>(Relogio);
+                services.RemoveAll<IAvaliacaoRisco>();
+                services.AddSingleton<IAvaliacaoRisco>(Antifraude);
             });
         });
         using var _ = _worker.CreateClient();
@@ -74,8 +81,14 @@ public sealed class TransferenciasWorkerFixture : IAsyncLifetime
             .InvokeAsync(resposta, TestContext.Current.CancellationToken);
     }
 
-    /// <summary>Cria uma transferência externa e, se for para já, começa a saga (débito pedido).</summary>
-    public async Task<TransferenciaId> CriarAsync(string iban = "DE89370400440532013000", DateTimeOffset? executarEm = null)
+    /// <summary>
+    /// Cria uma transferência externa e, se for para já, começa a saga: débito pedido ou, com a análise de risco,
+    /// esperando a varredura chamar o antifraude.
+    /// </summary>
+    public async Task<TransferenciaId> CriarAsync(
+        string iban = "DE89370400440532013000",
+        DateTimeOffset? executarEm = null,
+        bool comAnaliseDeRisco = false)
     {
         await using var escopo = _worker.Services.CreateAsyncScope();
         var servicos = escopo.ServiceProvider;
@@ -94,7 +107,8 @@ public sealed class TransferenciasWorkerFixture : IAsyncLifetime
             "hash",
             executarEm,
             agora);
-        transferencia.Iniciar(Dinheiro.Zero, servicos.GetRequiredService<PoliticaSaga>(), agora);
+        var politica = servicos.GetRequiredService<PoliticaSaga>();
+        transferencia.Iniciar(Dinheiro.Zero, politica with { AnaliseRiscoAtiva = comAnaliseDeRisco }, agora);
         servicos.GetRequiredService<IRepositorioTransferencias>().Adicionar(transferencia);
         await servicos.GetRequiredService<IUnidadeDeTrabalho>().SalvarAsync(TestContext.Current.CancellationToken);
         return transferencia.Id;

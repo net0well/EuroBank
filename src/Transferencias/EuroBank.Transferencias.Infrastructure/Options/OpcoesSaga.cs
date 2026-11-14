@@ -25,6 +25,15 @@ public sealed class OpcoesSaga
 
     public int ReenviosPorPasso { get; set; } = PoliticaSaga.Padrao.ReenviosPorPasso;
 
+    /// <summary>Precisa ser igual na API e no worker: os dois começam sagas (a API, as de execução imediata).</summary>
+    public bool AnaliseRiscoAtiva { get; set; } = PoliticaSaga.Padrao.AnaliseRiscoAtiva;
+
+    public TimeSpan PrazoAnaliseRisco { get; set; } = PoliticaSaga.Padrao.PrazoAnaliseRisco;
+
+    public TimeSpan IntervaloAnaliseRisco { get; set; } = PoliticaSaga.Padrao.IntervaloAnaliseRisco;
+
+    public TimeSpan IntervaloConsultaRevisao { get; set; } = PoliticaSaga.Padrao.IntervaloConsultaRevisao;
+
     public PoliticaSaga ParaPolitica() => new()
     {
         PrazoCotacao = PrazoCotacao,
@@ -36,5 +45,9 @@ public sealed class OpcoesSaga
         PrazoReconciliacao = PrazoReconciliacao,
         PrazoCreditoDevolucao = PrazoCreditoDevolucao,
         ReenviosPorPasso = ReenviosPorPasso,
+        AnaliseRiscoAtiva = AnaliseRiscoAtiva,
+        PrazoAnaliseRisco = PrazoAnaliseRisco,
+        IntervaloAnaliseRisco = IntervaloAnaliseRisco,
+        IntervaloConsultaRevisao = IntervaloConsultaRevisao,
     };
 }

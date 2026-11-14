@@ -79,6 +79,15 @@ public sealed class CenarioSaga(LaboratorioFixture lab)
                 emailNotificacao: emailNotificacao),
             HttpStatusCode.Accepted);
 
+    /// <summary>Externa em EUR para um IBAN qualquer (o de um país de risco, por exemplo).</summary>
+    public async Task<TransferenciaE2E> SolicitarParaIbanComSucessoAsync(Guid contaId, string ibanDestino, string bic, decimal valor) =>
+        await LerAsync(
+            await EnviarAsync(
+                "/transferencias-externas",
+                new { contaOrigemId = contaId, ibanDestino, bic, nomeBeneficiario = "Beneficiário em país de risco", valor },
+                Guid.CreateVersion7().ToString()),
+            HttpStatusCode.Accepted);
+
     public async Task<TransferenciaE2E> SolicitarCambioComSucessoAsync(Guid contaId, string ibanDestino, decimal valor, string? moedaDoValor) =>
         await LerAsync(
             await EnviarAsync(
@@ -127,11 +136,11 @@ public sealed class CenarioSaga(LaboratorioFixture lab)
         (await lab.Transferencias.GetFromJsonAsync<TransferenciaE2E>($"/transferencias/{id}", Ct))!;
 
     /// <summary>Espera a saga chegar ao estado e devolve a transferência nesse ponto.</summary>
-    public async Task<TransferenciaE2E> EsperarEstadoAsync(Guid id, string estado, TimeSpan limite)
+    public async Task<TransferenciaE2E> EsperarEstadoAsync(Guid id, string estado, TimeSpan limite, TimeSpan? intervalo = null)
     {
         TransferenciaE2E? atual = null;
         await Esperar.AteAsync(async () => (atual = await ObterAsync(id)).Estado == estado, limite,
-            $"a transferência {id} não chegou a {estado} (último estado: {atual?.Estado})");
+            $"a transferência {id} não chegou a {estado} (último estado: {atual?.Estado})", intervalo);
         return atual!;
     }
 
@@ -180,6 +189,8 @@ public sealed record TransferenciaE2E(
     decimal? ValorDestino,
     string MoedaDestino,
     CotacaoE2E? Cotacao,
+    Guid? AnaliseRiscoId,
+    Guid? CasoRevisaoId,
     IReadOnlyList<PassoE2E> Historico)
 {
     public bool PassouPor(string trecho) =>

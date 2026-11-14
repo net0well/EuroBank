@@ -3,6 +3,7 @@ namespace EuroBank.Transferencias.Application.TransferObjects;
 /// <summary>
 /// Valor na moeda em que foi pedido (MoedaDoValor); Tarifa e ValorDebitado na moeda da conta (MoedaOrigem);
 /// ValorDestino na moeda de destino. Com câmbio, ValorDebitado, ValorDestino e Cotacao aparecem depois da cotação.
+/// AnaliseRiscoId e CasoRevisaoId aparecem quando o antifraude responde (o caso só quando foi para revisão).
 /// </summary>
 public sealed record TransferenciaDto(
     Guid Id,
@@ -28,6 +29,8 @@ public sealed record TransferenciaDto(
     string Estado,
     string? Motivo,
     bool CancelamentoSolicitado,
+    Guid? AnaliseRiscoId,
+    Guid? CasoRevisaoId,
     int TentativasNoPasso,
     DateTimeOffset? PrazoDoPasso,
     int Versao,

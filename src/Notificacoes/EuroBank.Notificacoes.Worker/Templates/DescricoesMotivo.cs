@@ -23,6 +23,11 @@ public static class DescricoesMotivo
         ["SaldoNegativo"] = "a conta de origem está com saldo negativo",
         ["ConfirmadaAposEstorno"] = "o banco do beneficiário confirmou a transferência depois do estorno",
         ["DevolucaoNaoCreditada"] = "a devolução não pôde ser creditada na sua conta",
+
+        // Sem detalhar as regras do antifraude para o cliente.
+        ["RecusadaPeloAntifraude"] = "a transferência não foi aprovada na análise de segurança",
+        ["AntifraudeIndisponivel"] = "a análise de segurança não pôde ser feita a tempo",
+        ["RevisaoExpirada"] = "a análise de segurança não foi concluída no prazo",
     };
 
     public static string Descrever(string motivo) => Descricoes.GetValueOrDefault(motivo, motivo);

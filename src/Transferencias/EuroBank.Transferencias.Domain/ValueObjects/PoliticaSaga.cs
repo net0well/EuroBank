@@ -33,6 +33,21 @@ public sealed record PoliticaSaga
     /// </summary>
     public int ReenviosPorPasso { get; init; } = 3;
 
+    /// <summary>Liga o passo de risco antes do débito. Desligado, a saga vai direto ao débito, como antes do antifraude.</summary>
+    public bool AnaliseRiscoAtiva { get; init; }
+
+    /// <summary>Quanto tempo a saga insiste com o antifraude fora do ar antes de recusar (fail-closed).</summary>
+    public TimeSpan PrazoAnaliseRisco { get; init; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>Espera entre uma tentativa e outra com o antifraude fora do ar.</summary>
+    public TimeSpan IntervaloAnaliseRisco { get; init; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// Em revisão, a decisão chega pelo evento AnaliseDecidida; se ele se perder, a varredura pergunta de novo ao
+    /// antifraude a cada intervalo.
+    /// </summary>
+    public TimeSpan IntervaloConsultaRevisao { get; init; } = TimeSpan.FromMinutes(2);
+
     public TimeSpan PrazoDe(EstadoTransferencia estado) => estado switch
     {
         EstadoTransferencia.Cotando => PrazoCotacao,

@@ -17,6 +17,8 @@ namespace EuroBank.Transferencias.Domain.Entities;
 /// para Contas, para o câmbio ou para o banco externo). Respostas que não cabem no estado atual são ignoradas.
 /// </summary>
 /// <remarks>
+/// Com a análise de risco ligada, AnalisandoRisco e, se for para revisão, EmAnaliseManual entram logo antes de
+/// AguardandoDebito (depois da cotação, quando há câmbio). Recusa do antifraude termina Recusada.
 /// Externa: Agendada, [Cotando], AguardandoDebito, Debitada, AguardandoLiquidacao, [ConsultandoLiquidacao],
 /// Concluida e, se o banco devolver depois, AguardandoCreditoDevolucao e Devolvida. Câmbio interno: Agendada,
 /// Cotando, AguardandoDebito, Debitada, AguardandoCredito, Concluida. Falha depois do débito: AguardandoEstorno e
@@ -118,6 +120,25 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
     /// estorno terminar, a transferência fica Divergente em vez de Cancelada.
     /// </summary>
     public bool LiquidacaoConfirmadaNoEstorno { get; private set; }
+
+    /// <summary>A análise do antifraude para esta transferência (id no contexto Antifraude).</summary>
+    public Guid? AnaliseRiscoId { get; private set; }
+
+    /// <summary>O caso de revisão, quando o antifraude mandou para o analista.</summary>
+    public Guid? CasoRevisaoId { get; private set; }
+
+    /// <summary>
+    /// O antifraude já aprovou: se a cotação vencer durante a revisão, a saga recota e segue para o débito sem
+    /// analisar de novo.
+    /// </summary>
+    public bool RiscoAprovado { get; private set; }
+
+    /// <summary>Até quando a saga insiste com o antifraude fora do ar antes de recusar.</summary>
+    public DateTimeOffset? AnaliseRiscoAte { get; private set; }
+
+    /// <summary>Passos em que a varredura chama o antifraude em vez de reenviar um comando.</summary>
+    public bool AguardaOAntifraude =>
+        Estado is EstadoTransferencia.AnalisandoRisco or EstadoTransferencia.EmAnaliseManual;
 
     /// <summary>Envios do comando do passo atual (1 é o envio original).</summary>
     public int TentativasNoPasso { get; private set; }
@@ -572,13 +593,85 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
     }
 
     /// <summary>
+    /// Resposta do antifraude, pela chamada da varredura ou pelo evento AnaliseDecidida. Aprovada segue para o débito
+    /// (recotando antes, se a cotação venceu); EmRevisao espera o analista e agenda uma nova consulta; Recusada e
+    /// Expirada terminam sem débito. Cancelada só acontece depois do cancelamento pelo cliente, que já encerrou a saga.
+    /// </summary>
+    public ResultadoPasso RegistrarResultadoRisco(ResultadoRisco resultado, PoliticaSaga politica, DateTimeOffset agora)
+    {
+        var resposta = $"Análise de risco {resultado.Decisao}";
+        if (!AguardaOAntifraude || resultado.Decisao == DecisaoRisco.Cancelada)
+        {
+            return Ignorar(resposta, agora);
+        }
+
+        var emRevisao = Estado == EstadoTransferencia.EmAnaliseManual;
+        AnaliseRiscoId = resultado.AnaliseId;
+        CasoRevisaoId = resultado.CasoId ?? CasoRevisaoId;
+        switch (resultado.Decisao)
+        {
+            case DecisaoRisco.Aprovada:
+                RiscoAprovado = true;
+                AnotarPasso(emRevisao ? $"Aprovada pelo analista no caso {CasoRevisaoId}" : "Aprovada pelo antifraude", agora);
+                SeguirDepoisDaAprovacao(politica, agora);
+                break;
+            case DecisaoRisco.EmRevisao when !emRevisao:
+                TentativasNoPasso = 0;
+                PrazoDoPasso = agora + politica.IntervaloConsultaRevisao;
+                MudarPara(EstadoTransferencia.EmAnaliseManual, $"Em revisão no antifraude: caso {CasoRevisaoId} aberto para o analista", agora);
+                break;
+            case DecisaoRisco.EmRevisao:
+                ConsultarAntifraudeDepois(politica.IntervaloConsultaRevisao, $"Caso {CasoRevisaoId} ainda em revisão", agora);
+                break;
+            case DecisaoRisco.Recusada:
+                Recusar(
+                    MotivoTransferencia.RecusadaPeloAntifraude,
+                    emRevisao ? $"Recusada pelo analista no caso {CasoRevisaoId}" : "Recusada pelas regras do antifraude",
+                    agora);
+                break;
+            case DecisaoRisco.Expirada:
+                Recusar(MotivoTransferencia.RevisaoExpirada, $"O caso {CasoRevisaoId} expirou sem decisão do analista", agora);
+                break;
+            default:
+                throw new UnreachableException($"Decisão {resultado.Decisao} sem tratamento.");
+        }
+
+        return ResultadoPasso.Aplicado;
+    }
+
+    /// <summary>
+    /// A chamada ao antifraude falhou (fora do ar, prazo da chamada estourado). Na análise, tenta de novo até o prazo
+    /// do passo e então recusa (fail-closed); na revisão, o caso continua aberto e a saga só consulta depois.
+    /// </summary>
+    public ResultadoPasso RegistrarAntifraudeIndisponivel(string erro, PoliticaSaga politica, DateTimeOffset agora)
+    {
+        if (!AguardaOAntifraude)
+        {
+            return Ignorar($"Falha do antifraude ({erro})", agora);
+        }
+
+        if (Estado == EstadoTransferencia.AnalisandoRisco && agora >= AnaliseRiscoAte)
+        {
+            Recusar(MotivoTransferencia.AntifraudeIndisponivel, $"O antifraude não respondeu até o prazo da análise ({erro})", agora);
+            return ResultadoPasso.Aplicado;
+        }
+
+        ConsultarAntifraudeDepois(
+            Estado == EstadoTransferencia.AnalisandoRisco ? politica.IntervaloAnaliseRisco : politica.IntervaloConsultaRevisao,
+            $"Antifraude indisponível ({erro})",
+            agora);
+        return ResultadoPasso.Aplicado;
+    }
+
+    /// <summary>
     /// Chamado pela varredura. Com o prazo vencido, reenvia o comando do passo (id de mensagem novo; os
     /// participantes deduplicam pelo id da transferência) ou, esgotados os reenvios, segue o caminho de falha.
     /// Crédito, estorno, reconciliação e crédito da devolução reenviam sem limite.
     /// </summary>
     public ResultadoPasso VerificarPrazo(PoliticaSaga politica, DateTimeOffset agora)
     {
-        if (PrazoDoPasso is not { } prazo || prazo > agora)
+        // Na análise de risco não há comando para reenviar: a varredura chama o antifraude.
+        if (PrazoDoPasso is not { } prazo || prazo > agora || AguardaOAntifraude)
         {
             return ResultadoPasso.Ignorado;
         }
@@ -625,15 +718,19 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
     }
 
     /// <summary>
-    /// Cancelamento pelo cliente, possível até a liquidação ou o crédito serem pedidos. Com o débito em andamento,
-    /// só anota: a resposta do débito decide entre estornar e terminar direto. Repetir o pedido não muda nada.
+    /// Cancelamento pelo cliente, possível até a liquidação ou o crédito serem pedidos. Antes do débito (inclusive na
+    /// análise de risco), termina na hora. Com o débito em andamento, só anota: a resposta do débito decide entre
+    /// estornar e terminar direto. Repetir o pedido não muda nada.
     /// </summary>
     /// <exception cref="ExcecaoCancelamentoNaoPermitido">A liquidação ou o crédito já foram pedidos, ou a saga terminou.</exception>
     public void SolicitarCancelamento(DateTimeOffset agora)
     {
         switch (Estado)
         {
-            case EstadoTransferencia.Agendada or EstadoTransferencia.Cotando:
+            case EstadoTransferencia.Agendada
+                or EstadoTransferencia.Cotando
+                or EstadoTransferencia.AnalisandoRisco
+                or EstadoTransferencia.EmAnaliseManual:
                 Cancelar(MotivoTransferencia.CanceladaPeloCliente, "Cancelada pelo cliente antes do débito", agora);
                 break;
             case EstadoTransferencia.AguardandoDebito when !CancelamentoSolicitado:
@@ -754,7 +851,10 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
         return Ignorar(resposta, agora);
     }
 
-    /// <summary>O limite diário é da moeda da conta e conta só o valor, sem a tarifa.</summary>
+    /// <summary>
+    /// O limite diário é da moeda da conta e conta só o valor, sem a tarifa. Dentro do limite, passa pela análise de
+    /// risco (se ligada e ainda não aprovada) antes de pedir o débito.
+    /// </summary>
     private void PedirDebitoDentroDoLimite(Dinheiro jaTransferidoNoDia, PoliticaSaga politica, DateTimeOffset agora)
     {
         var limite = TabelaTransferencias.LimiteDiario(MoedaOrigem);
@@ -764,7 +864,37 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
             return;
         }
 
+        if (politica.AnaliseRiscoAtiva && !RiscoAprovado)
+        {
+            // Prazo já vencido: a próxima varredura chama o antifraude.
+            TentativasNoPasso = 0;
+            PrazoDoPasso = agora;
+            AnaliseRiscoAte = agora + politica.PrazoAnaliseRisco;
+            MudarPara(EstadoTransferencia.AnalisandoRisco, "Aguardando a análise de risco do antifraude", agora);
+            return;
+        }
+
         EntrarNoPasso(EstadoTransferencia.AguardandoDebito, politica, agora);
+    }
+
+    /// <summary>Com câmbio, a cotação pode ter vencido durante a revisão: a saga cota de novo antes do débito.</summary>
+    private void SeguirDepoisDaAprovacao(PoliticaSaga politica, DateTimeOffset agora)
+    {
+        if (PrecisaDeCambio && Cotacao is { } cotacao && cotacao.ValidaAte <= agora)
+        {
+            AnotarPasso($"A cotação {cotacao.Id} venceu durante a análise: cotando de novo", agora);
+            EntrarNoPasso(EstadoTransferencia.Cotando, politica, agora);
+            return;
+        }
+
+        EntrarNoPasso(EstadoTransferencia.AguardandoDebito, politica, agora);
+    }
+
+    private void ConsultarAntifraudeDepois(TimeSpan intervalo, string motivo, DateTimeOffset agora)
+    {
+        TentativasNoPasso++;
+        PrazoDoPasso = agora + intervalo;
+        AnotarPasso($"{motivo}: nova consulta ao antifraude às {PrazoDoPasso:HH:mm:ss} (tentativa {TentativasNoPasso})", agora);
     }
 
     private void PedirEstorno(MotivoTransferencia motivo, PoliticaSaga politica, DateTimeOffset agora)

@@ -4,8 +4,8 @@ services:
   # ---------------------------------------------------------------------------------------------------------
   # PostgreSQL com replicação lógica (wal_level=logical): é daqui que o Debezium lê as mudanças (WAL).
   # Um database por contexto: eurobank_contas (contas + outbox), eurobank_extrato (projeção),
-  # eurobank_transferencias (sagas + outbox), eurobank_notificacoes (e-mails enviados) e os dos simuladores
-  # (eurobank_banco_externo e eurobank_cambio).
+  # eurobank_transferencias (sagas + outbox), eurobank_notificacoes (e-mails enviados), eurobank_antifraude
+  # (análises, casos, regras + outbox) e os dos simuladores (eurobank_banco_externo e eurobank_cambio).
   # ---------------------------------------------------------------------------------------------------------
   postgres:
     image: postgres:18.6
@@ -252,6 +252,8 @@ services:
       Saga__PrazoDebito: ${SAGA_PRAZO_DEBITO:-00:00:30}
       Saga__PrazoLiquidacao: ${SAGA_PRAZO_LIQUIDACAO:-00:00:30}
       Saga__PrazoConsulta: ${SAGA_PRAZO_CONSULTA:-00:00:15}
+      # Igual na API e no worker: os dois começam sagas. false volta ao fluxo sem antifraude.
+      Saga__AnaliseRiscoAtiva: ${SAGA_ANALISE_RISCO:-true}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
     healthcheck:
       test: ["CMD-SHELL", "curl -fs http://localhost:8080/health > /dev/null"]
@@ -259,15 +261,19 @@ services:
       timeout: 5s
       retries: 30
 
-  # Conduz as sagas depois do primeiro passo: respostas de Contas e do banco externo (inbox durável no banco
-  # de Transferencias) e a varredura de agendadas e prazos (FOR UPDATE SKIP LOCKED: pode escalar).
-  # Espera a API ficar saudável, porque é ela que aplica as migrations.
+  # Conduz as sagas depois do primeiro passo: respostas de Contas, do câmbio e do banco externo e decisões do
+  # antifraude (inbox durável no banco de Transferencias) e a varredura de agendadas, análises de risco (gRPC no
+  # antifraude) e prazos (FOR UPDATE SKIP LOCKED: pode escalar).
+  # Espera a API ficar saudável, porque é ela que aplica as migrations, e o antifraude, para as primeiras
+  # transferências não serem recusadas por ele ainda estar subindo.
   transferencias-worker:
     build:
       context: .
       dockerfile: src/Transferencias/EuroBank.Transferencias.Worker/Dockerfile
     depends_on:
       transferencias-api:
+        condition: service_healthy
+      antifraude-api:
         condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
@@ -279,6 +285,96 @@ services:
       Saga__PrazoDebito: ${SAGA_PRAZO_DEBITO:-00:00:30}
       Saga__PrazoLiquidacao: ${SAGA_PRAZO_LIQUIDACAO:-00:00:30}
       Saga__PrazoConsulta: ${SAGA_PRAZO_CONSULTA:-00:00:15}
+      Saga__AnaliseRiscoAtiva: ${SAGA_ANALISE_RISCO:-true}
+      # gRPC em h2c na porta interna do antifraude. Estrategia: Retry, Hedging ou Nenhuma.
+      Antifraude__Endereco: http://antifraude-api:8081
+      Antifraude__ApiKey: ${ANTIFRAUDE_API_KEY}
+      Antifraude__Estrategia: ${ANTIFRAUDE_ESTRATEGIA:-Retry}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8080/health > /dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # ---------------------------------------------------------------------------------------------------------
+  # Antifraude
+  # ---------------------------------------------------------------------------------------------------------
+
+  # Perfil de comportamento das contas (e, depois, cache e controles das APIs). Sem volume nem persistência: o perfil
+  # é derivado dos eventos e se reconstrói reprocessando o tópico. Porta do host configurável (REDIS_PORTA_HOST).
+  redis:
+    image: redis:8.10.3
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "${REDIS_PORTA_HOST:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # UI do Redis em http://localhost:5540, já com a conexão "eurobank" (redis:6379): veja as chaves
+  # antifraude:{conta}:perfil, :saidas e :beneficiarios.
+  redisinsight:
+    image: redis/redisinsight:3.8.0
+    ports:
+      - "${REDISINSIGHT_PORTA:-5540}:5540"
+    environment:
+      RI_REDIS_HOST: redis
+      RI_REDIS_PORT: "6379"
+      RI_REDIS_ALIAS: eurobank
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # O AntifraudeService: gRPC na 5410 (HTTP/2 sem TLS, com reflection e grpc.health.v1) e, na 5400 (HTTP/1.1), o mesmo
+  # serviço por JSON transcoding, o REST do analista e o Swagger. Aplica as migrations e os dados iniciais ao subir.
+  antifraude-api:
+    build:
+      context: .
+      dockerfile: src/Antifraude/EuroBank.Antifraude.Api/Dockerfile
+    ports:
+      - "5400:8080"
+      - "5410:8081"
+    depends_on:
+      connect-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      Kestrel__Endpoints__Rest__Url: http://+:8080
+      Kestrel__Endpoints__Grpc__Url: http://+:8081
+      ConnectionStrings__Antifraude: "Host=postgres;Port=5432;Database=eurobank_antifraude;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      ConnectionStrings__Redis: "redis:6379"
+      Seguranca__ApiKey: ${ANTIFRAUDE_API_KEY}
+      Revisao__PrazoCaso: ${ANTIFRAUDE_PRAZO_REVISAO:-00:30:00}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+    healthcheck:
+      test: ["CMD", "grpc_health_probe", "-addr=localhost:8081"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # Mantém no Redis o perfil de cada conta (eurobank.contas.eventos, sem inbox: a versão da conta no Redis descarta
+  # o repetido). Para reconstruir: apague o Redis e volte o offset do grupo eurobank-antifraude-worker.
+  # Espera a API ficar saudável, porque é ela que aplica as migrations do banco do Antifraude.
+  antifraude-worker:
+    build:
+      context: .
+      dockerfile: src/Antifraude/EuroBank.Antifraude.Worker/Dockerfile
+    depends_on:
+      antifraude-api:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_HTTP_PORTS: "8080"
+      ConnectionStrings__Antifraude: "Host=postgres;Port=5432;Database=eurobank_antifraude;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      ConnectionStrings__Redis: "redis:6379"
+      Kafka__BootstrapServers: kafka:29092
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
     healthcheck:
       test: ["CMD-SHELL", "curl -fs http://localhost:8080/health > /dev/null"]

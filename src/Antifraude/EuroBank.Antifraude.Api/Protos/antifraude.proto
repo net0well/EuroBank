@@ -1,0 +1,109 @@
+// Contrato do Antifraude. Os clientes (Transferencias.Worker e Contas.Api) incluem este mesmo arquivo com
+// GrpcServices="Client" e geram o próprio cliente: uma fonte de verdade, sem assembly compartilhado.
+// Evolução: só acrescentar campos com números novos; nunca reaproveitar nem renumerar.
+syntax = "proto3";
+
+package eurobank.antifraude.v1;
+
+option csharp_namespace = "EuroBank.Antifraude.Grpc";
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+
+// Análise de risco de toda saída de dinheiro do EuroBank. Cada método também responde por JSON (transcoding).
+service AntifraudeService {
+  // Avalia a operação. Idempotente pelo operacao_id: a segunda chamada devolve a mesma análise e o mesmo caso.
+  rpc Avaliar (SolicitacaoAvaliacao) returns (ResultadoAvaliacao) {
+    option (google.api.http) = {
+      post: "/v1/avaliacoes"
+      body: "*"
+    };
+  }
+
+  // Consulta uma análise já feita (para saber se a revisão já terminou, por exemplo).
+  rpc ObterAnalise (ObterAnaliseRequest) returns (ResultadoAvaliacao) {
+    option (google.api.http) = {
+      get: "/v1/avaliacoes/{analise_id}"
+    };
+  }
+
+  // Avaliação hipotética: mesmas regras e mesmo perfil, mas não grava análise nem abre caso.
+  rpc Simular (SolicitacaoAvaliacao) returns (ResultadoAvaliacao) {
+    option (google.api.http) = {
+      post: "/v1/simulacoes"
+      body: "*"
+    };
+  }
+}
+
+enum TipoOperacao {
+  TIPO_OPERACAO_NAO_INFORMADO = 0;
+  TIPO_OPERACAO_EXTERNA = 1;
+  TIPO_OPERACAO_CAMBIO = 2;
+  TIPO_OPERACAO_SAQUE = 3;
+  TIPO_OPERACAO_TRANSFERENCIA_INTERNA = 4;
+}
+
+enum Decisao {
+  DECISAO_NAO_INFORMADA = 0;
+  DECISAO_APROVADA = 1;
+  DECISAO_EM_REVISAO = 2;
+  DECISAO_RECUSADA = 3;
+  DECISAO_EXPIRADA = 4;
+  DECISAO_CANCELADA = 5;
+}
+
+// Decimal sem perda (protobuf não tem decimal): 12345.67 é { units: 12345, nanos: 670000000 }.
+// units e nanos têm o mesmo sinal.
+message DecimalValue {
+  int64 units = 1;
+  sfixed32 nanos = 2;
+}
+
+message SolicitacaoAvaliacao {
+  // Id da transferência (ou do saque): a chave de idempotência.
+  string operacao_id = 1;
+  TipoOperacao tipo_operacao = 2;
+  string conta_id = 3;
+  // Na moeda da conta, no máximo duas casas.
+  DecimalValue valor = 4;
+  // Código ISO (EUR, USD, GBP, BRL).
+  string moeda = 5;
+  // Vazio num saque.
+  string iban_destino = 6;
+  // Quando a operação aconteceu; vazio: agora.
+  google.protobuf.Timestamp momento = 7;
+}
+
+message ObterAnaliseRequest {
+  string analise_id = 1;
+}
+
+message SinalRegra {
+  string codigo = 1;
+  // DURA ou PESO.
+  string tipo = 2;
+  bool disparou = 3;
+  // Pontos da regra com peso quando dispara (em sombra: o que somaria).
+  int32 pontos = 4;
+  // Em sombra: aparece aqui, mas não pontua nem decide.
+  bool sombra = 5;
+  string motivo = 6;
+}
+
+message ResultadoAvaliacao {
+  // Vazio numa simulação.
+  string analise_id = 1;
+  string operacao_id = 2;
+  Decisao decisao = 3;
+  // De 0 a 100.
+  int32 score_final = 4;
+  // Só quando a decisão é DECISAO_EM_REVISAO (ou foi decidida numa revisão).
+  string caso_id = 5;
+  repeated SinalRegra sinais = 6;
+  int32 versao_configuracao = 7;
+  google.protobuf.Timestamp avaliada_em = 8;
+  // Vazio enquanto a revisão não termina.
+  google.protobuf.Timestamp decidida_em = 9;
+  bool simulacao = 10;
+}
