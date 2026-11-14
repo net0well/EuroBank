@@ -1,3 +1,4 @@
+using EuroBank.Antifraude.Api.Endpoints;
 using EuroBank.Antifraude.Api.Interceptors;
 using EuroBank.Antifraude.Api.OpenApi;
 using EuroBank.Antifraude.Api.Services;
@@ -64,6 +65,10 @@ app.UseSwagger();
 app.UseSwaggerUI();
 
 app.MapHealthChecks("/health");
+app.MapearEndpointsCasos();
+app.MapearEndpointsRegras();
+app.MapearEndpointsListas();
+app.MapearEndpointsAcompanhamento();
 app.MapGrpcService<AntifraudeGrpcService>();
 app.MapGrpcReflectionService();
 app.MapGrpcHealthChecksService();

@@ -36,6 +36,9 @@ public static class ConfiguracaoMensageriaWorker
             .UseInterop((IWolverineRuntime _, KafkaTopic _) => new MapeadorEnvelopeDebezium(TiposEventosContas.Mapa))
             .ProcessInline();
 
+        // Cancelamento pelo cliente fecha o caso de revisão: grava no Postgres, então aqui a inbox durável vale.
+        opcoes.OuvirTopicoDebezium(TiposEventosTransferencias.Topico, TiposEventosTransferencias.Mapa);
+
         opcoes.OnException<RedisConnectionException>().Or<RedisTimeoutException>()
             .RetryWithCooldown(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(5))
             .Then.PauseThenRequeue(TimeSpan.FromSeconds(30));

@@ -1,4 +1,6 @@
+using EuroBank.Antifraude.Application.Interfaces;
 using EuroBank.Antifraude.Domain.Repositories;
+using EuroBank.Antifraude.Infrastructure.Persistence.Queries;
 using EuroBank.Antifraude.Infrastructure.Outbox;
 using EuroBank.Antifraude.Infrastructure.Persistence;
 using EuroBank.Antifraude.Infrastructure.Persistence.Repositories;
@@ -29,6 +31,8 @@ public static class DependencyInjection
         services.AddScoped<IRepositorioRegras, RepositorioRegras>();
         services.AddScoped<IRepositorioConfiguracao, RepositorioConfiguracao>();
         services.AddScoped<IRepositorioListas, RepositorioListas>();
+        services.AddScoped<IRepositorioFraudes, RepositorioFraudes>();
+        services.AddScoped<IConsultaAntifraude, ConsultaAntifraude>();
         services.AddScoped<SemeadorAntifraude>();
         services.AddScoped<IFilaOutbox, FilaOutbox>();
         services.AddScoped<IUnidadeDeTrabalho, UnidadeDeTrabalhoComOutbox<AntifraudeDbContext>>();

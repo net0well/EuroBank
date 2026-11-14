@@ -1,7 +1,9 @@
 using EuroBank.Antifraude.Application.Interfaces;
 using EuroBank.Antifraude.Domain.ValueObjects;
+using EuroBank.Antifraude.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using StackExchange.Redis;
 using Testcontainers.PostgreSql;
@@ -40,9 +42,25 @@ public sealed class AntifraudeWorkerFixture : IAsyncLifetime
             builder.UseSetting("ConnectionStrings:Antifraude", _postgres.GetConnectionString());
             builder.UseSetting("ConnectionStrings:Redis", ConnectionStringRedis);
             builder.UseSetting("OTEL_SDK_DISABLED", "true");
+            // A varredura automática não roda durante os testes: eles chamam a expiração direto.
+            builder.UseSetting("Expiracao:Intervalo", "01:00:00");
             builder.ConfigureServices(services => services.DisableAllExternalWolverineTransports());
         });
         using var _ = _worker.CreateClient();
+
+        // No compose, quem aplica as migrations é a API; aqui o teste aplica antes de usar as tabelas.
+        await using var escopo = _worker.Services.CreateAsyncScope();
+        await escopo.ServiceProvider.GetRequiredService<AntifraudeDbContext>().Database.MigrateAsync();
+    }
+
+    public AntifraudeDbContext CriarContexto() =>
+        new(new DbContextOptionsBuilder<AntifraudeDbContext>().UseNpgsql(_postgres.GetConnectionString()).Options);
+
+    /// <summary>Executa algo num escopo próprio, como uma mensagem faria.</summary>
+    public async Task EmEscopoAsync(Func<IServiceProvider, Task> acao)
+    {
+        await using var escopo = _worker.Services.CreateAsyncScope();
+        await acao(escopo.ServiceProvider);
     }
 
     public IServiceProvider Servicos => _worker.Services;

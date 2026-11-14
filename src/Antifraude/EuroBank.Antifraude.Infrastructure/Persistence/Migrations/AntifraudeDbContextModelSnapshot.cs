@@ -214,6 +214,43 @@ namespace EuroBank.Antifraude.Infrastructure.Persistence.Migrations
                     b.ToTable("configuracoes_decisao", (string)null);
                 });
 
+            modelBuilder.Entity("EuroBank.Antifraude.Domain.Entities.FraudeConfirmada", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AnaliseId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("analise_id");
+
+                    b.Property<string>("Analista")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("analista");
+
+                    b.Property<DateTimeOffset>("ConfirmadaEm")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("confirmada_em");
+
+                    b.Property<string>("Observacao")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("observacao");
+
+                    b.Property<Guid>("OperacaoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("operacao_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OperacaoId")
+                        .IsUnique();
+
+                    b.ToTable("fraudes_confirmadas", (string)null);
+                });
+
             modelBuilder.Entity("EuroBank.Antifraude.Domain.Entities.IbanBloqueado", b =>
                 {
                     b.Property<string>("Iban")
