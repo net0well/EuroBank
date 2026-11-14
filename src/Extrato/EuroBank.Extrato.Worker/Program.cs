@@ -21,6 +21,7 @@ builder.Host.UseWolverine(opcoes => opcoes.ConfigurarMensageriaExtrato(builder.C
 builder.Services.AddResourceSetupOnStartup();
 
 builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<TratadorRequisicaoInvalida>();
 builder.Services.AddExceptionHandler<TratadorExcecoesDominio>();
 builder.Services.AddHealthChecks().AddDbContextCheck<ExtratoDbContext>();
 builder.Services.AdicionarSwaggerComApiKey("EuroBank - Extrato");

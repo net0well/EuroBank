@@ -29,6 +29,7 @@ builder.Host.UseWolverine(opcoes =>
 });
 
 builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<TratadorRequisicaoInvalida>();
 builder.Services.AddExceptionHandler<TratadorExcecoesDominio>();
 builder.Services.AddHealthChecks().AddDbContextCheck<TransferenciasDbContext>();
 builder.Services.AdicionarSwaggerComApiKey("EuroBank - Transferências");

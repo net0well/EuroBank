@@ -49,7 +49,7 @@ dois sistemas precisam ficar consistentes sem compartilhar uma transação:
 | Parte | O que faz |
 |---|---|
 | Domínio de Contas | Agregado `Conta` com estados (Ativa, Bloqueada, Encerrada), moeda escolhida na abertura, versão de negócio, value objects `Dinheiro` (valor e moeda; operar moedas diferentes é proibido), `Saldo` (pode ficar negativo, mas só por reconciliação), `Iban` (dígito verificador módulo 97) e `Titular`, serviço de domínio de transferência atômica entre contas da mesma moeda |
-| API de Contas | Minimal API com Wolverine como mediator, erros de domínio em ProblemDetails (400, 404, 409, 422), Swagger, seed de contas de exemplo |
+| API de Contas | Minimal API com Wolverine como mediator, erros de domínio em ProblemDetails (400, 404, 409, 422) e requisição ilegível em 400, Swagger, seed de contas de exemplo |
 | Outbox | A unidade de trabalho grava conta e eventos na mesma transação, na ordem em que os eventos aconteceram |
 | Debezium | Dois conectores: Outbox Event Router (eventos de negócio) e CDC bruto da tabela `contas` (before e after) |
 | Extrato | Worker com Wolverine consumindo o Kafka: inbox durável, ordem por conta, retry, dead letter e a projeção do extrato com paginação, incluindo transferências externas com tarifa, estornos, devoluções e reconciliações (com saldo negativo) |
@@ -62,7 +62,7 @@ dois sistemas precisam ficar consistentes sem compartilhar uma transação:
 | Segurança | Uma API key por API (`X-Api-Key`), com `/health` e Swagger abertos |
 | Infraestrutura | Docker Compose com PostgreSQL em replicação lógica, Kafka em modo KRaft, Kafka Connect, Kafbat UI, Jaeger e Mailpit, com os databases, os tópicos e os conectores criados automaticamente |
 | Observabilidade | Serilog estruturado e OpenTelemetry, com o `traceparent` levado pela outbox até o consumidor e de volta nas respostas da saga |
-| Testes | 496 testes: unitários, de integração com Testcontainers e ponta a ponta com Debezium real, incluindo cada caminho das sagas e os e-mails no Mailpit |
+| Testes | 501 testes: unitários, de integração com Testcontainers e ponta a ponta com Debezium real, incluindo cada caminho das sagas e os e-mails no Mailpit |
 | Carga | Script k6 que mistura operações de Contas com sagas externas e de câmbio e, no fim, confere que todas as sagas terminaram, que o Extrato convergiu e que nenhum dinheiro sumiu, moeda a moeda |
 
 ## Como funciona
@@ -355,6 +355,10 @@ Problemas reais encontrados durante a construção, cada um com um teste que o r
 21. **Estado final não quer dizer que o dinheiro parou.** Uma `Concluida` do final `94` ainda vai ser devolvida,
     e uma `Cancelada` do final `95` ainda vai ficar `Divergente`. O balanço da carga só fecha quando espera esses
     passos tardios: para o k6, a 94 só termina `Devolvida` e a 95 só termina `Divergente`.
+22. **Em Development, um corpo ilegível virava 500.** Um JSON mal formado, ou um texto que não é UTF-8 (um `curl`
+    num terminal em Latin-1, por exemplo), fazia as minimal APIs lançarem `BadHttpRequestException`, e o tratamento
+    de erros respondia 500. Um tratador em `Shared.Web` transforma esse caso em 400 ProblemDetails
+    (`requisicao_invalida`) nas três APIs.
 
 ## Arquitetura
 
