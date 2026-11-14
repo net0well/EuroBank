@@ -9,4 +9,5 @@ public sealed record TransferenciaDevolvidaMensagem(
     Guid ContaOrigemId,
     string ValorDevolvido,
     string Moeda,
+    ResumoTransferenciaMensagem Resumo,
     DateTimeOffset OcorridoEm);

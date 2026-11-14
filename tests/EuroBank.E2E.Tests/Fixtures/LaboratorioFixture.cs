@@ -9,6 +9,7 @@ using DotNet.Testcontainers.Networks;
 using EuroBank.Contas.Api;
 using EuroBank.Contas.Worker;
 using EuroBank.Extrato.Worker;
+using EuroBank.Notificacoes.Worker;
 using EuroBank.Simuladores.BancoExterno;
 using EuroBank.Simuladores.Cambio;
 using EuroBank.Transferencias.Api;
@@ -25,8 +26,8 @@ namespace EuroBank.E2E.Tests.Fixtures;
 
 /// <summary>
 /// O laboratório inteiro para os testes ponta a ponta: Postgres com replicação lógica, Kafka e Kafka Connect com
-/// Debezium (containers numa rede própria), os mesmos conectores de infra/connect/conectores, e as duas
-/// aplicações in-process (API de Contas e worker do Extrato).
+/// Debezium e o Mailpit (containers), os mesmos conectores de infra/connect/conectores, e as aplicações
+/// in-process (APIs, workers e simuladores).
 /// </summary>
 public sealed class LaboratorioFixture : IAsyncLifetime
 {
@@ -71,6 +72,7 @@ public sealed class LaboratorioFixture : IAsyncLifetime
     private readonly PostgreSqlContainer _postgres;
     private readonly KafkaContainer _kafka;
     private readonly IContainer _connect;
+    private readonly IContainer _mailpit;
     private readonly ActivityListener _ouvinteAtividades;
     private WebApplicationFactory<MarcadorContasApi> _contas = null!;
     private WebApplicationFactory<MarcadorExtratoWorker> _extrato = null!;
@@ -111,6 +113,13 @@ public sealed class LaboratorioFixture : IAsyncLifetime
                 .UntilHttpRequestIsSucceeded(requisicao => requisicao.ForPort(8083).ForPath("/connectors")))
             .Build();
 
+        _mailpit = new ContainerBuilder("axllent/mailpit:v1.33.1")
+            .WithPortBinding(1025, assignRandomHostPort: true)
+            .WithPortBinding(8025, assignRandomHostPort: true)
+            .WithWaitStrategy(Wait.ForUnixContainer()
+                .UntilHttpRequestIsSucceeded(requisicao => requisicao.ForPort(8025).ForPath("/readyz")))
+            .Build();
+
         // Sem um ouvinte, ASP.NET Core e Wolverine não criam Activities: nem haveria traceparent na outbox.
         _ouvinteAtividades = new ActivityListener
         {
@@ -127,6 +136,9 @@ public sealed class LaboratorioFixture : IAsyncLifetime
 
     public HttpClient Transferencias { get; private set; } = null!;
 
+    /// <summary>API HTTP do Mailpit (mensagens recebidas pelo SMTP).</summary>
+    public HttpClient Mailpit { get; private set; } = null!;
+
     public string BootstrapKafka => _kafka.GetBootstrapAddress();
 
     public string ConnectionStringTransferencias =>
@@ -140,6 +152,9 @@ public sealed class LaboratorioFixture : IAsyncLifetime
 
     public string ConnectionStringContas => _postgres.GetConnectionString();
 
+    public string ConnectionStringNotificacoes =>
+        new NpgsqlConnectionStringBuilder(_postgres.GetConnectionString()) { Database = "eurobank_notificacoes" }.ConnectionString;
+
     public string ConnectionStringExtrato =>
         new NpgsqlConnectionStringBuilder(_postgres.GetConnectionString()) { Database = "eurobank_extrato" }.ConnectionString;
 
@@ -149,7 +164,8 @@ public sealed class LaboratorioFixture : IAsyncLifetime
     public async ValueTask InitializeAsync()
     {
         await _rede.CreateAsync();
-        await Task.WhenAll(_postgres.StartAsync(), _kafka.StartAsync());
+        await Task.WhenAll(_postgres.StartAsync(), _kafka.StartAsync(), _mailpit.StartAsync());
+        Mailpit = new HttpClient { BaseAddress = new Uri($"http://{_mailpit.Hostname}:{_mailpit.GetMappedPublicPort(8025)}") };
 
         await CriarBancosAsync();
         await CriarTopicosAsync();
@@ -221,6 +237,61 @@ public sealed class LaboratorioFixture : IAsyncLifetime
             ["Kafka:GrupoConsumidor"] = $"eurobank-cambio-e2e-{Guid.NewGuid():N}",
             ["Cambio:LatenciaMs"] = "200",
         });
+
+        Subir(new WebApplicationFactory<MarcadorNotificacoesWorker>(), ConfiguracaoNotificacoes($"eurobank-notificacoes-e2e-{Guid.NewGuid():N}"));
+    }
+
+    /// <summary>
+    /// Outra instância do worker de notificações, num consumer group novo e no mesmo banco: lê o tópico desde o
+    /// início, como num reprocessamento. Quem chama descarta a instância no fim do teste.
+    /// </summary>
+    public IAsyncDisposable SubirOutroWorkerDeNotificacoes(string grupoConsumidor)
+    {
+        var aplicacao = new WebApplicationFactory<MarcadorNotificacoesWorker>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Development");
+            builder.UseSetting("OTEL_SDK_DISABLED", "true");
+            foreach (var (chave, valor) in ConfiguracaoNotificacoes(grupoConsumidor))
+            {
+                builder.UseSetting(chave, valor);
+            }
+        });
+        using var _ = aplicacao.CreateClient();
+        return aplicacao;
+    }
+
+    private Dictionary<string, string> ConfiguracaoNotificacoes(string grupoConsumidor) => new()
+    {
+        ["ConnectionStrings:Notificacoes"] = ConnectionStringNotificacoes,
+        ["Kafka:BootstrapServers"] = BootstrapKafka,
+        ["Kafka:GrupoConsumidor"] = grupoConsumidor,
+        ["Smtp:Host"] = _mailpit.Hostname,
+        ["Smtp:Porta"] = _mailpit.GetMappedPublicPort(1025).ToString(System.Globalization.CultureInfo.InvariantCulture),
+    };
+
+    /// <summary>Espera o consumer group confirmar os offsets até o fim de todas as partições do tópico.</summary>
+    public async Task EsperarGrupoNoFimDoTopicoAsync(string grupoConsumidor, string topico, TimeSpan limite)
+    {
+        using var admin = new AdminClientBuilder(new AdminClientConfig { BootstrapServers = BootstrapKafka }).Build();
+        using var leitor = new ConsumerBuilder<Ignore, Ignore>(new ConsumerConfig
+        {
+            BootstrapServers = BootstrapKafka,
+            GroupId = $"e2e-marcas-{Guid.NewGuid():N}",
+        }).Build();
+
+        var particoes = admin.GetMetadata(topico, TimeSpan.FromSeconds(10)).Topics.Single().Partitions
+            .Select(particao => new TopicPartition(topico, particao.PartitionId))
+            .ToList();
+        var fins = particoes.ToDictionary(
+            particao => particao.Partition.Value,
+            particao => leitor.QueryWatermarkOffsets(particao, TimeSpan.FromSeconds(10)).High.Value);
+
+        await Esperar.AteAsync(async () =>
+        {
+            var confirmados = await admin.ListConsumerGroupOffsetsAsync(
+                [new ConsumerGroupTopicPartitions(grupoConsumidor, particoes)]);
+            return confirmados.Single().Partitions.All(particao => particao.Offset.Value >= fins[particao.Partition.Value]);
+        }, limite, $"o consumer group {grupoConsumidor} não chegou ao fim de {topico}");
     }
 
     /// <summary>Sobe uma aplicação in-process (Development, sem OTLP) e já cria o host, para ela começar a consumir.</summary>
@@ -256,7 +327,9 @@ public sealed class LaboratorioFixture : IAsyncLifetime
     {
         await using var conexao = new NpgsqlConnection(ConnectionStringContas);
         await conexao.OpenAsync();
-        foreach (var banco in new[] { "eurobank_extrato", "eurobank_transferencias", "eurobank_banco_externo", "eurobank_cambio" })
+        string[] bancos =
+            ["eurobank_extrato", "eurobank_transferencias", "eurobank_banco_externo", "eurobank_cambio", "eurobank_notificacoes"];
+        foreach (var banco in bancos)
         {
             await using var comando = new NpgsqlCommand($"CREATE DATABASE {banco}", conexao);
             await comando.ExecuteNonQueryAsync();
@@ -333,6 +406,7 @@ public sealed class LaboratorioFixture : IAsyncLifetime
         Contas?.Dispose();
         Extrato?.Dispose();
         Transferencias?.Dispose();
+        Mailpit?.Dispose();
         foreach (var aplicacao in Enumerable.Reverse(_aplicacoes))
         {
             await aplicacao.DisposeAsync();
@@ -349,6 +423,7 @@ public sealed class LaboratorioFixture : IAsyncLifetime
         }
 
         await _connect.DisposeAsync();
+        await _mailpit.DisposeAsync();
         await _kafka.DisposeAsync();
         await _postgres.DisposeAsync();
         await _rede.DisposeAsync();

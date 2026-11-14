@@ -6,7 +6,7 @@ set -eu
 
 export PGPASSWORD="$POSTGRES_PASSWORD"
 
-for banco in eurobank_extrato eurobank_transferencias eurobank_banco_externo eurobank_cambio; do
+for banco in eurobank_extrato eurobank_transferencias eurobank_notificacoes eurobank_banco_externo eurobank_cambio; do
   existe=$(psql -h postgres -U "$POSTGRES_USER" -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$banco'")
   if [ "$existe" = "1" ]; then
     echo "Database $banco já existe"

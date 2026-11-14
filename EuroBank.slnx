@@ -13,6 +13,9 @@
     <Project Path="src/Extrato/EuroBank.Extrato.Infrastructure/EuroBank.Extrato.Infrastructure.csproj" />
     <Project Path="src/Extrato/EuroBank.Extrato.Worker/EuroBank.Extrato.Worker.csproj" />
   </Folder>
+  <Folder Name="/src/Notificacoes/">
+    <Project Path="src/Notificacoes/EuroBank.Notificacoes.Worker/EuroBank.Notificacoes.Worker.csproj" />
+  </Folder>
   <Folder Name="/src/Shared/">
     <Project Path="src/Shared/EuroBank.Shared.Messaging/EuroBank.Shared.Messaging.csproj" />
     <Project Path="src/Shared/EuroBank.Shared.Persistence/EuroBank.Shared.Persistence.csproj" />
@@ -38,6 +41,7 @@
     <Project Path="tests/EuroBank.E2E.Tests/EuroBank.E2E.Tests.csproj" />
     <Project Path="tests/EuroBank.Extrato.Domain.Tests/EuroBank.Extrato.Domain.Tests.csproj" />
     <Project Path="tests/EuroBank.Extrato.Worker.Tests/EuroBank.Extrato.Worker.Tests.csproj" />
+    <Project Path="tests/EuroBank.Notificacoes.Worker.Tests/EuroBank.Notificacoes.Worker.Tests.csproj" />
     <Project Path="tests/EuroBank.Shared.Tests/EuroBank.Shared.Tests.csproj" />
     <Project Path="tests/EuroBank.Simuladores.Tests/EuroBank.Simuladores.Tests.csproj" />
     <Project Path="tests/EuroBank.Transferencias.Api.Tests/EuroBank.Transferencias.Api.Tests.csproj" />

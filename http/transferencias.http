@@ -16,6 +16,8 @@
 ### 94 confirma e devolve 10 s depois; os demais confirmam em 1 s.
 ### Em EUR a transferência é SEPA: só para países da área SEPA e, depois das 16:00 UTC ou no fim de semana,
 ### fica agendada para o próximo dia útil às 08:00 UTC (veja executarEmEfetivo na resposta).
+### Com emailNotificacao, o fim da saga (Concluida, Cancelada, Recusada, Divergente ou Devolvida) chega por e-mail
+### no Mailpit: http://localhost:8025.
 
 @api = http://localhost:5300
 @apiKey = transferencias-lab-key
@@ -42,7 +44,8 @@ Content-Type: application/json
   "bic": "DEUTDEFF",
   "nomeBeneficiario": "Bruno Externo",
   "valor": 100.00,
-  "descricao": "Aluguel"
+  "descricao": "Aluguel",
+  "emailNotificacao": "ana@exemplo.com"
 }
 
 ###
@@ -60,7 +63,8 @@ Content-Type: application/json
   "bic": "DEUTDEFF",
   "nomeBeneficiario": "Bruno Externo",
   "valor": 100.00,
-  "descricao": "Aluguel"
+  "descricao": "Aluguel",
+  "emailNotificacao": "ana@exemplo.com"
 }
 
 ### Estado, prazo do passo atual e histórico da saga
@@ -182,4 +186,34 @@ Content-Type: application/json
   "bic": "SVBKUS6S",
   "nomeBeneficiario": "Bruno Externo",
   "valor": 100.00
+}
+
+### Limite diário (5.000 EUR por conta e por dia, sem contar a tarifa): com 4.950 já transferidos hoje,
+### mais 100 termina Recusada (LimiteDiarioExcedido) antes de debitar
+POST {{api}}/transferencias-externas
+X-Api-Key: {{apiKey}}
+Idempotency-Key: roteiro-008
+Content-Type: application/json
+
+{
+  "contaOrigemId": "{{contaOrigemId}}",
+  "ibanDestino": "DE89370400440532013000",
+  "bic": "DEUTDEFF",
+  "nomeBeneficiario": "Bruno Externo",
+  "valor": 4950.00
+}
+
+###
+POST {{api}}/transferencias-externas
+X-Api-Key: {{apiKey}}
+Idempotency-Key: roteiro-009
+Content-Type: application/json
+
+{
+  "contaOrigemId": "{{contaOrigemId}}",
+  "ibanDestino": "DE89370400440532013000",
+  "bic": "DEUTDEFF",
+  "nomeBeneficiario": "Bruno Externo",
+  "valor": 100.00,
+  "emailNotificacao": "ana@exemplo.com"
 }

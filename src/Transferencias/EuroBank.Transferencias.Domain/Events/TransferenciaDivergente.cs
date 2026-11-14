@@ -8,4 +8,5 @@ public sealed record TransferenciaDivergente(
     TransferenciaId TransferenciaId,
     Guid ContaOrigemId,
     MotivoTransferencia Motivo,
+    ResumoTransferencia Resumo,
     DateTimeOffset OcorridoEm) : IEventoDeTransferencia;
