@@ -1,8 +1,8 @@
 using EuroBank.Antifraude.Application.Interfaces;
 using EuroBank.Antifraude.Domain.Repositories;
-using EuroBank.Antifraude.Infrastructure.Persistence.Queries;
 using EuroBank.Antifraude.Infrastructure.Outbox;
 using EuroBank.Antifraude.Infrastructure.Persistence;
+using EuroBank.Antifraude.Infrastructure.Persistence.Queries;
 using EuroBank.Antifraude.Infrastructure.Persistence.Repositories;
 using EuroBank.Antifraude.Infrastructure.Persistence.Seed;
 using EuroBank.Shared.Domain;
