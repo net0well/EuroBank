@@ -316,12 +316,13 @@ services:
       retries: 30
 
   # Caixa de e-mail do laboratório: SMTP na 1025 (sem TLS e sem autenticação) e UI em http://localhost:8025.
-  # A porta 1025 também fica no host para o worker de notificações rodar pela IDE.
+  # A porta SMTP também fica no host para o worker de notificações rodar pela IDE. As duas portas do host mudam
+  # por MAILPIT_PORTA_UI e MAILPIT_PORTA_SMTP (outro projeto com Mailpit costuma ocupar 8025 e 1025).
   mailpit:
     image: axllent/mailpit:v1.33.1
     ports:
-      - "8025:8025"
-      - "1025:1025"
+      - "${MAILPIT_PORTA_UI:-8025}:8025"
+      - "${MAILPIT_PORTA_SMTP:-1025}:1025"
     environment:
       # O padrão guarda só 500 mensagens; a carga do k6 pode passar disso.
       MP_MAX_MESSAGES: "5000"
@@ -383,9 +384,12 @@ services:
       timeout: 5s
       retries: 30
 
-  # Gerador de carga sob demanda (não sobe no "up"):
+  # Gerador de carga sob demanda (não sobe no "up"). Operações de Contas e sagas misturadas; no fim confere que
+  # todas as sagas terminaram e que nenhum dinheiro sumiu. Precisa do corte SEPA desligado na API de Transferencias:
+  #   SEPA_HORARIO_DE_CORTE=false docker compose up -d transferencias-api
   #   docker compose --profile carga run --rm k6
   #   K6_VUS=20 K6_DURACAO=2m docker compose --profile carga run --rm k6
+  #   K6_FINAIS_LENTOS=true docker compose --profile carga run --rm k6   (inclui os finais 98 e 95)
   k6:
     image: grafana/k6:2.3.0
     profiles: ["carga"]
@@ -394,14 +398,21 @@ services:
         condition: service_healthy
       extrato-worker:
         condition: service_healthy
+      transferencias-api:
+        condition: service_healthy
+      transferencias-worker:
+        condition: service_healthy
     environment:
       API_CONTAS: http://contas-api:8080
       API_EXTRATO: http://extrato-worker:8080
+      API_TRANSFERENCIAS: http://transferencias-api:8080
       API_KEY_CONTAS: ${CONTAS_API_KEY}
       API_KEY_EXTRATO: ${EXTRATO_API_KEY}
+      API_KEY_TRANSFERENCIAS: ${TRANSFERENCIAS_API_KEY}
       VUS: ${K6_VUS:-10}
       DURACAO: ${K6_DURACAO:-1m}
       CONTAS: ${K6_CONTAS:-10}
+      FINAIS_LENTOS: ${K6_FINAIS_LENTOS:-false}
     volumes:
       - ./infra/k6:/scripts:ro
     command: ["run", "/scripts/carga.js"]
