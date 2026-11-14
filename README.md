@@ -1,8 +1,8 @@
 # EuroBank
 
 Laboratório de estudo de **CDC (Change Data Capture)** com **Debezium**, **Kafka** e **.NET 10**, organizado em
-DDD com Clean Architecture, e de **saga orquestrada** sobre essa mesma base. É um banco fictício com três
-contextos que conversam apenas por mensagens, mais um banco externo simulado:
+DDD com Clean Architecture, e de **saga orquestrada** sobre essa mesma base. É um banco fictício com quatro
+contextos que conversam apenas por mensagens, mais dois sistemas "de fora" simulados:
 
 - **Contas**: abre contas em EUR, USD, GBP ou BRL, deposita, saca, transfere, bloqueia, desbloqueia e encerra.
   Grava no PostgreSQL.
@@ -14,6 +14,8 @@ contextos que conversam apenas por mensagens, mais um banco externo simulado:
 - **Banco externo simulado**: um sistema "de fora" que liquida, recusa, atrasa, some, confirma tarde demais ou
   devolve, conforme o final do IBAN.
 - **Câmbio simulado**: um provedor de cotações "de fora", com spread e cotação travada por 10 minutos.
+- **Notificacoes**: quando uma transferência termina, manda um e-mail em pt-BR para quem pediu (no Mailpit, uma
+  caixa de e-mail de laboratório).
 
 Nenhuma API do EuroBank fala com o Kafka. Cada uma grava a alteração e a mensagem na tabela `outbox` do seu
 banco, na mesma transação, e o Debezium lê essas mudanças no log de transações (WAL) do PostgreSQL e as publica
@@ -56,11 +58,12 @@ dois sistemas precisam ficar consistentes sem compartilhar uma transação:
 | Worker de Transferências | Respostas de Contas, do câmbio e do banco externo (inbox durável), a projeção local das contas (eventos `ContaAberta` e `ContaEncerrada`) e uma varredura que começa as agendadas e trata os prazos com `FOR UPDATE SKIP LOCKED` |
 | Worker de Contas | Executa os comandos da saga (debitar, creditar, estornar, liberar a trava, debitar a reconciliação, creditar a devolução) com idempotência pelo id da transferência e responde pela outbox; a trava semântica impede encerrar a conta no meio da saga |
 | Simuladores | Banco externo e câmbio com Confluent.Kafka e Npgsql puros, sem Wolverine e sem EF: inbox escrita à mão e respostas agendadas no banco, compartilhadas pelos dois |
+| Notificações | Worker com Wolverine consumindo `eurobank.transferencias.eventos`: e-mail em pt-BR (HTML e texto, pelo MailKit) para o Mailpit, inbox durável mais a tabela `notificacoes` com o id do evento como chave (reprocessar o tópico não repete e-mail), novas tentativas agendadas quando o SMTP falha e dead letter depois delas |
 | Segurança | Uma API key por API (`X-Api-Key`), com `/health` e Swagger abertos |
-| Infraestrutura | Docker Compose com PostgreSQL em replicação lógica, Kafka em modo KRaft, Kafka Connect, Kafbat UI e Jaeger, com os databases, os tópicos e os conectores criados automaticamente |
+| Infraestrutura | Docker Compose com PostgreSQL em replicação lógica, Kafka em modo KRaft, Kafka Connect, Kafbat UI, Jaeger e Mailpit, com os databases, os tópicos e os conectores criados automaticamente |
 | Observabilidade | Serilog estruturado e OpenTelemetry, com o `traceparent` levado pela outbox até o consumidor e de volta nas respostas da saga |
-| Testes | 445 testes: unitários, de integração com Testcontainers e ponta a ponta com Debezium real, incluindo cada caminho das sagas |
-| Carga | Script k6 que gera operações em paralelo e confere se o Extrato convergiu para Contas |
+| Testes | 496 testes: unitários, de integração com Testcontainers e ponta a ponta com Debezium real, incluindo cada caminho das sagas e os e-mails no Mailpit |
+| Carga | Script k6 que mistura operações de Contas com sagas externas e de câmbio e, no fim, confere que todas as sagas terminaram, que o Extrato convergiu e que nenhum dinheiro sumiu, moeda a moeda |
 
 ## Como funciona
 
@@ -112,6 +115,39 @@ dados a outros sistemas (data warehouse, índice de busca, cache). Aqui os dois 
 6. O banco ainda pode falar depois do fim da saga: confirmar uma transferência já estornada (a saga fica
    `Divergente`) ou devolver uma já concluída (a saga pede o crédito a Contas e termina `Devolvida`). Veja
    [Divergência, reconciliação e devolução](#divergência-reconciliação-e-devolução).
+7. O evento final da saga vai para `eurobank.transferencias.eventos`, e o worker de notificações manda o e-mail.
+
+A conversa entre os participantes, no caminho feliz e na recusa pelo banco (cada mensagem sai de uma outbox, passa
+pelo Debezium e pelo Kafka; só o banco externo publica direto, por ser um sistema de fora):
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Cliente
+    participant API as API de Transferências
+    participant TW as Worker de Transferências
+    participant CW as Worker de Contas
+    participant Banco as Banco externo
+    participant NW as Worker de Notificações
+    Cliente->>API: POST /transferencias-externas (Idempotency-Key)
+    API-->>Cliente: 202 AguardandoDebito
+    API->>CW: DebitarTransferenciaExterna (eurobank.contas.comandos)
+    CW->>TW: DebitoRealizado (eurobank.contas.respostas)
+    TW->>Banco: LiquidarTransferencia (eurobank.banco-externo.comandos)
+    alt o banco confirma
+        Banco->>TW: LiquidacaoConfirmada (eurobank.banco-externo.respostas)
+        TW->>CW: LiberarTravaTransferencia
+        TW->>NW: TransferenciaConcluida (eurobank.transferencias.eventos)
+    else o banco recusa
+        Banco->>TW: LiquidacaoRecusada
+        TW->>CW: EstornarTransferencia
+        CW->>TW: EstornoRealizado
+        TW->>NW: TransferenciaCancelada
+    end
+    NW-->>Cliente: e-mail em pt-BR (Mailpit)
+```
+
+Os estados da saga, com todos os caminhos:
 
 ```mermaid
 stateDiagram-v2
@@ -150,6 +186,7 @@ stateDiagram-v2
     Cancelada --> [*]
     Recusada --> [*]
     Devolvida --> [*]
+    Divergente --> [*]
 ```
 
 O banco externo simulado decide pelo final do IBAN de destino, para cada caminho poder ser reproduzido:
@@ -230,6 +267,25 @@ encerrada) a partir dos eventos `ContaAberta` e `ContaEncerrada` de `eurobank.co
 recém-aberta pode levar um instante para chegar à projeção; até lá, o pedido recebe 422
 (`conta_origem_desconhecida`) e pode ser repetido com a mesma `Idempotency-Key`.
 
+### Notificações por e-mail
+
+Os eventos finais das sagas (`TransferenciaConcluida`, `TransferenciaCancelada`, `TransferenciaRecusada`,
+`TransferenciaDivergente` e `TransferenciaDevolvida`) saem pela outbox de Transferencias em
+`eurobank.transferencias.eventos` com um `resumo` da transferência: titular, beneficiário, IBAN, valores, tarifa,
+cotação, descrição e o `emailNotificacao` do pedido. O worker de notificações não consulta ninguém: tudo o que o
+e-mail precisa vem no evento (event-carried state transfer).
+
+- Sem `emailNotificacao`, nenhum e-mail. Com um endereço inválido, um alerta no log e nada enviado.
+- Um e-mail por evento, em pt-BR, com versão HTML e versão texto. Uma transferência pode gerar mais de um:
+  `Divergente` e depois `Concluida` (`Reconciliada`), ou `Concluida` e depois `Devolvida`.
+- Duplicatas: a inbox durável descarta a mensagem repetida por 7 dias; depois disso, a tabela `notificacoes`
+  (chave: id do evento) encontra a notificação `Enviada` e não manda de novo.
+- SMTP fora do ar: a notificação fica `Pendente`, com o número de tentativas e o último erro, e a mensagem volta
+  em 5 s, 30 s e 2 min (nova tentativa agendada, que não segura as outras mensagens da partição). Esgotadas as
+  tentativas, vai para o dead letter. A saga não é afetada: ela já terminou quando o evento foi publicado.
+- O SMTP não participa da transação: se o processo cair entre o servidor aceitar o e-mail e a notificação virar
+  `Enviada`, sai uma segunda cópia. O `Message-ID` é o id do evento, então as duas cópias são identificáveis.
+
 ## O que o laboratório revelou
 
 Problemas reais encontrados durante a construção, cada um com um teste que o reproduz:
@@ -283,6 +339,22 @@ Problemas reais encontrados durante a construção, cada um com um teste que o r
 16. **Compensação pedida não se desfaz.** Se a confirmação do banco chega com o estorno já a caminho de Contas,
     não há como retirar o comando do Kafka. A saga anota a confirmação, deixa o estorno terminar e só então
     marca a transferência como `Divergente`, para a reconciliação corrigir.
+17. **Um e-mail não se desfaz.** O SMTP não participa da transação do banco: a notificação é gravada `Pendente`
+    antes do envio e vira `Enviada` depois. Se o processo cair entre os dois, a próxima tentativa manda outra
+    cópia. A entrega continua "pelo menos uma vez"; o `Message-ID` com o id do evento deixa a cópia
+    identificável.
+18. **Retry imediato não serve para um servidor fora do ar.** Com a política comum do laboratório (esperas de 1 s
+    e 3 s), um Mailpit parado por alguns segundos já mandaria a mensagem para o dead letter. As notificações
+    agendam a nova tentativa (5 s, 30 s e 2 min): a mensagem sai da fila e volta depois, sem segurar as outras.
+19. **Pelo `InvokeAsync`, a política de erros age diferente.** No teste que chamava o manipulador direto, o
+    Wolverine fez a nova tentativa na hora, em vez de agendá-la, e a falha nunca chegou ao teste. O retry
+    agendado só aparece com a mensagem numa fila (`PublishAsync` nos testes, o Kafka no laboratório).
+20. **Um consumidor novo lê eventos antigos.** Os eventos finais só ganharam o `resumo` nesta fase; um worker que
+    lê o tópico desde o início encontra eventos sem ele. O DTO aceita o resumo nulo e o evento é ignorado
+    (tolerant reader), em vez de ir para o dead letter.
+21. **Estado final não quer dizer que o dinheiro parou.** Uma `Concluida` do final `94` ainda vai ser devolvida,
+    e uma `Cancelada` do final `95` ainda vai ficar `Divergente`. O balanço da carga só fecha quando espera esses
+    passos tardios: para o k6, a 94 só termina `Devolvida` e a 95 só termina `Divergente`.
 
 ## Arquitetura
 
@@ -325,6 +397,9 @@ flowchart LR
     cr --> tworker
     br --> tworker
     ce -->|ContaAberta e ContaEncerrada| tworker
+    te --> nworker[Worker de Notificações]
+    nworker --> pgn[(eurobank_notificacoes<br/>notificacoes + inbox)]
+    nworker -->|SMTP| mailpit[Mailpit<br/>:8025]
 ```
 
 ## Tecnologias
@@ -338,6 +413,8 @@ flowchart LR
 | Wolverine | 6.60 |
 | Entity Framework Core e Npgsql | 10 |
 | Confluent.Kafka (banco externo simulado) | 2.16 |
+| MailKit (notificações) | 4.18 |
+| Mailpit | 1.33 |
 | Kafbat UI | 1.5.0 |
 | Jaeger | 2.22 |
 | k6 | 2.3 |
@@ -345,7 +422,7 @@ flowchart LR
 
 ## Pré-requisitos
 
-- Docker com Docker Compose (o compose completo usa cerca de 7 GB de RAM)
+- Docker com Docker Compose (o compose completo usa cerca de 8 GB de RAM)
 - .NET SDK 10.0.400 ou mais recente (para rodar testes ou depurar pela IDE)
 
 ## Como subir
@@ -356,7 +433,8 @@ docker compose up -d --build
 
 A ordem de subida é controlada pelo compose: Postgres e Kafka, criação dos databases e dos tópicos com 3
 partições, Kafka Connect, registro dos conectores, APIs de Contas (aplica as migrations e cria as contas de
-exemplo Ana, Bruno e Carla) e de Transferências (aplica as migrations), e depois os workers e os simuladores.
+exemplo Ana, Bruno e Carla) e de Transferências (aplica as migrations), e depois os workers (o de notificações
+aplica as próprias migrations), os simuladores e o Mailpit.
 
 | Serviço | URL |
 |---|---|
@@ -366,10 +444,12 @@ exemplo Ana, Bruno e Carla) e de Transferências (aplica as migrations), e depoi
 | Kafbat UI (tópicos, mensagens, consumer groups, conectores) | http://localhost:8080 |
 | Kafka Connect (REST) | http://localhost:8083/connectors |
 | Jaeger (traces) | http://localhost:16686 |
-| PostgreSQL | `localhost:5434`, usuário e senha `eurobank` (porta configurável em `.env`) |
+| Mailpit (e-mails das notificações) | http://localhost:8025 (SMTP em `localhost:1025`; portas configuráveis em `.env`) |
+| PostgreSQL | `localhost:5434`, usuário e senha `eurobank` (porta configurável em `.env`: `POSTGRES_PORTA_HOST`) |
 | Kafka (para apps no host) | `localhost:9092` |
 
-As credenciais existem só para o ambiente local do laboratório.
+As credenciais existem só para o ambiente local do laboratório. Se outro projeto já ocupa 8025 ou 1025 (um
+segundo Mailpit, por exemplo), defina `MAILPIT_PORTA_UI` e `MAILPIT_PORTA_SMTP` no `.env`.
 
 As rotas de negócio exigem o header `X-Api-Key`, com uma chave por API, definidas no `.env`
 (`CONTAS_API_KEY`, `EXTRATO_API_KEY`, `TRANSFERENCIAS_API_KEY`). Sem a chave, a resposta é 401. O `/health` e o
@@ -392,6 +472,7 @@ src/
   Contas/   Domain | Application | Infrastructure | Api | Worker (comandos das sagas)
   Extrato/  Domain | Application | Infrastructure | Worker
   Transferencias/  Domain | Application | Infrastructure | Api | Worker (orquestrador das sagas)
+  Notificacoes/  Worker (e-mails dos eventos finais das sagas; um projeto só, com as pastas técnicas)
   Simuladores/  Comum | BancoExterno | Cambio (sistemas de fora: Confluent.Kafka e Npgsql puros, sem Wolverine e sem EF)
 tests/      testes unitários, de integração (Testcontainers) e ponta a ponta (Debezium de verdade)
 infra/      criação dos databases e dos tópicos, conectores do Debezium, script do k6
@@ -427,22 +508,28 @@ Pontos do código que valem a leitura:
   escritas à mão, para comparar com o que o Wolverine faz nos outros serviços.
 - `src/Simuladores/EuroBank.Simuladores.Cambio/Regras/TabelaCambio.cs`: taxas cruzadas pelo euro, spread e
   arredondamento meio para cima.
+- `src/Notificacoes/EuroBank.Notificacoes.Worker/Services/ServicoNotificacoes.cs` e
+  `src/Notificacoes/EuroBank.Notificacoes.Worker/Messaging/ConfiguracaoMensageria.cs`: a deduplicação pelo id do
+  evento e as novas tentativas agendadas quando o SMTP falha.
+- `infra/k6/carga.js`: o balanço por moeda que confere, no fim da carga, que nenhum dinheiro sumiu.
 
 ## Depurar pela IDE
 
 A infra continua no Docker; só as aplicações rodam no host.
 
 ```bash
-docker compose stop contas-api extrato-worker transferencias-api transferencias-worker
+docker compose stop contas-api extrato-worker transferencias-api transferencias-worker notificacoes-worker
 dotnet run --project src/Contas/EuroBank.Contas.Api
 dotnet run --project src/Extrato/EuroBank.Extrato.Worker
 dotnet run --project src/Transferencias/EuroBank.Transferencias.Api
 dotnet run --project src/Transferencias/EuroBank.Transferencias.Worker
+dotnet run --project src/Notificacoes/EuroBank.Notificacoes.Worker
 ```
 
 Os `appsettings.json` já apontam para `localhost:5434` (Postgres) e `localhost:9092` (Kafka), e as portas
-continuam 5100, 5200 e 5300 (os workers de Contas e de Transferências ficam em 5101 e 5301, o banco externo
-simulado em 5401 e o câmbio simulado em 5402).
+continuam 5100, 5200 e 5300 (os workers de Contas e de Transferências ficam em 5101 e 5301, o de notificações
+em 5501, o banco externo simulado em 5401 e o câmbio simulado em 5402). O worker de notificações manda os e-mails
+para `localhost:1025`, o SMTP do Mailpit.
 
 ## Testes
 
@@ -460,7 +547,11 @@ câmbio: a externa em outra moeda com o extrato mostrando a cotação, o par ind
 EuroBank (concluído e com o destino encerrado) e a transferência síncrona entre moedas recusada. Para a fase de
 SEPA e devolução: a confirmação tardia que leva a `Divergente`, a reconciliação que deixa a conta negativa (e a
 transferência seguinte recusada por `SaldoNegativo`) e a devolução que credita o valor sem a tarifa; o horário
-de corte é testado com o relógio controlado.
+de corte é testado com o relógio controlado. Para as notificações: o e-mail de uma transferência concluída e de
+uma recusada no Mailpit, nenhum e-mail sem `emailNotificacao`, e o tópico relido por outro consumer group, com a
+inbox apagada, sem nenhum e-mail repetido. Os testes do worker cobrem os modelos em pt-BR (inclusive o escape do
+HTML), a deduplicação, as novas tentativas agendadas até o dead letter e o envio pelo MailKit para um Mailpit de
+verdade.
 
 ## Roteiro de exercícios
 
@@ -528,13 +619,32 @@ sempre caem na mesma partição e continuam em ordem. Para voltar a uma instânc
 ### 6. Carga com k6
 
 ```bash
+SEPA_HORARIO_DE_CORTE=false docker compose up -d transferencias-api
 docker compose --profile carga run --rm k6
 docker compose --profile carga run --rm -e VUS=20 -e DURACAO=2m k6
+docker compose --profile carga run --rm -e FINAIS_LENTOS=true k6
 ```
 
-O script abre contas, dispara depósitos, saques e transferências em paralelo e, no fim, confere conta a conta se
-o Extrato convergiu para o saldo e a versão de Contas. Numa máquina de desenvolvimento, 10 usuários virtuais
-fazem cerca de 160 operações por segundo sem erros.
+O script abre contas nas quatro moedas e mistura depósitos, saques, transferências internas, externas (finais
+`00`, `99`, `97`, `96` e `94`; com `FINAIS_LENTOS=true`, também `98` e `95`, e a espera passa de 3 para 7
+minutos), externas em outra moeda e câmbio entre contas, um quinto delas com `emailNotificacao` (os e-mails
+aparecem no Mailpit). No fim:
+
+1. espera todas as sagas chegarem ao estado final (o final `94` só termina quando é devolvido; o `95`, quando
+   fica `Divergente`);
+2. confere conta a conta se o Extrato convergiu para o saldo e a versão de Contas;
+3. fecha o balanço de cada moeda: a soma dos saldos tem de ser igual aos depósitos menos os saques, menos o que as
+   sagas tiraram de vez das contas (valor e tarifa das concluídas, só a tarifa das devolvidas), mais o que o câmbio
+   creditou.
+
+O corte SEPA precisa estar desligado: com ele, as externas em euro feitas depois das 16:00 UTC ou no fim de
+semana ficariam agendadas para o próximo dia útil. O k6 confere isso antes de gerar carga, com uma transferência
+de 1 EUR, e aborta com a instrução se ela ficar `Agendada`.
+
+Numa máquina de desenvolvimento, 10 usuários virtuais durante 1 minuto fizeram cerca de 140 operações por segundo
+e iniciaram 1.926 sagas: 1.504 concluídas, 134 canceladas, 130 devolvidas e 158 recusadas. Todas chegaram ao
+estado final, as contas convergiram no Extrato, as quatro moedas fecharam ao centavo, e cada um dos 408 e-mails da
+carga chegou uma vez ao Mailpit.
 
 ### 7. Trace ponta a ponta
 
@@ -624,6 +734,62 @@ com `executarEmEfetivo` no próximo dia útil às 08:00 UTC. Para desligar o cor
 SEPA_HORARIO_DE_CORTE=false docker compose up -d transferencias-api
 ```
 
+### 15. Cancelamento e agendamento
+
+Pelo `http/transferencias.http`, peça uma externa com `executarEm` no futuro: ela fica `Agendada`, nada é
+debitado, e a varredura do worker só começa a saga quando `executarEmEfetivo` chega (saldo e limite são
+conferidos nessa hora). Cancele: termina `Cancelada` (`CanceladaPeloCliente`) sem passar por Contas.
+
+Para ver o cancelamento com estorno, pare o worker de Contas, peça uma transferência e cancele logo em seguida: a
+saga só anota o pedido, porque o débito já está a caminho. Religue o worker em menos de 30 segundos (antes de o
+prazo do débito vencer):
+
+```bash
+docker compose stop contas-worker
+# peça a transferência e o cancelamento pelo transferencias.http
+docker compose start contas-worker
+```
+
+O `DebitoRealizado` chega, a saga pede o estorno e termina `Cancelada`, com o saldo de volta e o débito e o
+estorno no extrato. Depois que a liquidação foi pedida, o cancelamento responde 409: o dinheiro pode já estar no
+outro banco.
+
+### 16. Limite diário
+
+Use uma conta com pelo menos 5.100 EUR (deposite antes pelo `http/contas.http`) e rode os dois últimos pedidos do
+`http/transferencias.http`: 4.950 EUR e depois 100 EUR. A segunda termina `Recusada` (`LimiteDiarioExcedido`) sem
+chegar a Contas, e a tarifa não conta para o limite. O limite é por conta, na moeda dela (tabela em
+[Transferências com câmbio](#transferências-com-câmbio)), e por dia UTC da execução; transferências canceladas,
+recusadas, divergentes ou devolvidas não ocupam o limite.
+
+### 17. Notificações por e-mail
+
+Peça uma transferência com `emailNotificacao` (o primeiro pedido do `http/transferencias.http` já tem) e abra o
+Mailpit em http://localhost:8025: o e-mail chega quando a saga termina, com as versões HTML e texto e o
+`Message-ID` igual ao id do evento. Para ver o SMTP fora do ar:
+
+```bash
+docker compose stop mailpit
+# peça uma transferência com emailNotificacao e espere ela terminar
+docker compose exec postgres psql -U eurobank -d eurobank_notificacoes -c "SELECT tipo_evento, status, tentativas, ultimo_erro FROM notificacoes ORDER BY criada_em DESC LIMIT 5;"
+docker compose start mailpit
+```
+
+A notificação fica `Pendente`, com as tentativas e o erro, e a saga não espera por ela. Religando o Mailpit em até
+2 minutos e meio, a próxima tentativa agendada entrega o e-mail; passado esse tempo, a mensagem vai para o dead
+letter (`wolverine.wolverine_dead_letters`, no mesmo banco). Para reprocessar o tópico:
+
+```bash
+docker compose stop notificacoes-worker
+docker compose exec kafka /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server kafka:29092 \
+  --group eurobank-notificacoes --topic eurobank.transferencias.eventos --reset-offsets --to-earliest --execute
+docker compose exec postgres psql -U eurobank -d eurobank_notificacoes -c "DELETE FROM wolverine.wolverine_incoming_envelopes;"
+docker compose start notificacoes-worker
+```
+
+Nenhum e-mail se repete, mesmo com a inbox apagada: o log do worker mostra `já notificado ... ignorado`, porque a
+tabela `notificacoes` guarda o id de cada evento já notificado.
+
 ## Laboratório e produção
 
 Atalhos que este laboratório toma de propósito:
@@ -644,16 +810,17 @@ Atalhos que este laboratório toma de propósito:
 | Projeção local de contas montada só pelos eventos que o worker viu | Tópico com retenção longa ou compactado, ou um snapshot inicial da projeção antes de consumir |
 | Horário de corte fixo (16:00 UTC, sem feriados) e lista fixa de países SEPA | Calendário TARGET2 com feriados, cortes por esquema (SCT, SCT Inst) e dados de referência mantidos à parte |
 | Reconciliação pedida pela API, sem aprovação e sem limite para o negativo | Fila de exceções operacionais com aprovação, limite de crédito e cobrança do saldo negativo |
+| Mailpit aceita qualquer e-mail, sem TLS e sem autenticação | Provedor de e-mail com TLS, SPF, DKIM e DMARC, tratamento de bounces e preferências de comunicação do cliente |
+| E-mail do cliente dentro do evento no Kafka | Dados pessoais fora dos eventos (o consumidor busca por id num serviço com controle de acesso), ou tópico com retenção curta e criptografia |
 
 ## Próximos passos
 
 Prontas: a **saga orquestrada** de transferência externa (prazos, reenvios, consulta antes de estornar,
 cancelamento, agendamento, tarifa, limite diário e `Idempotency-Key`), o **câmbio** (contas em quatro moedas,
 cotação travada com spread, externa em outra moeda e câmbio entre contas EuroBank) e as regras **SEPA e SWIFT**
-com horário de corte, a **devolução** pelo banco externo e o estado **`Divergente`** com reconciliação e saldo
-negativo controlado. A próxima:
+com horário de corte, a **devolução** pelo banco externo, o estado **`Divergente`** com reconciliação e saldo
+negativo controlado, as **notificações** por e-mail e o **cenário de carga** que confere o dinheiro de todas as
+sagas.
 
-1. Notificações por e-mail (Mailpit), cenário de carga das sagas no k6 e diagramas de sequência.
-
-Depois disso, um contexto de **antifraude** com regras e machine learning (ML.NET), comunicação gRPC entre os
+A próxima: um contexto de **antifraude** com regras e machine learning (ML.NET), comunicação gRPC entre os
 serviços e Redis.
