@@ -4,4 +4,8 @@
     <ProjectReference Include="..\EuroBank.Simuladores.Comum\EuroBank.Simuladores.Comum.csproj" />
     <ProjectReference Include="..\..\Shared\EuroBank.Shared.Web\EuroBank.Shared.Web.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="StackExchange.Redis" />
+  </ItemGroup>
 </Project>

@@ -466,7 +466,8 @@ services:
       retries: 30
 
   # Provedor de cotações de mentira: base EUR (1,08 USD, 0,86 GBP, 5,90 BRL), spread de 1%, cotação travada por
-  # 10 minutos e o par BRL/GBP indisponível. Database próprio (eurobank_cambio).
+  # 10 minutos e o par BRL/GBP indisponível. Database próprio (eurobank_cambio); a cotação válida de cada
+  # transferência fica no Redis até vencer, e um reenvio da saga recebe a mesma.
   cambio-simulador:
     build:
       context: .
@@ -476,10 +477,13 @@ services:
         condition: service_completed_successfully
       kafka-init:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_HTTP_PORTS: "8080"
       ConnectionStrings__Cambio: "Host=postgres;Port=5432;Database=eurobank_cambio;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      ConnectionStrings__Redis: "redis:6379"
       Kafka__BootstrapServers: kafka:29092
       Cambio__LatenciaMs: ${CAMBIO_LATENCIA_MS:-500}
       Cambio__ValidadeMinutos: ${CAMBIO_VALIDADE_MINUTOS:-10}

@@ -281,6 +281,7 @@ public sealed class LaboratorioFixture : IAsyncLifetime
         Subir(new WebApplicationFactory<MarcadorCambio>(), new()
         {
             ["ConnectionStrings:Cambio"] = ConnectionStringCambio,
+            ["ConnectionStrings:Redis"] = _redis.GetConnectionString(),
             ["Kafka:BootstrapServers"] = BootstrapKafka,
             ["Kafka:GrupoConsumidor"] = $"eurobank-cambio-e2e-{Guid.NewGuid():N}",
             ["Cambio:LatenciaMs"] = "200",
