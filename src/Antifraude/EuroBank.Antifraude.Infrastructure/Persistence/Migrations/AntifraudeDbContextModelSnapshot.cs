@@ -290,6 +290,61 @@ namespace EuroBank.Antifraude.Infrastructure.Persistence.Migrations
                     b.ToTable("ibans_bloqueados", (string)null);
                 });
 
+            modelBuilder.Entity("EuroBank.Antifraude.Domain.Entities.MedicaoDrift", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("Amostra")
+                        .HasColumnType("integer")
+                        .HasColumnName("amostra");
+
+                    b.Property<int>("AmostraScore")
+                        .HasColumnType("integer")
+                        .HasColumnName("amostra_score");
+
+                    b.Property<DateTimeOffset>("InicioJanela")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("inicio_janela");
+
+                    b.Property<DateTimeOffset>("MedidaEm")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("medida_em");
+
+                    b.Property<string>("Nivel")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("nivel");
+
+                    b.Property<double?>("PsiMaximo")
+                        .HasColumnType("double precision")
+                        .HasColumnName("psi_maximo");
+
+                    b.Property<string>("Situacao")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("situacao");
+
+                    b.Property<int>("VersaoModelo")
+                        .HasColumnType("integer")
+                        .HasColumnName("versao_modelo");
+
+                    b.Property<string>("_psis")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("psis");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MedidaEm");
+
+                    b.HasIndex("VersaoModelo", "MedidaEm");
+
+                    b.ToTable("medicoes_drift", (string)null);
+                });
+
             modelBuilder.Entity("EuroBank.Antifraude.Domain.Entities.PaisRisco", b =>
                 {
                     b.Property<string>("Codigo")

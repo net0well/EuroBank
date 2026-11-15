@@ -1,5 +1,8 @@
 using System.Net;
 using EuroBank.Antifraude.Api.Tests.Fixtures;
+using EuroBank.Antifraude.Domain.Entities;
+using EuroBank.Antifraude.Domain.ValueObjects;
+using EuroBank.Antifraude.Features.ValueObjects;
 using EuroBank.Antifraude.Grpc;
 using EuroBank.Antifraude.Infrastructure.MachineLearning;
 using Microsoft.Extensions.DependencyInjection;
@@ -199,6 +202,38 @@ public sealed class ModelosEndpointsTestes(AntifraudeFixture antifraude) : IAsyn
         {
             await OkAsync(await _analista.PutAsync("/configuracao-decisao", new { limiarRevisao = 30, limiarRecusa = 70, pesoModelo = 50 }));
         }
+    }
+
+    [Fact]
+    public async Task VisaoGeral_DriftDaVersaoAtiva_DaUltimaMedicao()
+    {
+        (await _analista.GetAsync("/visao-geral")).GetProperty("drift").GetProperty("situacao").GetString().ShouldBe("SemModeloAtivo");
+        var versao = await _modelos.RegistrarAsync();
+        await AtivarAsync(versao);
+
+        var aguardando = (await _analista.GetAsync("/visao-geral")).GetProperty("drift");
+        aguardando.GetProperty("situacao").GetString().ShouldBe("AguardandoMedicao");
+        aguardando.GetProperty("versaoModelo").GetInt32().ShouldBe(versao);
+
+        // Uma medição como o worker gravaria: 150 análises iguais, bem diferentes do treino.
+        var agora = DateTimeOffset.UtcNow;
+        var features = Enumerable.Repeat(new VetorFeatures(9, 5, 4, 1, 2, 3, 0.99f, 9, 1, 0, 3), 150).ToList();
+        await using (var contexto = antifraude.CriarContexto())
+        {
+            contexto.MedicoesDrift.Add(MedicaoDrift.Medir(
+                versao, ModelosDeTeste.Resultado.Distribuicao, features, [], LimitesDrift.Padrao, agora.AddHours(-24), agora));
+            await contexto.SaveChangesAsync(Ct);
+        }
+
+        var drift = (await _analista.GetAsync("/visao-geral")).GetProperty("drift");
+        drift.GetProperty("situacao").GetString().ShouldBe("Medido");
+        var medicao = drift.GetProperty("ultimaMedicao");
+        medicao.GetProperty("versaoModelo").GetInt32().ShouldBe(versao);
+        medicao.GetProperty("amostra").GetInt32().ShouldBe(150);
+        medicao.GetProperty("nivel").GetString().ShouldBe("Significativo");
+        var psis = medicao.GetProperty("psis").EnumerateArray().Select(psi => psi.GetProperty("psi").GetDouble()).ToList();
+        psis.Count.ShouldBe(11, "sem análises pontuadas, o score fica de fora");
+        psis.ShouldBeInOrder(SortDirection.Descending);
     }
 
     public void Dispose() => _analista.Dispose();

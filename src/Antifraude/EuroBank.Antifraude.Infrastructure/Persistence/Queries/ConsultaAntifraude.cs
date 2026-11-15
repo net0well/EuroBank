@@ -125,7 +125,28 @@ public sealed class ConsultaAntifraude(AntifraudeDbContext contexto) : IConsulta
             decididos.Count,
             expirados,
             decididos.Count == 0 ? null : Math.Round(decididos.Average(caso => (caso.DecididoEm!.Value - caso.AbertoEm).TotalMinutes), 1),
-            regras);
+            regras,
+            await DriftAsync(cancellationToken));
+    }
+
+    private async Task<DriftDto> DriftAsync(CancellationToken cancellationToken)
+    {
+        var ativa = await contexto.VersoesModelo.AsNoTracking()
+            .Where(versao => versao.Status == StatusModelo.Ativa)
+            .Select(versao => (int?)versao.Versao)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (ativa is null)
+        {
+            return new DriftDto(DriftDto.SemModeloAtivo, null, null);
+        }
+
+        var ultima = await contexto.MedicoesDrift.AsNoTracking()
+            .Where(medicao => medicao.VersaoModelo == ativa)
+            .OrderByDescending(medicao => medicao.MedidaEm)
+            .FirstOrDefaultAsync(cancellationToken);
+        return ultima is null
+            ? new DriftDto(DriftDto.AguardandoMedicao, ativa, null)
+            : new DriftDto(ultima.Situacao.ToString(), ativa, ultima.ParaDto());
     }
 
     /// <summary>

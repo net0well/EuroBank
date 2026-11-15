@@ -35,7 +35,9 @@ public static class DependencyInjection
         services.AddScoped<IRepositorioListas, RepositorioListas>();
         services.AddScoped<IRepositorioFraudes, RepositorioFraudes>();
         services.AddScoped<IRepositorioModelos, RepositorioModelos>();
+        services.AddScoped<IRepositorioDrift, RepositorioDrift>();
         services.AddScoped<IConsultaAntifraude, ConsultaAntifraude>();
+        services.AddScoped<IConsultaDrift, ConsultaDrift>();
         services.AddScoped<SemeadorAntifraude>();
         services.AddScoped<IFilaOutbox, FilaOutbox>();
         services.AddScoped<IUnidadeDeTrabalho, UnidadeDeTrabalhoComOutbox<AntifraudeDbContext>>();

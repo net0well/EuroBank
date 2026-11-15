@@ -45,6 +45,8 @@ public sealed class AntifraudeWorkerFixture : IAsyncLifetime
             builder.UseSetting("OTEL_SDK_DISABLED", "true");
             // A varredura automática não roda durante os testes: eles chamam a expiração direto.
             builder.UseSetting("Expiracao:Intervalo", "01:00:00");
+            // Nem a medição de drift: os testes chamam um ciclo com o momento que quiserem.
+            builder.UseSetting("Drift:Intervalo", "01:00:00");
             builder.ConfigureServices(services => services.DisableAllExternalWolverineTransports());
         });
         using var _ = _worker.CreateClient();
