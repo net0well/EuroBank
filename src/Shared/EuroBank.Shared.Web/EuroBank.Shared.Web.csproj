@@ -15,5 +15,6 @@
     <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
     <PackageReference Include="Npgsql.OpenTelemetry" />
     <PackageReference Include="Swashbuckle.AspNetCore" />
+    <PackageReference Include="StackExchange.Redis" />
   </ItemGroup>
 </Project>

@@ -44,13 +44,15 @@ public static class DependencyInjection
         services.AddMetrics();
 
         // Uma conexão só (o multiplexer é feito para ser compartilhado). Com abortConnect=false a aplicação sobe com o
-        // Redis fora; as operações falham até ele voltar, e o cache cai para o Postgres.
+        // Redis fora; com o backlog em fail-fast, cada operação falha na hora (sem esperar o timeout) até ele voltar, e o
+        // cache cai para o Postgres.
         services.TryAddSingleton<IConnectionMultiplexer>(provedor =>
         {
             var configuracao = provedor.GetRequiredService<IConfiguration>().GetConnectionString("Redis")
                 ?? throw new InvalidOperationException("ConnectionStrings:Redis não configurada.");
             var opcoes = ConfigurationOptions.Parse(configuracao);
             opcoes.AbortOnConnectFail = false;
+            opcoes.BacklogPolicy = BacklogPolicy.FailFast;
             return ConnectionMultiplexer.Connect(opcoes);
         });
 

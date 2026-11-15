@@ -14,6 +14,9 @@ public sealed class ContasApiFactory(string connectionString) : WebApplicationFa
         builder.UseEnvironment("Development");
         builder.UseSetting("ConnectionStrings:Contas", connectionString);
         builder.UseSetting("Seguranca:ApiKey", ApiKey);
+        // Sem Redis nestes testes: o rate limit fica desligado (ele é testado na API do antifraude).
+        builder.UseSetting("ConnectionStrings:Redis", string.Empty);
+        builder.UseSetting("LimiteRequisicoes:Ativo", "false");
         builder.UseSetting("OTEL_SDK_DISABLED", "true");
     }
 

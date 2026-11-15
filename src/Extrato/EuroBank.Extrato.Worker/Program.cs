@@ -29,12 +29,14 @@ builder.Services.AddExceptionHandler<TratadorExcecoesDominio>();
 builder.Services.AddHealthChecks().AddDbContextCheck<ExtratoDbContext>();
 builder.Services.AdicionarSwaggerComApiKey("EuroBank - Extrato");
 builder.Services.AdicionarApiKey();
+builder.Services.AdicionarLimiteRequisicoes();
 
 var app = builder.Build();
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 app.UsarApiKey();
+app.UsarLimiteRequisicoes();
 app.UseSwagger();
 app.UseSwaggerUI();
 

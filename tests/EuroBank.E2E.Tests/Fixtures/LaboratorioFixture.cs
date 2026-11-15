@@ -43,6 +43,9 @@ public sealed class LaboratorioFixture : IAsyncLifetime
 
     public const string ApiKeyAntifraude = "chave-e2e-antifraude";
 
+    /// <summary>Rate limit que as sagas em paralelo nunca alcançam (o 429 é testado na API do antifraude).</summary>
+    private const string LimiteE2E = "100000";
+
     /// <summary>País de risco só deste laboratório (país SEPA, para caber numa transferência em EUR).</summary>
     public const string IbanPaisDeRisco = "MT84MALT011000012345MTLCAST001S";
 
@@ -214,6 +217,8 @@ public sealed class LaboratorioFixture : IAsyncLifetime
             builder.UseEnvironment("Development");
             builder.UseSetting("ConnectionStrings:Contas", ConnectionStringContas);
             builder.UseSetting("Seguranca:ApiKey", "chave-e2e-contas");
+            builder.UseSetting("ConnectionStrings:Redis", _redis.GetConnectionString());
+            builder.UseSetting("LimiteRequisicoes:PorSegundo", LimiteE2E);
             builder.UseSetting("OTEL_SDK_DISABLED", "true");
         });
         Contas = _contas.CreateClient();
@@ -227,6 +232,7 @@ public sealed class LaboratorioFixture : IAsyncLifetime
             builder.UseSetting("Kafka:BootstrapServers", BootstrapKafka);
             builder.UseSetting("Kafka:GrupoConsumidor", $"eurobank-extrato-e2e-{Guid.NewGuid():N}");
             builder.UseSetting("Seguranca:ApiKey", "chave-e2e-extrato");
+            builder.UseSetting("LimiteRequisicoes:PorSegundo", LimiteE2E);
             builder.UseSetting("OTEL_SDK_DISABLED", "true");
         });
         Extrato = _extrato.CreateClient();
@@ -247,6 +253,7 @@ public sealed class LaboratorioFixture : IAsyncLifetime
             ["ConnectionStrings:Transferencias"] = ConnectionStringTransferencias,
             ["ConnectionStrings:Redis"] = _redis.GetConnectionString(),
             ["Seguranca:ApiKey"] = "chave-e2e-transferencias",
+            ["LimiteRequisicoes:PorSegundo"] = LimiteE2E,
         });
         Transferencias = transferencias.CreateClient();
         Transferencias.DefaultRequestHeaders.Add("X-Api-Key", "chave-e2e-transferencias");
@@ -302,6 +309,7 @@ public sealed class LaboratorioFixture : IAsyncLifetime
             ["ConnectionStrings:Antifraude"] = ConnectionStringAntifraude,
             ["ConnectionStrings:Redis"] = redis,
             ["Seguranca:ApiKey"] = ApiKeyAntifraude,
+            ["LimiteRequisicoes:PorSegundo"] = LimiteE2E,
             ["Revisao:PrazoCaso"] = "00:00:20",
         });
         Antifraude = _antifraude.CreateClient();

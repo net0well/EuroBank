@@ -28,6 +28,7 @@ public sealed class WorkerExtrato : IAsyncDisposable
             // Sem confiar na leitura anterior da marca: cada teste enxerga na hora a marca que outro gravou.
             builder.UseSetting("Cache:ValidadeLeituraMarca", "00:00:00");
             builder.UseSetting("Seguranca:ApiKey", ExtratoWorkerFixture.ApiKey);
+            builder.UseSetting("LimiteRequisicoes:PorSegundo", "100000");
             builder.UseSetting("OTEL_SDK_DISABLED", "true");
             builder.ConfigureServices(services => services.DisableAllExternalWolverineTransports());
         });
