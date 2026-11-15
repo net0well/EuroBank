@@ -7,7 +7,8 @@ gRPC), mais dois sistemas "de fora" simulados:
 
 - **Contas**: abre contas em EUR, USD, GBP ou BRL, deposita, saca, transfere, bloqueia, desbloqueia e encerra.
   Grava no PostgreSQL.
-- **Extrato**: consome os eventos de Contas pelo Kafka e monta o extrato de cada conta, na moeda dela.
+- **Extrato**: consome os eventos de Contas pelo Kafka e monta o extrato de cada conta, na moeda dela, com o resumo
+  e a primeira página no Redis (cache-aside, write-through ou write-behind, à escolha).
 - **Transferencias**: orquestra a transferência para um IBAN de outro banco (débito em Contas, liquidação no
   banco externo e, se a liquidação falhar, estorno do débito) e o câmbio entre contas EuroBank de moedas
   diferentes (cotação, débito, crédito), com prazos, reenvios, cancelamento, regras SEPA com horário de corte,
@@ -51,6 +52,9 @@ dois sistemas precisam ficar consistentes sem compartilhar uma transação:
 8. **Pôr uma decisão síncrona dentro de um fluxo assíncrono.** A saga pergunta ao antifraude por gRPC, com
    deadline, retry ou hedging e fail-closed quando ele cai; a resposta pode ser "espere um analista", e essa espera
    de até 30 minutos não segura nada além do limite diário.
+9. **Usar o Redis sabendo o que acontece quando ele cai.** O mesmo Redis serve o perfil do antifraude, o cache do
+   extrato em três estratégias, a Idempotency-Key, as cotações e o rate limit; cada uso tem um caminho para o Redis
+   fora do ar (ler do Postgres, deixar passar ou recusar) e um teste que o percorre.
 
 ## O que foi construído
 
@@ -60,21 +64,21 @@ dois sistemas precisam ficar consistentes sem compartilhar uma transação:
 | API de Contas | Minimal API com Wolverine como mediator, erros de domínio em ProblemDetails (400, 404, 409, 422) e requisição ilegível em 400, Swagger, seed de contas de exemplo |
 | Outbox | A unidade de trabalho grava conta e eventos na mesma transação, na ordem em que os eventos aconteceram |
 | Debezium | Dois conectores: Outbox Event Router (eventos de negócio) e CDC bruto da tabela `contas` (before e after) |
-| Extrato | Worker com Wolverine consumindo o Kafka: inbox durável, ordem por conta, retry, dead letter e a projeção do extrato com paginação, incluindo transferências externas com tarifa, estornos, devoluções e reconciliações (com saldo negativo) |
+| Extrato | Worker com Wolverine consumindo o Kafka: inbox durável, ordem por conta, retry, dead letter e a projeção do extrato com paginação, incluindo transferências externas com tarifa, estornos, devoluções e reconciliações (com saldo negativo); resumo e primeira página no Redis conforme `Cache:Estrategia` (`Nenhuma`, `CacheAside`, `WriteThrough`, o padrão, ou `WriteBehind`), com o cache marcado como suspeito quando uma escrita no Redis falha e métricas de acerto, falta, duração e idade do dado |
 | Sagas de transferência | Agregado `Transferencia` com a máquina de estados da externa e do câmbio interno, cotação antes do débito quando as moedas diferem (com recotação), análise de risco logo antes do débito (`AnalisandoRisco` e `EmAnaliseManual`, com recotação se a cotação vencer na revisão), prazo por passo, até 3 reenvios, consulta de status antes de estornar, cancelamento pelo cliente, agendamento, tarifa e limite diário por moeda, validação SEPA e SWIFT com horário de corte, estado `Divergente` com reconciliação e devolução pelo banco externo; histórico de cada passo |
-| API de Transferências | `POST /transferencias-externas` e `POST /transferencias-cambio` com `Idempotency-Key`, consulta com histórico e cotação, listagem com filtros, cancelamento e `POST /transferencias-externas/{id}/reconciliacao`; o limite diário é conferido com um advisory lock por conta |
+| API de Transferências | `POST /transferencias-externas` e `POST /transferencias-cambio` com `Idempotency-Key` (reservada no Redis antes da constraint única do Postgres), consulta com histórico e cotação, listagem com filtros, cancelamento e `POST /transferencias-externas/{id}/reconciliacao`; o limite diário é conferido com um advisory lock por conta |
 | Worker de Transferências | Respostas de Contas, do câmbio e do banco externo e decisões do antifraude (inbox durável), a projeção local das contas (eventos `ContaAberta` e `ContaEncerrada`) e uma varredura que começa as agendadas, chama o antifraude pelo gRPC (deadline de 2 s, retry ou hedging no canal) e trata os prazos com `FOR UPDATE SKIP LOCKED` |
 | Worker de Contas | Executa os comandos da saga (debitar, creditar, estornar, liberar a trava, debitar a reconciliação, creditar a devolução) com idempotência pelo id da transferência e responde pela outbox; a trava semântica impede encerrar a conta no meio da saga |
 | Domínio do Antifraude | Agregados `Analise` (uma por operação) e `CasoRevisao` (aberto, em análise, aprovado, recusado, expirado ou cancelado pelo cliente, com justificativa obrigatória e auditoria), 9 regras configuráveis (uma dura e oito com peso, com modo sombra), configuração de decisão versionada (limiares 30 e 70) e o motor que soma os pontos e decide |
 | API do Antifraude | `AntifraudeService` em gRPC (`Avaliar` idempotente, `ObterAnalise`, `Simular`) com API key por interceptor, erros de domínio em status gRPC, reflection, `grpc.health.v1` e JSON transcoding; REST do analista (fila, detalhe, atribuição e decisão de casos, regras, limiares, listas de bloqueio e de países de risco, fraudes confirmadas, visão geral das últimas 24 h) |
 | Worker do Antifraude | Perfil de comportamento de cada conta no Redis (saídas de 31 dias, beneficiários, saldo e idade da conta, atualizados por scripts Lua a partir de `eurobank.contas.eventos`), expiração dos casos sem decisão e fechamento do caso quando o cliente cancela a transferência (`eurobank.transferencias.eventos`) |
-| Simuladores | Banco externo e câmbio com Confluent.Kafka e Npgsql puros, sem Wolverine e sem EF: inbox escrita à mão e respostas agendadas no banco, compartilhadas pelos dois |
+| Simuladores | Banco externo e câmbio com Confluent.Kafka e Npgsql puros, sem Wolverine e sem EF: inbox escrita à mão e respostas agendadas no banco, compartilhadas pelos dois; o câmbio guarda a cotação válida no Redis e a reaproveita nos reenvios |
 | Notificações | Worker com Wolverine consumindo `eurobank.transferencias.eventos`: e-mail em pt-BR (HTML e texto, pelo MailKit) para o Mailpit, inbox durável mais a tabela `notificacoes` com o id do evento como chave (reprocessar o tópico não repete e-mail), novas tentativas agendadas quando o SMTP falha e dead letter depois delas |
-| Segurança | Uma API key por API (`X-Api-Key`; no gRPC, o metadata `x-api-key`), com `/health`, Swagger, reflection e `grpc.health.v1` abertos |
+| Segurança | Uma API key por API (`X-Api-Key`; no gRPC, o metadata `x-api-key`), com `/health`, Swagger, reflection e `grpc.health.v1` abertos, e rate limit por API key nas rotas REST das quatro APIs (janela deslizante no Redis, 429 com `Retry-After`) |
 | Infraestrutura | Docker Compose com PostgreSQL em replicação lógica, Kafka em modo KRaft, Kafka Connect, Kafbat UI, Jaeger, Mailpit, Redis e RedisInsight, com os databases, os tópicos e os conectores criados automaticamente |
 | Observabilidade | Serilog estruturado e OpenTelemetry, com o `traceparent` levado pela outbox até o consumidor e de volta nas respostas da saga |
-| Testes | 708 testes: unitários, de integração com Testcontainers e ponta a ponta com Debezium real, incluindo cada caminho das sagas, os e-mails no Mailpit e as decisões do antifraude no meio da saga |
-| Carga | Script k6 que mistura operações de Contas com sagas externas e de câmbio e, no fim, confere que todas as sagas terminaram, que o Extrato convergiu e que nenhum dinheiro sumiu, moeda a moeda |
+| Testes | 740 testes: unitários, de integração com Testcontainers e ponta a ponta com Debezium real, incluindo cada caminho das sagas, os e-mails no Mailpit, as decisões do antifraude no meio da saga e cada uso do Redis com ele ligado e fora do ar |
+| Carga | Script k6 que mistura operações de Contas com sagas externas e de câmbio e, no fim, confere que todas as sagas terminaram, que o Extrato convergiu e que nenhum dinheiro sumiu, moeda a moeda; respeita o 429 esperando o `Retry-After` |
 
 ## Como funciona
 
@@ -364,6 +368,50 @@ REST do analista e valem na próxima avaliação, sem reiniciar. O roteiro está
 - **O cliente não vê as regras.** O e-mail de uma recusa diz que a transferência não foi aprovada na análise de
   segurança, sem dizer qual regra disparou.
 
+### Redis no laboratório
+
+| Uso | Chaves | Validade | Com o Redis fora |
+|---|---|---|---|
+| Perfil do antifraude | `antifraude:{conta}:perfil`, `:saidas`, `:beneficiarios` | 31 dias de saídas | O antifraude responde indisponível e a saga recusa (fail-closed) |
+| Cache do extrato | `extrato:{conta}:resumo` e `:lancamentos`, mais o stream `extrato:pendencias` do write-behind | 30 s no cache-aside; sem validade nas outras | Lê e grava no Postgres e marca o cache como suspeito |
+| Idempotency-Key | `idempotencia:transferencias:{key}` | 30 s em andamento, 24 h concluída | Vale só a constraint única do Postgres |
+| Cotações | `cambio:cotacao:{transferência}` | A da cotação (10 min) | A cotação válida vem da tabela `cotacoes` |
+| Rate limit | `limite:{API}:{hash da key}` | Janela de 1 s | Deixa passar (fail-open) |
+
+As conexões usam `abortConnect=false` (a aplicação sobe com o Redis fora) e o backlog em fail-fast: com o Redis fora,
+cada operação falha na hora, em vez de esperar o timeout de 5 s numa fila, e o serviço segue pelo caminho de queda.
+
+**Cache do extrato.** O resumo (saldo, status, versão, total) e os 50 lançamentos mais recentes de cada conta ficam
+no Redis; páginas além deles vêm do Postgres. Os scripts Lua só avançam o resumo com uma versão da conta maior que a
+guardada, então um retrato lido antes de um evento, ou um evento repetido, não faz o cache voltar no tempo.
+
+- **Write-through** (o padrão): o manipulador grava no Postgres e, depois do commit, aplica o mesmo evento no Redis.
+  A leitura logo depois do evento já vem do cache, com o saldo novo.
+- **Cache-aside**: só a leitura enche o cache (com TTL de 30 s); cada evento apaga a entrada da conta.
+- **Write-behind**: o manipulador lê o extrato do Redis, aplica o evento e grava o resumo, os lançamentos e uma
+  pendência num script só; a cada segundo, o worker descarrega as pendências no Postgres em lote (consumer group
+  `descarga`, com as pendências paradas de uma instância caída reivindicadas por outra). Se o Redis perder os dados
+  antes da descarga, o Kafka reprocessado refaz.
+- **Cache suspeito**: uma escrita no Redis que falha pode deixar dado velho lá. A marca vai para a tabela
+  `cache_estado` (as instâncias do worker veem a mesma); com ela, leituras e escritas usam só o Postgres. Quando o
+  Redis volta e não há pendências do write-behind, o worker apaga as chaves do extrato e tira a marca; as leituras
+  seguintes repopulam pelo Postgres.
+- **Métricas**: o medidor `EuroBank.Extrato.Cache` conta acertos, faltas e falhas e mede a duração da leitura por
+  origem e a idade do dado servido do Redis; a exportação para Prometheus e Grafana vem com o profile de métricas.
+
+**Idempotency-Key.** O primeiro pedido reserva a key (por 30 s, para ela se soltar sozinha se o pedido cair no meio)
+e, ao gravar, a marca como concluída por 24 h. Um pedido igual enquanto o primeiro grava espera até 2 s e devolve a
+mesma transferência; se o primeiro não terminar a tempo, 409 (`idempotency_key_em_andamento`) com `Retry-After: 1`.
+Com outro corpo, 422 na hora, sem ir ao banco. A constraint única do Postgres continua sendo a garantia final.
+
+**Cotações.** Um `CotarCambio` repetido da mesma transferência (o reenvio da saga) recebe a mesma cotação enquanto
+ela vale, em vez de uma nova; vencida, o simulador cota de novo.
+
+**Rate limit.** 100 requisições por segundo por API key, em janela deslizante (sorted set e script Lua), com o limite
+compartilhado entre as instâncias da mesma API (`RATE_LIMIT_POR_SEGUNDO` no compose). Acima dele, 429
+(`limite_excedido`) com `Retry-After`. `/health`, Swagger e o gRPC do antifraude (inclusive as rotas do JSON
+transcoding, que são o mesmo serviço) ficam de fora: um 429 na chamada da saga viraria transferência recusada.
+
 ## O que o laboratório revelou
 
 Problemas reais encontrados durante a construção, cada um com um teste que o reproduz:
@@ -457,6 +505,10 @@ Problemas reais encontrados durante a construção, cada um com um teste que o r
 27. **Um pacote pode travar a versão de outro.** O Grpc.Swagger, que põe as rotas do JSON transcoding no Swagger,
     depende do Swashbuckle 6, e o repositório usa o 10. As rotas transcodificadas entram no Swagger por um filtro de
     documento próprio.
+28. **O limite por API key é de todos que usam a key.** O teste do rate limit, com 5 requisições por segundo,
+    falhava já nas primeiras: os outros testes, em paralelo, usavam a mesma API key na mesma API e enchiam a mesma
+    janela. É o comportamento desejado (várias instâncias de uma API dividem o limite), e o teste passou a usar uma
+    key própria.
 
 ## Arquitetura
 
@@ -643,6 +695,13 @@ Pontos do código que valem a leitura:
 - `src/Antifraude/EuroBank.Antifraude.Api/Interceptors/`: a API key e o mapeamento das exceções para status gRPC.
 - `src/Antifraude/EuroBank.Antifraude.Infrastructure/Perfil/PerfisContasRedis.cs`: os scripts Lua que mantêm o
   perfil de cada conta, com a versão da conta como deduplicação.
+- `src/Extrato/EuroBank.Extrato.Infrastructure/Cache/`: as estratégias do cache do extrato (`ScriptsCache.cs` com a
+  regra de versão em Lua, `UnidadeDeTrabalhoComCache.cs`, a pasta `WriteBehind/` com a descarga das pendências) e a
+  marca de cache suspeito.
+- `src/Transferencias/EuroBank.Transferencias.Application/Services/SolicitacaoDeTransferencia.cs` e
+  `src/Transferencias/EuroBank.Transferencias.Infrastructure/Idempotency/ReservasIdempotenciaRedis.cs`: a reserva da
+  Idempotency-Key e a espera pelo pedido igual em andamento.
+- `src/Shared/EuroBank.Shared.Web/Security/LimiteRequisicoesMiddleware.cs`: o rate limit em janela deslizante.
 - `src/Transferencias/EuroBank.Transferencias.Infrastructure/Persistence/Repositories/RepositorioTransferencias.cs`:
   o advisory lock do limite diário e o `FOR UPDATE SKIP LOCKED` da varredura.
 - `src/Simuladores/EuroBank.Simuladores.Comum/RepositorioSimulador.cs` e
@@ -674,8 +733,9 @@ Os `appsettings.json` já apontam para `localhost:5434` (Postgres), `localhost:9
 (Redis), e as portas continuam 5100, 5200 e 5300 (os workers de Contas e de Transferências ficam em 5101 e 5301,
 o de notificações em 5501, o banco externo simulado em 5401, o câmbio simulado em 5402, a API do antifraude em
 5400 para a REST e 5410 para o gRPC, e o worker do antifraude em 5403). O worker de notificações manda os e-mails
-para `localhost:1025`, o SMTP do Mailpit. Com outra porta para o Redis no `.env`, rode as duas aplicações do
-antifraude com `ConnectionStrings__Redis=localhost:<porta>`.
+para `localhost:1025`, o SMTP do Mailpit. Todas as aplicações que usam o Redis (as duas do antifraude, o Extrato,
+as APIs de Contas e de Transferências e o câmbio simulado) apontam para `localhost:6379`; com outra porta no `.env`,
+rode-as com `ConnectionStrings__Redis=localhost:<porta>`.
 
 Fora do compose, a análise de risco começa desligada (`Saga:AnaliseRiscoAtiva=false` nos `appsettings.json`). Para
 a saga passar pelo antifraude, rode a API e o worker de Transferências com `Saga__AnaliseRiscoAtiva=true` (os dois
@@ -707,7 +767,12 @@ reflection, health e transcoding) e a REST do analista com Postgres e Redis reai
 eventos, com Redis apagado e reconstruído; a expiração e o fechamento no cancelamento; e, ponta a ponta, a saga
 aprovada, recusada pela lista de bloqueio, em revisão com o analista aprovando ou recusando, o caso expirando, o
 cancelamento na revisão fechando o caso, uma análise só para a mesma operação e o antifraude fora do ar recusando
-depois do prazo.
+depois do prazo. Para o Redis: cada estratégia do cache do extrato contra um Redis real (inclusive a descarga do
+write-behind repetida sem duplicar nada), o Redis fora com o cache marcado como suspeito e a reconstrução depois, a
+Idempotency-Key em paralelo com o Redis ligado e desligado, a espera pelo pedido igual em andamento e o 409 com
+`Retry-After`, as cotações reaproveitadas (pelo Redis e pela tabela), o 429 com `Retry-After`, o `/health` e o gRPC
+fora do limite e o fail-open; e, ponta a ponta, o extrato servido do Redis logo depois do evento e a Idempotency-Key
+em paralelo no laboratório.
 
 ## Roteiro de exercícios
 
@@ -811,16 +876,22 @@ aparecem no Mailpit). No fim:
    sagas tiraram de vez das contas (valor e tarifa das concluídas, só a tarifa das devolvidas), mais o que o câmbio
    creditou.
 
+O rate limit de 100 por segundo vale também para a carga: a maior parte das operações vai para a API de Contas, e
+os 429 que aparecerem são esperados (o k6 espera o `Retry-After`, repete e mostra o total em `respostas_429`).
+
 O corte SEPA precisa estar desligado: com ele, as externas em euro feitas depois das 16:00 UTC ou no fim de
 semana ficariam agendadas para o próximo dia útil. O k6 confere isso antes de gerar carga, com uma transferência
 de 1 EUR, e aborta com a instrução se ela ficar `Agendada`. A análise de risco também fica desligada por enquanto:
 o script faz dezenas de transferências por conta nova, e a regra de velocidade mandaria quase todas para a
 revisão, que o k6 não sabe decidir. A carga com o antifraude no caminho é a próxima etapa do k6.
 
-Numa máquina de desenvolvimento, 10 usuários virtuais durante 1 minuto fizeram cerca de 140 operações por segundo
-e iniciaram 1.926 sagas: 1.504 concluídas, 134 canceladas, 130 devolvidas e 158 recusadas. Todas chegaram ao
-estado final, as contas convergiram no Extrato, as quatro moedas fecharam ao centavo, e cada um dos 408 e-mails da
-carga chegou uma vez ao Mailpit.
+Numa máquina de desenvolvimento, sem rate limit, 10 usuários virtuais durante 1 minuto fizeram cerca de 140
+operações por segundo e iniciaram 1.926 sagas: 1.504 concluídas, 134 canceladas, 130 devolvidas e 158 recusadas.
+Todas chegaram ao estado final, as contas convergiram no Extrato, as quatro moedas fecharam ao centavo, e cada um
+dos 408 e-mails da carga chegou uma vez ao Mailpit. Com o limite padrão de 100 por segundo, a mesma carga recebeu 312
+respostas 429 (cada uma segura o usuário virtual pelo `Retry-After` de 1 s) e iniciou 1.122 sagas: 885 concluídas,
+68 canceladas, 87 devolvidas e 82 recusadas, todas no estado final, com as contas convergidas e as moedas fechando.
+Para medir a vazão sem o limite: `RATE_LIMIT_POR_SEGUNDO=100000` exportado junto com as outras variáveis.
 
 ### 7. Trace ponta a ponta
 
@@ -1043,6 +1114,65 @@ docker compose start antifraude-worker
 
 Os perfis voltam iguais: o script Lua só aplica cada evento uma vez, pela versão da conta.
 
+### 23. O extrato no Redis
+
+Faça um depósito pelo `http/contas.http` e procure a conta no RedisInsight (`extrato:{id}:resumo` e
+`:lancamentos`): o saldo novo já está lá quando o `GET /extratos/{id}` responde. Troque a estratégia e repita:
+
+```bash
+EXTRATO_CACHE_ESTRATEGIA=CacheAside docker compose up -d extrato-worker
+EXTRATO_CACHE_ESTRATEGIA=WriteBehind docker compose up -d extrato-worker
+```
+
+No cache-aside, a entrada só aparece depois de uma leitura, com TTL de 30 s, e some a cada depósito. No
+write-behind, o depósito vai primeiro para o Redis e para o stream `extrato:pendencias`; a tabela `extratos` alcança
+em até um segundo. Para ver o cache suspeito, pare o Redis, faça um depósito e confira a marca:
+
+```bash
+docker compose stop redis
+# faça um depósito pelo contas.http e consulte o extrato
+docker compose exec postgres psql -U eurobank -d eurobank_extrato -c "SELECT suspeito_desde FROM cache_estado;"
+docker compose start redis
+docker compose logs --tail 5 extrato-worker
+```
+
+O extrato continua certo, vindo do Postgres, e a marca fica gravada. Com o Redis de volta, em até 5 segundos o
+worker apaga as chaves do extrato e tira a marca (`Redis de volta: ... chaves do extrato apagadas`). Com o Redis
+parado, o resto do laboratório também cai para o seu caminho de queda: o antifraude recusa as transferências
+(fail-closed), a Idempotency-Key vale só pelo Postgres e o rate limit deixa passar.
+
+### 24. Idempotency-Key no Redis
+
+Rode o primeiro pedido do `http/transferencias.http` e veja a key no Redis:
+
+```bash
+docker compose exec redis redis-cli HGETALL idempotencia:transferencias:roteiro-001
+docker compose exec redis redis-cli TTL idempotencia:transferencias:roteiro-001
+```
+
+Estado `concluida`, a impressão digital do pedido e a transferência, por 24 h. Repita o pedido com o mesmo corpo
+(mesma transferência, 202) e com outro valor (422, `idempotency_key_reutilizada`, sem consultar o Postgres). Para
+ver a espera do pedido em andamento, marque a key como em andamento e repita o pedido igual: ele espera 2 segundos e
+responde 409 (`idempotency_key_em_andamento`) com `Retry-After: 1`:
+
+```bash
+docker compose exec redis redis-cli HSET idempotencia:transferencias:roteiro-001 estado andamento
+```
+
+### 25. Rate limit
+
+```bash
+RATE_LIMIT_POR_SEGUNDO=5 docker compose up -d contas-api
+for i in $(seq 1 10); do curl -s -o /dev/null -w "%{http_code} " -H "X-Api-Key: contas-lab-key" http://localhost:5100/contas; done; echo
+curl -si -H "X-Api-Key: contas-lab-key" http://localhost:5100/contas | grep -i retry-after
+docker compose up -d contas-api
+```
+
+Passadas cinco no mesmo segundo, as seguintes respondem 429 (`limite_excedido`), com `Retry-After: 1`; um segundo
+depois, a janela libera de novo (logo depois da subida, a primeira requisição é lenta e pode sair da janela antes das
+outras, deixando passar uma a mais). O `/health` nunca conta. A janela fica no Redis (`limite:EuroBank.Contas.Api:...`), então
+duas instâncias da mesma API dividem o mesmo limite.
+
 ## Laboratório e produção
 
 Atalhos que este laboratório toma de propósito:
@@ -1071,6 +1201,10 @@ Atalhos que este laboratório toma de propósito:
 | Regras, limiares e listas mudam pela API, sem aprovação | Mudança de regra com revisão, teste em modo sombra antes de valer e trilha de auditoria de quem mudou |
 | Fail-closed fixo depois de 30 s | Política por valor e tipo de operação (deixar passar valores baixos, por exemplo), com alerta quando o antifraude cai |
 | Lista de países de risco e de bloqueio mantidas à mão | Listas de sanções e de jurisdições de alto risco (GAFI, reguladores) atualizadas por fonte oficial |
+| Write-behind com o Kafka como rede de segurança | Redis com persistência (AOF) e réplica, ou write-behind só para dados que se pode perder ou refazer |
+| Uma marca global de cache suspeito, que esvazia o cache inteiro | Versão por entrada comparada na leitura, ou invalidação só das chaves cuja escrita falhou |
+| Rate limit por API key, com uma key por API | Uma key (ou um token) por cliente, cotas por plano e limites também por IP no gateway |
+| Rate limit que deixa passar com o Redis fora | Limite local em memória como segunda linha, para um Redis fora não deixar a API sem proteção |
 
 ## Próximos passos
 
@@ -1079,10 +1213,10 @@ cancelamento, agendamento, tarifa, limite diário e `Idempotency-Key`), o **câm
 cotação travada com spread, externa em outra moeda e câmbio entre contas EuroBank) e as regras **SEPA e SWIFT**
 com horário de corte, a **devolução** pelo banco externo, o estado **`Divergente`** com reconciliação e saldo
 negativo controlado, as **notificações** por e-mail, o **cenário de carga** que confere o dinheiro de todas as
-sagas e o **antifraude** com regras, perfil no Redis, revisão humana e gRPC no meio da saga.
+sagas, o **antifraude** com regras, perfil no Redis, revisão humana e gRPC no meio da saga, e o **Redis no restante
+do laboratório** (cache do extrato em três estratégias, Idempotency-Key, cotações e rate limit).
 
-As próximas, no antifraude: o Redis no restante do laboratório (cache do Extrato com estratégias comparáveis,
-`Idempotency-Key`, cotações e rate limit), machine learning com ML.NET (dados sintéticos, treino, modelo em
+As próximas, no antifraude: machine learning com ML.NET (dados sintéticos, treino, modelo em
 produção com challenger em sombra e drift), o painel do analista, dispositivo e localização, o saque em Contas
 passando pelo antifraude, alta disponibilidade do Redis, métricas e a carga com o antifraude no caminho. Depois,
 uma interface em Vue para a análise de fraude e para acompanhar o fluxo de ponta a ponta.

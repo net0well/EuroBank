@@ -1,5 +1,6 @@
 // Gerador de carga do EuroBank: operações de Contas misturadas a sagas de Transferencias.
-//   SEPA_HORARIO_DE_CORTE=false docker compose up -d transferencias-api
+//   export SEPA_HORARIO_DE_CORTE=false SAGA_ANALISE_RISCO=false
+//   docker compose up -d transferencias-api transferencias-worker
 //   docker compose --profile carga run --rm k6
 //   K6_VUS=20 K6_DURACAO=2m docker compose --profile carga run --rm k6
 //   K6_FINAIS_LENTOS=true docker compose --profile carga run --rm k6     (inclui os finais 98 e 95: ~7 min de espera)
@@ -70,7 +71,8 @@ const api = {
     resposta.status === 429 ? respeitandoLimite(() => http.request(...pedidos[i])) : resposta),
 };
 
-http.setResponseCallback(http.expectedStatuses(200, 201, 202, 409, 422));
+// 429 também é esperado: respeitandoLimite espera o Retry-After e repete (o total fica em respostas_429).
+http.setResponseCallback(http.expectedStatuses(200, 201, 202, 409, 422, 429));
 
 export const options = {
   vus: Number(__ENV.VUS || 10),
@@ -375,7 +377,7 @@ function esperarConvergencia(contas) {
 function convergiu(conta) {
   const daConta = api.get(`${API_CONTAS}/contas/${conta.id}`, { headers: CHAVE_CONTAS });
   const extrato = api.get(`${API_EXTRATO}/extratos/${conta.id}?tamanho=1`,
-    { headers: CHAVE_EXTRATO, responseCallback: http.expectedStatuses(200, 404) });
+    { headers: CHAVE_EXTRATO, responseCallback: http.expectedStatuses(200, 404, 429) });
   if (daConta.status !== 200 || extrato.status !== 200) {
     return false;
   }
