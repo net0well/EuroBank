@@ -245,6 +245,7 @@ public sealed class LaboratorioFixture : IAsyncLifetime
         var transferencias = Subir(new WebApplicationFactory<MarcadorTransferenciasApi>(), new(ConfiguracaoSaga)
         {
             ["ConnectionStrings:Transferencias"] = ConnectionStringTransferencias,
+            ["ConnectionStrings:Redis"] = _redis.GetConnectionString(),
             ["Seguranca:ApiKey"] = "chave-e2e-transferencias",
         });
         Transferencias = transferencias.CreateClient();

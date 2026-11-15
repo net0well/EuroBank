@@ -247,10 +247,14 @@ services:
     depends_on:
       connect-init:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_HTTP_PORTS: "8080"
       ConnectionStrings__Transferencias: "Host=postgres;Port=5432;Database=eurobank_transferencias;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      # Idempotency-Key reservada no Redis antes da constraint do Postgres (com o Redis fora, só a constraint).
+      ConnectionStrings__Redis: "redis:6379"
       Seguranca__ApiKey: ${TRANSFERENCIAS_API_KEY}
       # false desliga o horário de corte SEPA (transferências em EUR depois das 16:00 UTC ou no fim de semana
       # ficam para o próximo dia útil às 08:00 UTC).
