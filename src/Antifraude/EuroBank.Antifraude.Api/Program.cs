@@ -51,6 +51,7 @@ builder.Services.AddExceptionHandler<TratadorExcecoesDominio>();
 builder.Services.AdicionarSwaggerComApiKey("EuroBank - Antifraude");
 builder.Services.ConfigureSwaggerGen(opcoes => opcoes.DocumentFilter<RotasTranscodingFilter>());
 builder.Services.AdicionarApiKey();
+builder.Services.AdicionarLimiteRequisicoes();
 
 var app = builder.Build();
 
@@ -60,7 +61,7 @@ app.UseStatusCodePages();
 // Nos endpoints gRPC (inclusive os transcodificados), quem confere a key é o interceptor: aqui só o REST.
 app.UseWhen(
     contexto => contexto.GetEndpoint()?.Metadata.GetMetadata<GrpcMethodMetadata>() is null,
-    ramo => ramo.UsarApiKey());
+    ramo => ramo.UsarApiKey().UsarLimiteRequisicoes());
 app.UseSwagger();
 app.UseSwaggerUI();
 

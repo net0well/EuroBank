@@ -5,10 +5,12 @@ using EuroBank.Simuladores.Cambio.Regras;
 using EuroBank.Simuladores.Cambio.Servicos;
 using EuroBank.Simuladores.Comum;
 using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 
 // Câmbio simulado (um provedor de cotações "de fora"): recebe CotarCambio pelo Kafka e responde com uma cotação
-// travada por 10 minutos, ou com CotacaoIndisponivel. Mesmo estilo do banco externo: Confluent.Kafka e Npgsql
-// puros, com inbox e agenda de respostas feitas à mão.
+// travada por 10 minutos (guardada no Redis até vencer, para os reenvios receberem a mesma), ou com
+// CotacaoIndisponivel. Mesmo estilo do banco externo: Confluent.Kafka e Npgsql puros, com inbox e agenda de respostas
+// feitas à mão.
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AdicionarObservabilidade("eurobank-cambio", Telemetria.NomeFonte);
@@ -29,6 +31,16 @@ builder.Services.AddSingleton(servicos => servicos.GetRequiredService<IOptions<O
 builder.Services.AddSingleton(servicos => new RepositorioCambio(
     servicos.GetRequiredService<IConfiguration>().GetConnectionString("Cambio")
         ?? throw new InvalidOperationException("ConnectionStrings:Cambio não configurada.")));
+builder.Services.AddSingleton<IConnectionMultiplexer>(servicos =>
+{
+    // Com abortConnect=false o simulador sobe com o Redis fora, e com fail-fast cada leitura cai na tabela na hora.
+    var opcoes = ConfigurationOptions.Parse(servicos.GetRequiredService<IConfiguration>().GetConnectionString("Redis")
+        ?? throw new InvalidOperationException("ConnectionStrings:Redis não configurada."));
+    opcoes.AbortOnConnectFail = false;
+    opcoes.BacklogPolicy = BacklogPolicy.FailFast;
+    return ConnectionMultiplexer.Connect(opcoes);
+});
+builder.Services.AddSingleton<CotacoesValidas>();
 builder.Services.AddSingleton<TabelaCambio>();
 builder.Services.AddSingleton<ProcessadorComandosCambio>();
 builder.Services.AddSingleton<PublicadorKafka>();

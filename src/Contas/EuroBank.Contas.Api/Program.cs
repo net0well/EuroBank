@@ -37,12 +37,14 @@ builder.Services.AddExceptionHandler<TratadorExcecoesDominio>();
 builder.Services.AddHealthChecks().AddDbContextCheck<ContasDbContext>();
 builder.Services.AdicionarSwaggerComApiKey("EuroBank - Contas");
 builder.Services.AdicionarApiKey();
+builder.Services.AdicionarLimiteRequisicoes();
 
 var app = builder.Build();
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 app.UsarApiKey();
+app.UsarLimiteRequisicoes();
 app.UseSwagger();
 app.UseSwaggerUI();
 

@@ -1,5 +1,6 @@
 // Gerador de carga do EuroBank: operações de Contas misturadas a sagas de Transferencias.
-//   SEPA_HORARIO_DE_CORTE=false docker compose up -d transferencias-api
+//   export SEPA_HORARIO_DE_CORTE=false SAGA_ANALISE_RISCO=false
+//   docker compose up -d transferencias-api transferencias-worker
 //   docker compose --profile carga run --rm k6
 //   K6_VUS=20 K6_DURACAO=2m docker compose --profile carga run --rm k6
 //   K6_FINAIS_LENTOS=true docker compose --profile carga run --rm k6     (inclui os finais 98 e 95: ~7 min de espera)
@@ -14,6 +15,8 @@
 //
 // O horário de corte SEPA precisa estar desligado: depois das 16:00 UTC ou no fim de semana, as externas em EUR
 // ficariam Agendadas para o próximo dia útil e a carga nunca terminaria. O k6 falha se alguma vier Agendada.
+// As APIs têm rate limit por API key: um 429 espera o Retry-After e repete, como um cliente bem-comportado; o total
+// de 429 aparece em respostas_429.
 
 import http from 'k6/http';
 import { check, sleep } from 'k6';
@@ -45,8 +48,31 @@ const sagasPendentes = new Counter('sagas_pendentes');
 const transferenciasAgendadas = new Counter('transferencias_agendadas');
 const moedasQueNaoFecham = new Counter('moedas_que_nao_fecham');
 const sagasIniciadas = new Counter('sagas_iniciadas');
+const respostas429 = new Counter('respostas_429');
 
-http.setResponseCallback(http.expectedStatuses(200, 201, 202, 409, 422));
+const TENTATIVAS_429 = 20;
+
+/** Envia e, enquanto a API responder 429, espera o Retry-After e repete (até TENTATIVAS_429 vezes). */
+function respeitandoLimite(enviar) {
+  let resposta = enviar();
+  for (let tentativa = 1; resposta.status === 429 && tentativa <= TENTATIVAS_429; tentativa++) {
+    respostas429.add(1);
+    sleep(Number(resposta.headers['Retry-After'] || 1));
+    resposta = enviar();
+  }
+  return resposta;
+}
+
+/** O http do k6 com o 429 tratado; no lote, só as respostas 429 são repetidas, uma a uma. */
+const api = {
+  get: (url, params) => respeitandoLimite(() => http.get(url, params)),
+  post: (url, corpo, params) => respeitandoLimite(() => http.post(url, corpo, params)),
+  batch: (pedidos) => http.batch(pedidos).map((resposta, i) =>
+    resposta.status === 429 ? respeitandoLimite(() => http.request(...pedidos[i])) : resposta),
+};
+
+// 429 também é esperado: respeitandoLimite espera o Retry-After e repete (o total fica em respostas_429).
+http.setResponseCallback(http.expectedStatuses(200, 201, 202, 409, 422, 429));
 
 export const options = {
   vus: Number(__ENV.VUS || 10),
@@ -98,9 +124,9 @@ export function setup() {
   const contas = [];
   for (let i = 0; i < CONTAS; i++) {
     const moeda = MOEDAS[i % MOEDAS.length];
-    const aberta = http.post(`${API_CONTAS}/contas`, JSON.stringify({ titular: `Carga ${i + 1}`, moeda }), jsonContas);
+    const aberta = api.post(`${API_CONTAS}/contas`, JSON.stringify({ titular: `Carga ${i + 1}`, moeda }), jsonContas);
     const conta = aberta.json();
-    http.post(`${API_CONTAS}/contas/${conta.id}/depositos`, JSON.stringify({ valor: 1000 * ESCALA[moeda] }), jsonContas);
+    api.post(`${API_CONTAS}/contas/${conta.id}/depositos`, JSON.stringify({ valor: 1000 * ESCALA[moeda] }), jsonContas);
     contas.push({ id: conta.id, iban: conta.iban, moeda });
   }
 
@@ -118,7 +144,7 @@ function sondarTransferencias(conta) {
   const fim = Date.now() + 60 * 1000;
   let resposta;
   do {
-    resposta = http.post(`${API_TRANSFERENCIAS}/transferencias-externas`, JSON.stringify({
+    resposta = api.post(`${API_TRANSFERENCIAS}/transferencias-externas`, JSON.stringify({
       contaOrigemId: conta.id,
       ibanDestino: `${IBAN_EXTERNO}00`,
       bic: 'DEUTDEFF',
@@ -138,7 +164,7 @@ function sondarTransferencias(conta) {
 
   const sonda = resposta.json();
   if (sonda.estado === 'Agendada') {
-    http.post(`${API_TRANSFERENCIAS}/transferencias/${sonda.id}/cancelamento`, null, { headers: CHAVE_TRANSFERENCIAS });
+    api.post(`${API_TRANSFERENCIAS}/transferencias/${sonda.id}/cancelamento`, null, { headers: CHAVE_TRANSFERENCIAS });
     throw new Error('O horário de corte SEPA está ligado (a sonda ficou Agendada para o próximo dia útil). Rode ' +
       '"SEPA_HORARIO_DE_CORTE=false docker compose up -d transferencias-api" e repita a carga.');
   }
@@ -151,10 +177,10 @@ export default function (dados) {
   let resposta;
 
   if (sorteio < 0.40) {
-    resposta = http.post(`${API_CONTAS}/contas/${origem.id}/depositos`,
+    resposta = api.post(`${API_CONTAS}/contas/${origem.id}/depositos`,
       JSON.stringify({ valor: valorAleatorio(100, origem.moeda) }), jsonContas);
   } else if (sorteio < 0.62) {
-    resposta = http.post(`${API_CONTAS}/contas/${origem.id}/saques`,
+    resposta = api.post(`${API_CONTAS}/contas/${origem.id}/saques`,
       JSON.stringify({ valor: valorAleatorio(150, origem.moeda) }), jsonContas);
   } else if (sorteio < 0.77) {
     resposta = transferenciaInterna(contas, origem);
@@ -172,10 +198,10 @@ export default function (dados) {
 function transferenciaInterna(contas, origem) {
   const mesmaMoeda = contas.filter((conta) => conta.moeda === origem.moeda && conta.id !== origem.id);
   if (mesmaMoeda.length === 0) {
-    return http.post(`${API_CONTAS}/contas/${origem.id}/depositos`,
+    return api.post(`${API_CONTAS}/contas/${origem.id}/depositos`,
       JSON.stringify({ valor: valorAleatorio(100, origem.moeda) }), jsonContas);
   }
-  return http.post(`${API_CONTAS}/contas/${origem.id}/transferencias`,
+  return api.post(`${API_CONTAS}/contas/${origem.id}/transferencias`,
     JSON.stringify({ ibanDestino: sortear(mesmaMoeda).iban, valor: valorAleatorio(200, origem.moeda) }), jsonContas);
 }
 
@@ -215,7 +241,7 @@ function emailDeVezEmQuando() {
 }
 
 function pedirSaga(rota, corpo) {
-  const resposta = http.post(`${API_TRANSFERENCIAS}${rota}`, JSON.stringify(corpo), {
+  const resposta = api.post(`${API_TRANSFERENCIAS}${rota}`, JSON.stringify(corpo), {
     headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID(), ...CHAVE_TRANSFERENCIAS },
   });
   if (resposta.status === 202) {
@@ -287,7 +313,7 @@ function listarSagas(contas) {
   for (const conta of contas) {
     let pagina = 1;
     while (true) {
-      const resposta = http.get(
+      const resposta = api.get(
         `${API_TRANSFERENCIAS}/transferencias?contaOrigemId=${conta.id}&pagina=${pagina}&tamanho=200`,
         { headers: CHAVE_TRANSFERENCIAS });
       const lista = resposta.json();
@@ -307,7 +333,7 @@ function detalhar(sagas) {
   for (let i = 0; i < sagas.length; i += 20) {
     const lote = sagas.slice(i, i + 20).map((saga) => ['GET', `${API_TRANSFERENCIAS}/transferencias/${saga.id}`, null,
       { headers: CHAVE_TRANSFERENCIAS }]);
-    for (const resposta of http.batch(lote)) {
+    for (const resposta of api.batch(lote)) {
       detalhes.push(resposta.json());
     }
   }
@@ -336,8 +362,8 @@ function esperarConvergencia(contas) {
   }
 
   for (const conta of pendentes) {
-    const daConta = http.get(`${API_CONTAS}/contas/${conta.id}`, { headers: CHAVE_CONTAS }).json();
-    const extrato = http.get(`${API_EXTRATO}/extratos/${conta.id}?tamanho=1`, { headers: CHAVE_EXTRATO }).json();
+    const daConta = api.get(`${API_CONTAS}/contas/${conta.id}`, { headers: CHAVE_CONTAS }).json();
+    const extrato = api.get(`${API_EXTRATO}/extratos/${conta.id}?tamanho=1`, { headers: CHAVE_EXTRATO }).json();
     console.error(`Divergente ${conta.id}: Contas saldo=${daConta.saldo} v${daConta.versao}; ` +
       `Extrato saldo=${extrato.saldoAtual} v${extrato.ultimaVersao}`);
     divergencias.add(1);
@@ -349,9 +375,9 @@ function esperarConvergencia(contas) {
 }
 
 function convergiu(conta) {
-  const daConta = http.get(`${API_CONTAS}/contas/${conta.id}`, { headers: CHAVE_CONTAS });
-  const extrato = http.get(`${API_EXTRATO}/extratos/${conta.id}?tamanho=1`,
-    { headers: CHAVE_EXTRATO, responseCallback: http.expectedStatuses(200, 404) });
+  const daConta = api.get(`${API_CONTAS}/contas/${conta.id}`, { headers: CHAVE_CONTAS });
+  const extrato = api.get(`${API_EXTRATO}/extratos/${conta.id}?tamanho=1`,
+    { headers: CHAVE_EXTRATO, responseCallback: http.expectedStatuses(200, 404, 429) });
   if (daConta.status !== 200 || extrato.status !== 200) {
     return false;
   }
@@ -369,7 +395,7 @@ function conferirDinheiro(contas, sagas) {
   }
 
   for (const conta of contas) {
-    balanco[conta.moeda].saldos += centavos(http.get(`${API_CONTAS}/contas/${conta.id}`, { headers: CHAVE_CONTAS }).json().saldo);
+    balanco[conta.moeda].saldos += centavos(api.get(`${API_CONTAS}/contas/${conta.id}`, { headers: CHAVE_CONTAS }).json().saldo);
     for (const lancamento of lancamentos(conta)) {
       if (lancamento.tipo === 'Deposito') {
         balanco[conta.moeda].depositos += centavos(lancamento.valor);
@@ -426,7 +452,7 @@ function lancamentos(conta) {
   const todos = [];
   let pagina = 1;
   while (true) {
-    const extrato = http.get(`${API_EXTRATO}/extratos/${conta.id}?pagina=${pagina}&tamanho=200`,
+    const extrato = api.get(`${API_EXTRATO}/extratos/${conta.id}?pagina=${pagina}&tamanho=200`,
       { headers: CHAVE_EXTRATO }).json();
     todos.push(...extrato.lancamentos);
     if (pagina * extrato.tamanho >= extrato.total) {

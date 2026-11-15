@@ -9,11 +9,13 @@ using Microsoft.Extensions.Options;
 namespace EuroBank.Simuladores.Cambio;
 
 /// <summary>
-/// Recebe os pedidos de cotação e agenda a resposta (na mesma transação da inbox). Cada pedido novo emite uma
-/// cotação nova, inclusive os reenvios da saga: ela usa a primeira que chegar dentro da validade.
+/// Recebe os pedidos de cotação e agenda a resposta (na mesma transação da inbox). Um pedido repetido da mesma
+/// transferência (reenvio da saga) recebe a cotação que ainda vale, guardada no Redis (ou na tabela, com o Redis fora);
+/// sem cotação válida, emite uma nova.
 /// </summary>
 public sealed class ProcessadorComandosCambio(
     RepositorioCambio repositorio,
+    CotacoesValidas cotacoes,
     TabelaCambio tabela,
     IOptions<OpcoesCambio> opcoes,
     TimeProvider relogio,
@@ -40,8 +42,18 @@ public sealed class ProcessadorComandosCambio(
 
         var pedido = JsonSerializer.Deserialize<CotarCambio>(mensagem.Payload, JsonSerializerOptions.Web)
             ?? throw new JsonException($"Payload vazio na mensagem {mensagem.Id}.");
-        var resultado = tabela.Cotar(pedido.MoedaOrigem, pedido.MoedaDestino, pedido.Valor, pedido.MoedaDoValor);
         var responderEm = agora.AddMilliseconds(opcoes.Value.LatenciaMs);
+        if (await cotacoes.ObterAsync(pedido, agora, cancellationToken) is { } valida)
+        {
+            await AgendarAsync(sessao, valida, traceparent, responderEm, cancellationToken);
+            await sessao.ConfirmarAsync(cancellationToken);
+            logger.LogInformation("Cotação {CotacaoId} reaproveitada para a transferência {TransferenciaId}: vale até {ValidaAte}",
+                valida.CotacaoId, valida.TransferenciaId, valida.ValidaAte);
+            return;
+        }
+
+        var resultado = tabela.Cotar(pedido.MoedaOrigem, pedido.MoedaDestino, pedido.Valor, pedido.MoedaDoValor);
+        CotacaoEmitida? emitida = null;
 
         if (resultado.Disponivel)
         {
@@ -55,6 +67,7 @@ public sealed class ProcessadorComandosCambio(
                 resultado.ValorDestino,
                 agora.AddMinutes(opcoes.Value.ValidadeMinutos));
             await sessao.RegistrarCotacaoAsync(cotacao, agora, cancellationToken);
+            emitida = cotacao;
             await AgendarAsync(sessao, cotacao, traceparent, responderEm, cancellationToken);
             logger.LogInformation("Cotação {CotacaoId} {Origem}/{Destino} a {Taxa} para a transferência {TransferenciaId}",
                 cotacao.CotacaoId, cotacao.MoedaOrigem, cotacao.MoedaDestino, cotacao.Taxa, cotacao.TransferenciaId);
@@ -72,6 +85,10 @@ public sealed class ProcessadorComandosCambio(
         }
 
         await sessao.ConfirmarAsync(cancellationToken);
+        if (emitida is not null)
+        {
+            await cotacoes.GuardarAsync(emitida, agora);
+        }
     }
 
     private static Task AgendarAsync<TResposta>(

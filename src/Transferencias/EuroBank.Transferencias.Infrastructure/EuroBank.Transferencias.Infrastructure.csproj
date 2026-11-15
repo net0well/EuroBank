@@ -23,5 +23,6 @@
     <PackageReference Include="Google.Protobuf" />
     <PackageReference Include="Google.Api.CommonProtos" />
     <PackageReference Include="Grpc.Tools" PrivateAssets="all" />
+    <PackageReference Include="StackExchange.Redis" />
   </ItemGroup>
 </Project>

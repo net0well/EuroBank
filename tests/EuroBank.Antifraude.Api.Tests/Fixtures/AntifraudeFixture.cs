@@ -65,14 +65,19 @@ public sealed class AntifraudeFixture : IAsyncLifetime
         using var _ = Api.CreateClient();
     }
 
-    /// <summary>Uma API in-process apontando para o Redis informado (os testes de Redis fora do ar passam outro).</summary>
-    public WebApplicationFactory<MarcadorAntifraudeApi> CriarApi(string redis) =>
+    /// <summary>
+    /// Uma API in-process apontando para o Redis informado (os testes de Redis fora do ar passam outro). O rate limit
+    /// fica tão alto que os testes em paralelo nunca o alcançam, salvo quando um teste pede outro (com uma key própria:
+    /// o limite é por API e por key, e os outros testes usam a padrão).
+    /// </summary>
+    public WebApplicationFactory<MarcadorAntifraudeApi> CriarApi(string redis, int limitePorSegundo = 100_000, string apiKey = ApiKey) =>
         new WebApplicationFactory<MarcadorAntifraudeApi>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Development");
             builder.UseSetting("ConnectionStrings:Antifraude", ConnectionString);
             builder.UseSetting("ConnectionStrings:Redis", redis);
-            builder.UseSetting("Seguranca:ApiKey", ApiKey);
+            builder.UseSetting("Seguranca:ApiKey", apiKey);
+            builder.UseSetting("LimiteRequisicoes:PorSegundo", limitePorSegundo.ToString(System.Globalization.CultureInfo.InvariantCulture));
             builder.UseSetting("OTEL_SDK_DISABLED", "true");
         });
 

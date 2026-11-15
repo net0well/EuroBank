@@ -166,11 +166,16 @@ services:
         condition: service_healthy
       connect-init:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_HTTP_PORTS: "8080"
       ConnectionStrings__Contas: "Host=postgres;Port=5432;Database=eurobank_contas;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
       Seguranca__ApiKey: ${CONTAS_API_KEY}
+      ConnectionStrings__Redis: "redis:6379"
+      # Rate limit por API key (janela deslizante de 1 s no Redis; 429 com Retry-After; com o Redis fora, deixa passar).
+      LimiteRequisicoes__PorSegundo: ${RATE_LIMIT_POR_SEGUNDO:-100}
       # true: insere e apaga a linha da outbox na mesma transação (o evento sai mesmo assim, pelo WAL).
       Outbox__ApagarAposGravar: ${OUTBOX_APAGAR_APOS_GRAVAR:-false}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
@@ -203,7 +208,8 @@ services:
       timeout: 5s
       retries: 30
 
-  # Consumidor do Kafka (consumer group eurobank-extrato) + API de consulta do extrato.
+  # Consumidor do Kafka (consumer group eurobank-extrato) + API de consulta do extrato, com o resumo e a primeira
+  # página de cada conta no Redis conforme EXTRATO_CACHE_ESTRATEGIA (com o Redis fora, tudo segue pelo Postgres).
   # Para escalar para 3 instâncias (uma por partição), use o override com faixa de portas:
   #   docker compose -f docker-compose.yml -f docker-compose.escala.yml up -d --scale extrato-worker=3
   extrato-worker:
@@ -217,11 +223,18 @@ services:
         condition: service_completed_successfully
       kafka-init:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_HTTP_PORTS: "8080"
       ConnectionStrings__Extrato: "Host=postgres;Port=5432;Database=eurobank_extrato;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      ConnectionStrings__Redis: "redis:6379"
+      # Nenhuma, CacheAside, WriteThrough ou WriteBehind (resumo e primeira página de cada conta no Redis).
+      Cache__Estrategia: ${EXTRATO_CACHE_ESTRATEGIA:-WriteThrough}
       Seguranca__ApiKey: ${EXTRATO_API_KEY}
+      # Rate limit por API key (janela deslizante de 1 s no Redis; 429 com Retry-After; com o Redis fora, deixa passar).
+      LimiteRequisicoes__PorSegundo: ${RATE_LIMIT_POR_SEGUNDO:-100}
       Kafka__BootstrapServers: kafka:29092
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
     healthcheck:
@@ -241,11 +254,17 @@ services:
     depends_on:
       connect-init:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_HTTP_PORTS: "8080"
       ConnectionStrings__Transferencias: "Host=postgres;Port=5432;Database=eurobank_transferencias;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      # Idempotency-Key reservada no Redis antes da constraint do Postgres (com o Redis fora, só a constraint).
+      ConnectionStrings__Redis: "redis:6379"
       Seguranca__ApiKey: ${TRANSFERENCIAS_API_KEY}
+      # Rate limit por API key (janela deslizante de 1 s no Redis; 429 com Retry-After; com o Redis fora, deixa passar).
+      LimiteRequisicoes__PorSegundo: ${RATE_LIMIT_POR_SEGUNDO:-100}
       # false desliga o horário de corte SEPA (transferências em EUR depois das 16:00 UTC ou no fim de semana
       # ficam para o próximo dia útil às 08:00 UTC).
       Sepa__AplicarHorarioDeCorte: ${SEPA_HORARIO_DE_CORTE:-true}
@@ -349,6 +368,8 @@ services:
       ConnectionStrings__Antifraude: "Host=postgres;Port=5432;Database=eurobank_antifraude;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
       ConnectionStrings__Redis: "redis:6379"
       Seguranca__ApiKey: ${ANTIFRAUDE_API_KEY}
+      # Rate limit por API key (janela deslizante de 1 s no Redis; 429 com Retry-After; com o Redis fora, deixa passar).
+      LimiteRequisicoes__PorSegundo: ${RATE_LIMIT_POR_SEGUNDO:-100}
       Revisao__PrazoCaso: ${ANTIFRAUDE_PRAZO_REVISAO:-00:30:00}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
     healthcheck:
@@ -456,7 +477,8 @@ services:
       retries: 30
 
   # Provedor de cotações de mentira: base EUR (1,08 USD, 0,86 GBP, 5,90 BRL), spread de 1%, cotação travada por
-  # 10 minutos e o par BRL/GBP indisponível. Database próprio (eurobank_cambio).
+  # 10 minutos e o par BRL/GBP indisponível. Database próprio (eurobank_cambio); a cotação válida de cada
+  # transferência fica no Redis até vencer, e um reenvio da saga recebe a mesma.
   cambio-simulador:
     build:
       context: .
@@ -466,10 +488,13 @@ services:
         condition: service_completed_successfully
       kafka-init:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_HTTP_PORTS: "8080"
       ConnectionStrings__Cambio: "Host=postgres;Port=5432;Database=eurobank_cambio;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      ConnectionStrings__Redis: "redis:6379"
       Kafka__BootstrapServers: kafka:29092
       Cambio__LatenciaMs: ${CAMBIO_LATENCIA_MS:-500}
       Cambio__ValidadeMinutos: ${CAMBIO_VALIDADE_MINUTOS:-10}

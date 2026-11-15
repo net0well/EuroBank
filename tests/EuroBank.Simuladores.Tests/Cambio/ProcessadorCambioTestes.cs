@@ -6,29 +6,9 @@ using EuroBank.Simuladores.Comum;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
-using Testcontainers.PostgreSql;
+using StackExchange.Redis;
 
 namespace EuroBank.Simuladores.Tests.Cambio;
-
-public sealed class CambioFixture : IAsyncLifetime
-{
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:18.6")
-        .WithDatabase("eurobank_cambio")
-        .WithUsername("eurobank")
-        .WithPassword("eurobank")
-        .Build();
-
-    public RepositorioCambio Repositorio { get; private set; } = null!;
-
-    public async ValueTask InitializeAsync()
-    {
-        await _container.StartAsync();
-        Repositorio = new RepositorioCambio(_container.GetConnectionString());
-        await Repositorio.CriarEstruturaAsync(TestContext.Current.CancellationToken);
-    }
-
-    public async ValueTask DisposeAsync() => await _container.DisposeAsync();
-}
 
 public sealed class ProcessadorCambioTestes(CambioFixture banco) : IClassFixture<CambioFixture>
 {
@@ -37,13 +17,20 @@ public sealed class ProcessadorCambioTestes(CambioFixture banco) : IClassFixture
     private static readonly IOptions<OpcoesCambio> Opcoes =
         Options.Create(new OpcoesCambio { LatenciaMs = 500, ValidadeMinutos = 10, Spread = 0.01m });
 
-    private readonly ProcessadorComandosCambio _processador = new(
-        banco.Repositorio, new TabelaCambio(Opcoes), Opcoes, new FakeTimeProvider(Agora), NullLogger<ProcessadorComandosCambio>.Instance);
+    private readonly FakeTimeProvider _relogio = new(Agora);
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    private Task CotarAsync(Guid transferenciaId, string origem, string destino, string? idMensagem = null) =>
-        _processador.ProcessarAsync(
+    private ProcessadorComandosCambio Processador(IConnectionMultiplexer? redis = null) => new(
+        banco.Repositorio,
+        new CotacoesValidas(redis ?? banco.Redis, banco.Repositorio, NullLogger<CotacoesValidas>.Instance),
+        new TabelaCambio(Opcoes),
+        Opcoes,
+        _relogio,
+        NullLogger<ProcessadorComandosCambio>.Instance);
+
+    private Task CotarAsync(Guid transferenciaId, string origem, string destino, string? idMensagem = null, ProcessadorComandosCambio? processador = null) =>
+        (processador ?? Processador()).ProcessarAsync(
             new MensagemRecebida(
                 idMensagem ?? Guid.CreateVersion7().ToString(),
                 "CotarCambio",
@@ -58,6 +45,15 @@ public sealed class ProcessadorCambioTestes(CambioFixture banco) : IClassFixture
                 }, JsonSerializerOptions.Web),
                 "00-4ec0e9a4e59373e59c1b456265157e28-f6186d492757de83-01"),
             Ct);
+
+    private async Task<List<Guid>> CotacoesRespondidasAsync(Guid transferenciaId) =>
+        (await banco.Repositorio.ListarRespostasAsync(transferenciaId, Ct))
+        .Select(resposta =>
+        {
+            using var payload = JsonDocument.Parse(resposta.Payload);
+            return payload.RootElement.GetProperty("cotacaoId").GetGuid();
+        })
+        .ToList();
 
     [Fact]
     public async Task ParDisponivel_GuardaACotacaoEAgendaARespostaComALatencia()
@@ -78,6 +74,8 @@ public sealed class ProcessadorCambioTestes(CambioFixture banco) : IClassFixture
 
         var cotacao = (await banco.Repositorio.ListarCotacoesAsync(id, Ct)).ShouldHaveSingleItem();
         cotacao.ShouldBe(payload.RootElement.GetProperty("cotacaoId").GetGuid());
+        (await banco.Redis.GetDatabase().KeyTimeToLiveAsync($"cambio:cotacao:{id}")).ShouldNotBeNull()
+            .ShouldBeInRange(TimeSpan.FromMinutes(9), TimeSpan.FromMinutes(10));
     }
 
     [Fact]
@@ -92,16 +90,58 @@ public sealed class ProcessadorCambioTestes(CambioFixture banco) : IClassFixture
     }
 
     [Fact]
-    public async Task CadaPedidoNovo_EmiteOutraCotacao_MasAMesmaMensagemSoUmaVez()
+    public async Task MesmaMensagemSoUmaVez_EReenvioRecebeAMesmaCotacao()
     {
         var id = Guid.CreateVersion7();
         var idMensagem = Guid.CreateVersion7().ToString();
 
         await CotarAsync(id, "EUR", "USD", idMensagem);
         await CotarAsync(id, "EUR", "USD", idMensagem);
+        _relogio.Advance(TimeSpan.FromSeconds(30));
+        await CotarAsync(id, "EUR", "USD");
+
+        (await banco.Repositorio.ListarCotacoesAsync(id, Ct)).ShouldHaveSingleItem();
+        (await CotacoesRespondidasAsync(id)).ShouldSatisfyAllConditions(
+            cotacoes => cotacoes.Count.ShouldBe(2),
+            cotacoes => cotacoes.Distinct().ShouldHaveSingleItem());
+    }
+
+    [Fact]
+    public async Task CotacaoVencida_EmiteOutra()
+    {
+        var id = Guid.CreateVersion7();
+        await CotarAsync(id, "EUR", "USD");
+
+        _relogio.Advance(TimeSpan.FromMinutes(11));
         await CotarAsync(id, "EUR", "USD");
 
         (await banco.Repositorio.ListarCotacoesAsync(id, Ct)).Count.ShouldBe(2);
-        (await banco.Repositorio.ListarRespostasAsync(id, Ct)).Count.ShouldBe(2);
+        (await CotacoesRespondidasAsync(id)).Distinct().Count().ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task RedisFora_AValidaVemDaTabela()
+    {
+        var id = Guid.CreateVersion7();
+        var semRedis = Processador(banco.RedisForaDoAr);
+
+        await CotarAsync(id, "EUR", "USD", processador: semRedis);
+        await CotarAsync(id, "EUR", "USD", processador: semRedis);
+
+        (await banco.Repositorio.ListarCotacoesAsync(id, Ct)).ShouldHaveSingleItem();
+        (await CotacoesRespondidasAsync(id)).Distinct().ShouldHaveSingleItem();
+    }
+
+    [Fact]
+    public async Task ChaveSumiuDoRedis_AValidaVemDaTabela_EVoltaParaORedis()
+    {
+        var id = Guid.CreateVersion7();
+        await CotarAsync(id, "EUR", "USD");
+        await banco.Redis.GetDatabase().KeyDeleteAsync($"cambio:cotacao:{id}");
+
+        await CotarAsync(id, "EUR", "USD");
+
+        (await banco.Repositorio.ListarCotacoesAsync(id, Ct)).ShouldHaveSingleItem();
+        (await banco.Redis.GetDatabase().KeyExistsAsync($"cambio:cotacao:{id}")).ShouldBeTrue();
     }
 }

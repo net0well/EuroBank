@@ -6,7 +6,8 @@ namespace EuroBank.Shared.Web.ErrorHandling;
 
 /// <summary>
 /// Converte exceções de domínio em ProblemDetails (RFC 9457): validação 400, não encontrado 404,
-/// concorrência ou conflito 409 e regra de negócio 422. Outras exceções seguem para o tratamento padrão (500).
+/// concorrência ou conflito 409 e regra de negócio 422. Outras exceções seguem para o tratamento padrão (500). Uma
+/// exceção passageira (<see cref="IExcecaoComNovaTentativa"/>) também leva o header Retry-After.
 /// </summary>
 public sealed class TratadorExcecoesDominio(IProblemDetailsService problemDetails) : IExceptionHandler
 {
@@ -31,6 +32,12 @@ public sealed class TratadorExcecoesDominio(IProblemDetailsService problemDetail
         };
 
         httpContext.Response.StatusCode = status;
+        if (excecao is IExcecaoComNovaTentativa passageira)
+        {
+            httpContext.Response.Headers.RetryAfter =
+                Math.Max(1, (int)Math.Ceiling(passageira.TentarDeNovoEm.TotalSeconds)).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
         return await problemDetails.TryWriteAsync(new ProblemDetailsContext
         {
             HttpContext = httpContext,

@@ -43,6 +43,9 @@ public sealed class LaboratorioFixture : IAsyncLifetime
 
     public const string ApiKeyAntifraude = "chave-e2e-antifraude";
 
+    /// <summary>Rate limit que as sagas em paralelo nunca alcançam (o 429 é testado na API do antifraude).</summary>
+    private const string LimiteE2E = "100000";
+
     /// <summary>País de risco só deste laboratório (país SEPA, para caber numa transferência em EUR).</summary>
     public const string IbanPaisDeRisco = "MT84MALT011000012345MTLCAST001S";
 
@@ -172,6 +175,9 @@ public sealed class LaboratorioFixture : IAsyncLifetime
     /// <summary>API HTTP do Mailpit (mensagens recebidas pelo SMTP).</summary>
     public HttpClient Mailpit { get; private set; } = null!;
 
+    /// <summary>Conexão própria dos testes com o Redis do laboratório, para conferir o que as aplicações gravaram.</summary>
+    public StackExchange.Redis.IConnectionMultiplexer Redis { get; private set; } = null!;
+
     public string BootstrapKafka => _kafka.GetBootstrapAddress();
 
     public string ConnectionStringTransferencias =>
@@ -202,6 +208,7 @@ public sealed class LaboratorioFixture : IAsyncLifetime
         await _rede.CreateAsync();
         await Task.WhenAll(_postgres.StartAsync(), _kafka.StartAsync(), _mailpit.StartAsync(), _redis.StartAsync());
         Mailpit = new HttpClient { BaseAddress = new Uri($"http://{_mailpit.Hostname}:{_mailpit.GetMappedPublicPort(8025)}") };
+        Redis = await StackExchange.Redis.ConnectionMultiplexer.ConnectAsync(_redis.GetConnectionString());
 
         await CriarBancosAsync();
         await CriarTopicosAsync();
@@ -214,6 +221,8 @@ public sealed class LaboratorioFixture : IAsyncLifetime
             builder.UseEnvironment("Development");
             builder.UseSetting("ConnectionStrings:Contas", ConnectionStringContas);
             builder.UseSetting("Seguranca:ApiKey", "chave-e2e-contas");
+            builder.UseSetting("ConnectionStrings:Redis", _redis.GetConnectionString());
+            builder.UseSetting("LimiteRequisicoes:PorSegundo", LimiteE2E);
             builder.UseSetting("OTEL_SDK_DISABLED", "true");
         });
         Contas = _contas.CreateClient();
@@ -223,9 +232,11 @@ public sealed class LaboratorioFixture : IAsyncLifetime
         {
             builder.UseEnvironment("Development");
             builder.UseSetting("ConnectionStrings:Extrato", ConnectionStringExtrato);
+            builder.UseSetting("ConnectionStrings:Redis", _redis.GetConnectionString());
             builder.UseSetting("Kafka:BootstrapServers", BootstrapKafka);
             builder.UseSetting("Kafka:GrupoConsumidor", $"eurobank-extrato-e2e-{Guid.NewGuid():N}");
             builder.UseSetting("Seguranca:ApiKey", "chave-e2e-extrato");
+            builder.UseSetting("LimiteRequisicoes:PorSegundo", LimiteE2E);
             builder.UseSetting("OTEL_SDK_DISABLED", "true");
         });
         Extrato = _extrato.CreateClient();
@@ -244,7 +255,9 @@ public sealed class LaboratorioFixture : IAsyncLifetime
         var transferencias = Subir(new WebApplicationFactory<MarcadorTransferenciasApi>(), new(ConfiguracaoSaga)
         {
             ["ConnectionStrings:Transferencias"] = ConnectionStringTransferencias,
+            ["ConnectionStrings:Redis"] = _redis.GetConnectionString(),
             ["Seguranca:ApiKey"] = "chave-e2e-transferencias",
+            ["LimiteRequisicoes:PorSegundo"] = LimiteE2E,
         });
         Transferencias = transferencias.CreateClient();
         Transferencias.DefaultRequestHeaders.Add("X-Api-Key", "chave-e2e-transferencias");
@@ -279,6 +292,7 @@ public sealed class LaboratorioFixture : IAsyncLifetime
         Subir(new WebApplicationFactory<MarcadorCambio>(), new()
         {
             ["ConnectionStrings:Cambio"] = ConnectionStringCambio,
+            ["ConnectionStrings:Redis"] = _redis.GetConnectionString(),
             ["Kafka:BootstrapServers"] = BootstrapKafka,
             ["Kafka:GrupoConsumidor"] = $"eurobank-cambio-e2e-{Guid.NewGuid():N}",
             ["Cambio:LatenciaMs"] = "200",
@@ -299,6 +313,7 @@ public sealed class LaboratorioFixture : IAsyncLifetime
             ["ConnectionStrings:Antifraude"] = ConnectionStringAntifraude,
             ["ConnectionStrings:Redis"] = redis,
             ["Seguranca:ApiKey"] = ApiKeyAntifraude,
+            ["LimiteRequisicoes:PorSegundo"] = LimiteE2E,
             ["Revisao:PrazoCaso"] = "00:00:20",
         });
         Antifraude = _antifraude.CreateClient();
@@ -497,6 +512,7 @@ public sealed class LaboratorioFixture : IAsyncLifetime
         Extrato?.Dispose();
         Transferencias?.Dispose();
         Antifraude?.Dispose();
+        Redis?.Dispose();
         Mailpit?.Dispose();
         foreach (var aplicacao in Enumerable.Reverse(_aplicacoes))
         {

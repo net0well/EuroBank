@@ -2,6 +2,7 @@ using EuroBank.Extrato.Infrastructure;
 using EuroBank.Extrato.Infrastructure.Messaging;
 using EuroBank.Extrato.Infrastructure.Persistence;
 using EuroBank.Extrato.Worker.Endpoints;
+using EuroBank.Extrato.Worker.Services;
 using EuroBank.Shared.Web.ErrorHandling;
 using EuroBank.Shared.Web.Extensions;
 using JasperFx.Resources;
@@ -13,6 +14,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AdicionarObservabilidade("eurobank-extrato");
 
 builder.Services.AdicionarInfraestruturaExtrato();
+builder.Services.AddHostedService<DescargaPendenciasServico>();
+builder.Services.AddHostedService<ReconstrucaoCacheServico>();
 
 // Consumidor Kafka (listener do Wolverine) e mediator do endpoint de consulta no mesmo processo.
 builder.Host.UseWolverine(opcoes => opcoes.ConfigurarMensageriaExtrato(builder.Configuration));
@@ -26,12 +29,14 @@ builder.Services.AddExceptionHandler<TratadorExcecoesDominio>();
 builder.Services.AddHealthChecks().AddDbContextCheck<ExtratoDbContext>();
 builder.Services.AdicionarSwaggerComApiKey("EuroBank - Extrato");
 builder.Services.AdicionarApiKey();
+builder.Services.AdicionarLimiteRequisicoes();
 
 var app = builder.Build();
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 app.UsarApiKey();
+app.UsarLimiteRequisicoes();
 app.UseSwagger();
 app.UseSwaggerUI();
 

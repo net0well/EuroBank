@@ -5,6 +5,7 @@ using EuroBank.Shared.Persistence.Transactions;
 using EuroBank.Transferencias.Application.Interfaces;
 using EuroBank.Transferencias.Domain.Repositories;
 using EuroBank.Transferencias.Infrastructure.Clients;
+using EuroBank.Transferencias.Infrastructure.Idempotency;
 using EuroBank.Transferencias.Infrastructure.Options;
 using EuroBank.Transferencias.Infrastructure.Outbox;
 using EuroBank.Transferencias.Infrastructure.Persistence;
@@ -13,7 +14,9 @@ using EuroBank.Transferencias.Infrastructure.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 
 namespace EuroBank.Transferencias.Infrastructure;
 
@@ -40,8 +43,25 @@ public static class DependencyInjection
         services.AddScoped<IUnidadeDeTrabalho, UnidadeDeTrabalhoComOutbox<TransferenciasDbContext>>();
         services.AddScoped<IExecutorTransacional, ExecutorTransacionalEf<TransferenciasDbContext>>();
         services.AdicionarClienteAntifraude();
+        services.AdicionarRedis();
+        services.AddScoped<IReservasIdempotencia, ReservasIdempotenciaRedis>();
         return services;
     }
+
+    /// <summary>
+    /// Uma conexão com o Redis (Idempotency-Key). Com abortConnect=false a aplicação sobe com o Redis fora; com o
+    /// backlog em fail-fast, cada operação falha na hora em vez de esperar o timeout, e o pedido segue pelo Postgres.
+    /// </summary>
+    private static void AdicionarRedis(this IServiceCollection services) =>
+        services.TryAddSingleton<IConnectionMultiplexer>(provedor =>
+        {
+            var configuracao = provedor.GetRequiredService<IConfiguration>().GetConnectionString("Redis")
+                ?? throw new InvalidOperationException("ConnectionStrings:Redis não configurada.");
+            var opcoes = ConfigurationOptions.Parse(configuracao);
+            opcoes.AbortOnConnectFail = false;
+            opcoes.BacklogPolicy = BacklogPolicy.FailFast;
+            return ConnectionMultiplexer.Connect(opcoes);
+        });
 
     /// <summary>
     /// Cliente gRPC do antifraude, registrado também na API: a varredura (e o que depende dela) é validada quando o

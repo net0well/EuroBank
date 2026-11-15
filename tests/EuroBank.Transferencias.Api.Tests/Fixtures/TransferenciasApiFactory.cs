@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 namespace EuroBank.Transferencias.Api.Tests.Fixtures;
 
 /// <summary>Sobe a API de Transferências in-process (ambiente Development: migrations no startup).</summary>
-public sealed class TransferenciasApiFactory(string connectionString) : WebApplicationFactory<MarcadorTransferenciasApi>
+public sealed class TransferenciasApiFactory(string connectionString, string redis) : WebApplicationFactory<MarcadorTransferenciasApi>
 {
     public const string ApiKey = "chave-de-teste-transferencias";
 
@@ -13,7 +13,10 @@ public sealed class TransferenciasApiFactory(string connectionString) : WebAppli
     {
         builder.UseEnvironment("Development");
         builder.UseSetting("ConnectionStrings:Transferencias", connectionString);
+        builder.UseSetting("ConnectionStrings:Redis", redis);
         builder.UseSetting("Seguranca:ApiKey", ApiKey);
+        // Os testes em paralelo não podem esbarrar no rate limit (ele é testado na API do antifraude).
+        builder.UseSetting("LimiteRequisicoes:PorSegundo", "100000");
         builder.UseSetting("OTEL_SDK_DISABLED", "true");
 
         // Os testes não podem depender da hora em que rodam; o corte SEPA tem testes próprios com relógio falso.
