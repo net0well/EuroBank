@@ -1,6 +1,7 @@
 using EuroBank.Extrato.Domain.Enums;
 using EuroBank.Extrato.Domain.ValueObjects;
 using EuroBank.Shared.Enums;
+using EuroBank.Shared.Exceptions;
 using EuroBank.Shared.ValueObjects;
 
 namespace EuroBank.Extrato.Domain.Entities;
@@ -63,6 +64,40 @@ public sealed class ExtratoConta
             UltimaVersao = versao,
             AtualizadoEm = ocorridoEm,
         };
+
+    /// <summary>
+    /// Reconstitui o extrato a partir de um estado já gravado (o write-behind o guarda no Redis), sem lançamentos: os
+    /// eventos aplicados depois entram como lançamentos novos, como num extrato carregado do Postgres.
+    /// </summary>
+    /// <exception cref="ExcecaoMoedaDiferente">O saldo não está na moeda da conta.</exception>
+    public static ExtratoConta Restaurar(
+        Guid contaId,
+        string iban,
+        string titular,
+        StatusConta status,
+        Moeda moeda,
+        Saldo saldoAtual,
+        int ultimaVersao,
+        DateTimeOffset atualizadoEm)
+    {
+        ArgumentNullException.ThrowIfNull(saldoAtual);
+        if (saldoAtual.Moeda != moeda)
+        {
+            throw new ExcecaoMoedaDiferente(moeda, saldoAtual.Moeda);
+        }
+
+        return new ExtratoConta
+        {
+            ContaId = contaId,
+            Iban = iban,
+            Titular = titular,
+            Status = status,
+            Moeda = moeda,
+            SaldoAtual = saldoAtual,
+            UltimaVersao = ultimaVersao,
+            AtualizadoEm = atualizadoEm,
+        };
+    }
 
     public ResultadoAplicacao RegistrarDeposito(int versao, Dinheiro valor, Saldo saldoApos, DateTimeOffset ocorridoEm) =>
         RegistrarLancamento(TipoLancamento.Deposito, versao, valor, saldoApos, ocorridoEm, "Depósito", transferenciaId: null);

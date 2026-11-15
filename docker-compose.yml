@@ -203,7 +203,8 @@ services:
       timeout: 5s
       retries: 30
 
-  # Consumidor do Kafka (consumer group eurobank-extrato) + API de consulta do extrato.
+  # Consumidor do Kafka (consumer group eurobank-extrato) + API de consulta do extrato, com o resumo e a primeira
+  # página de cada conta no Redis conforme EXTRATO_CACHE_ESTRATEGIA (com o Redis fora, tudo segue pelo Postgres).
   # Para escalar para 3 instâncias (uma por partição), use o override com faixa de portas:
   #   docker compose -f docker-compose.yml -f docker-compose.escala.yml up -d --scale extrato-worker=3
   extrato-worker:
@@ -217,10 +218,15 @@ services:
         condition: service_completed_successfully
       kafka-init:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_HTTP_PORTS: "8080"
       ConnectionStrings__Extrato: "Host=postgres;Port=5432;Database=eurobank_extrato;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      ConnectionStrings__Redis: "redis:6379"
+      # Nenhuma, CacheAside, WriteThrough ou WriteBehind (resumo e primeira página de cada conta no Redis).
+      Cache__Estrategia: ${EXTRATO_CACHE_ESTRATEGIA:-WriteThrough}
       Seguranca__ApiKey: ${EXTRATO_API_KEY}
       Kafka__BootstrapServers: kafka:29092
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317

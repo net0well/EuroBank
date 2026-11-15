@@ -149,6 +149,27 @@ namespace EuroBank.Extrato.Infrastructure.Persistence.Migrations
                     b.ToTable("lancamentos", (string)null);
                 });
 
+            modelBuilder.Entity("EuroBank.Extrato.Infrastructure.Persistence.Entities.MarcaCache", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("SuspeitoDesde")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("suspeito_desde");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("cache_estado", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1
+                        });
+                });
+
             modelBuilder.Entity("EuroBank.Extrato.Domain.Entities.Lancamento", b =>
                 {
                     b.HasOne("EuroBank.Extrato.Domain.Entities.ExtratoConta", null)

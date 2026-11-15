@@ -1,4 +1,5 @@
 using EuroBank.Extrato.Domain.Entities;
+using EuroBank.Extrato.Infrastructure.Persistence.Entities;
 using Microsoft.EntityFrameworkCore;
 
 namespace EuroBank.Extrato.Infrastructure.Persistence;
@@ -9,6 +10,9 @@ public sealed class ExtratoDbContext(DbContextOptions<ExtratoDbContext> options)
     public DbSet<ExtratoConta> Extratos => Set<ExtratoConta>();
 
     public DbSet<Lancamento> Lancamentos => Set<Lancamento>();
+
+    /// <summary>A marca de cache suspeito (uma linha só).</summary>
+    public DbSet<MarcaCache> MarcasCache => Set<MarcaCache>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) =>
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ExtratoDbContext).Assembly);

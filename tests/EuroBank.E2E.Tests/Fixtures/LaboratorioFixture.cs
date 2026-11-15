@@ -223,6 +223,7 @@ public sealed class LaboratorioFixture : IAsyncLifetime
         {
             builder.UseEnvironment("Development");
             builder.UseSetting("ConnectionStrings:Extrato", ConnectionStringExtrato);
+            builder.UseSetting("ConnectionStrings:Redis", _redis.GetConnectionString());
             builder.UseSetting("Kafka:BootstrapServers", BootstrapKafka);
             builder.UseSetting("Kafka:GrupoConsumidor", $"eurobank-extrato-e2e-{Guid.NewGuid():N}");
             builder.UseSetting("Seguranca:ApiKey", "chave-e2e-extrato");
