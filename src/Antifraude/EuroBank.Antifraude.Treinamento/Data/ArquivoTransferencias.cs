@@ -7,15 +7,18 @@ using EuroBank.Antifraude.Treinamento.TransferObjects;
 namespace EuroBank.Antifraude.Treinamento.Data;
 
 /// <summary>
-/// O CSV do conjunto sintético: momento, conta, valor, padrão, rótulo e as features com os nomes do vetor. Cultura
-/// invariante (ponto decimal), para o arquivo ser o mesmo em qualquer máquina.
+/// O CSV do conjunto sintético: uma linha de comentário com a semente, o cabeçalho e, por transferência, momento,
+/// conta, valor, padrão, rótulo e as features com os nomes do vetor. Cultura invariante (ponto decimal), para o
+/// arquivo ser o mesmo em qualquer máquina.
 /// </summary>
 public static class ArquivoTransferencias
 {
+    private const string PrefixoSemente = "# semente=";
+
     private static readonly string Cabecalho =
         string.Join(',', ["Momento", "ContaId", "Valor", "Padrao", "Fraude", .. VetorFeatures.Nomes]);
 
-    public static void Escrever(string caminho, IEnumerable<TransferenciaSintetica> linhas)
+    public static void Escrever(string caminho, int semente, IEnumerable<TransferenciaSintetica> linhas)
     {
         ArgumentNullException.ThrowIfNull(linhas);
         var pasta = Path.GetDirectoryName(Path.GetFullPath(caminho));
@@ -25,6 +28,7 @@ public static class ArquivoTransferencias
         }
 
         using var escritor = new StreamWriter(caminho, append: false, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        escritor.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{PrefixoSemente}{semente}"));
         escritor.WriteLine(Cabecalho);
         foreach (var linha in linhas)
         {
@@ -41,15 +45,18 @@ public static class ArquivoTransferencias
         }
     }
 
-    public static IReadOnlyList<TransferenciaSintetica> Ler(string caminho)
+    public static ConjuntoSintetico Ler(string caminho)
     {
         var linhas = new List<TransferenciaSintetica>();
         using var leitor = new StreamReader(caminho);
+        var comentario = leitor.ReadLine();
         var cabecalho = leitor.ReadLine();
-        if (cabecalho != Cabecalho)
+        if (comentario is null || !comentario.StartsWith(PrefixoSemente, StringComparison.Ordinal) || cabecalho != Cabecalho)
         {
-            throw new InvalidDataException($"Cabeçalho inesperado em {caminho}: gere o arquivo de novo com esta versão.");
+            throw new InvalidDataException($"Formato inesperado em {caminho}: gere o arquivo de novo com esta versão.");
         }
+
+        var semente = int.Parse(comentario[PrefixoSemente.Length..], CultureInfo.InvariantCulture);
 
         while (leitor.ReadLine() is { } texto)
         {
@@ -62,6 +69,6 @@ public static class ArquivoTransferencias
                 VetorFeatures.DeArray(colunas.Skip(5).Select(valor => float.Parse(valor, CultureInfo.InvariantCulture)).ToList())));
         }
 
-        return linhas;
+        return new ConjuntoSintetico(semente, linhas);
     }
 }

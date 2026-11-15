@@ -6,5 +6,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\EuroBank.Antifraude.Features\EuroBank.Antifraude.Features.csproj" />
+    <ProjectReference Include="..\EuroBank.Antifraude.Infrastructure\EuroBank.Antifraude.Infrastructure.csproj" />
   </ItemGroup>
 </Project>

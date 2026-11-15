@@ -64,9 +64,11 @@ public sealed class GeradorTransferenciasTestes
         var caminho = Path.Combine(Path.GetTempPath(), $"eurobank-sintetico-{Guid.NewGuid():N}.csv");
         try
         {
-            ArquivoTransferencias.Escrever(caminho, Linhas.Value);
+            ArquivoTransferencias.Escrever(caminho, Pequeno.Semente, Linhas.Value);
 
-            ArquivoTransferencias.Ler(caminho).ShouldBe(Linhas.Value);
+            var lido = ArquivoTransferencias.Ler(caminho);
+            lido.Semente.ShouldBe(Pequeno.Semente);
+            lido.Transferencias.ShouldBe(Linhas.Value);
         }
         finally
         {

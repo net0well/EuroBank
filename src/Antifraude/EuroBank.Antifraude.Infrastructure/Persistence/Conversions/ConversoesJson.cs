@@ -32,6 +32,23 @@ public static class ConversoesJson
         features => features == null ? null : JsonSerializer.Serialize(features, Json),
         json => json == null ? null : JsonSerializer.Deserialize<VetorFeatures>(json, Json));
 
+    public static ValueConverter<MetricasModelo, string> Metricas { get; } = new(
+        metricas => JsonSerializer.Serialize(metricas, Json),
+        json => JsonSerializer.Deserialize<MetricasModelo>(json, Json)!);
+
+    public static ValueConverter<DadosTreino, string> DadosTreino { get; } = new(
+        dados => JsonSerializer.Serialize(dados, Json),
+        json => JsonSerializer.Deserialize<DadosTreino>(json, Json)!);
+
+    public static ValueConverter<List<DistribuicaoFeature>, string> Distribuicao { get; } = new(
+        distribuicao => JsonSerializer.Serialize(distribuicao, Json),
+        json => JsonSerializer.Deserialize<List<DistribuicaoFeature>>(json, Json) ?? new List<DistribuicaoFeature>());
+
+    public static ValueComparer<List<DistribuicaoFeature>> ComparadorDistribuicao { get; } = new(
+        (esquerda, direita) => JsonSerializer.Serialize(esquerda, Json) == JsonSerializer.Serialize(direita, Json),
+        distribuicao => JsonSerializer.Serialize(distribuicao, Json).GetHashCode(StringComparison.Ordinal),
+        distribuicao => distribuicao.ToList());
+
     public static ValueConverter<Dictionary<string, decimal>, string> Parametros { get; } = new(
         parametros => JsonSerializer.Serialize(parametros, Json),
         json => JsonSerializer.Deserialize<Dictionary<string, decimal>>(json, Json) ?? new Dictionary<string, decimal>());

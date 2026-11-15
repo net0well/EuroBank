@@ -403,6 +403,26 @@ services:
       timeout: 5s
       retries: 30
 
+  # Treino do modelo de fraude sob demanda (não sobe no "up"): gera o CSV sintético no volume antifraude-dados (só na
+  # primeira vez), junta os rótulos reais do banco do Antifraude, treina, avalia e registra uma versão. A versão nasce
+  # Registrada; quem a ativa ou põe em sombra é o analista, pela API do Antifraude.
+  #   docker compose --profile treino run --rm antifraude-treino
+  #   docker compose --profile treino run --rm antifraude-treino treinar --meta-recall 0.95
+  #   docker compose --profile treino run --rm antifraude-treino gerar --semente 7   (outro mundo sintético)
+  antifraude-treino:
+    build:
+      context: .
+      dockerfile: src/Antifraude/EuroBank.Antifraude.Treinamento/Dockerfile
+    profiles: ["treino"]
+    depends_on:
+      antifraude-api:
+        condition: service_healthy
+    # Sem Kerberos no laboratório: a imagem (só o runtime, sem curl) não tem a libgssapi que o Npgsql tentaria carregar.
+    environment:
+      ConnectionStrings__Antifraude: "Host=postgres;Port=5432;Database=eurobank_antifraude;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};Gss Encryption Mode=Disable"
+    volumes:
+      - antifraude-dados:/app/dados
+
   # E-mail em pt-BR para quem pediu (emailNotificacao) a partir dos eventos finais das sagas
   # (eurobank.transferencias.eventos), com inbox durável e a tabela notificacoes (chave = id do evento) no database
   # eurobank_notificacoes. SMTP fora do ar: novas tentativas em 5 s, 30 s e 2 min, depois dead letter; a saga não
@@ -540,3 +560,4 @@ services:
 
 volumes:
   postgres-dados:
+  antifraude-dados:

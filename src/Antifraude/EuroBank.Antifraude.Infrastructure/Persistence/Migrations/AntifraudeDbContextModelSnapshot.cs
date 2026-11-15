@@ -384,6 +384,70 @@ namespace EuroBank.Antifraude.Infrastructure.Persistence.Migrations
                     b.ToTable("regras", (string)null);
                 });
 
+            modelBuilder.Entity("EuroBank.Antifraude.Domain.Entities.VersaoModelo", b =>
+                {
+                    b.Property<int>("Versao")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("versao");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Versao"));
+
+                    b.Property<DateTimeOffset?>("AposentadaEm")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("aposentada_em");
+
+                    b.Property<byte[]>("Arquivo")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("arquivo");
+
+                    b.Property<DateTimeOffset?>("AtivadaEm")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ativada_em");
+
+                    b.Property<string>("Dados")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("dados_treino");
+
+                    b.Property<double>("LimiarRecomendado")
+                        .HasColumnType("double precision")
+                        .HasColumnName("limiar_recomendado");
+
+                    b.Property<string>("Metricas")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("metricas");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset>("TreinadaEm")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("treinada_em");
+
+                    b.Property<string>("_distribuicao")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("distribuicao");
+
+                    b.HasKey("Versao");
+
+                    b.HasIndex(new[] { "Status" }, "ux_versoes_modelo_ativa")
+                        .IsUnique()
+                        .HasFilter("status = 'Ativa'");
+
+                    b.HasIndex(new[] { "Status" }, "ux_versoes_modelo_challenger")
+                        .IsUnique()
+                        .HasFilter("status = 'Challenger'");
+
+                    b.ToTable("versoes_modelo", (string)null);
+                });
+
             modelBuilder.Entity("EuroBank.Shared.Persistence.Outbox.MensagemOutbox", b =>
                 {
                     b.Property<Guid>("Id")
