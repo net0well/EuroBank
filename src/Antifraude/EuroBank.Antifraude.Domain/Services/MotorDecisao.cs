@@ -2,6 +2,7 @@ using EuroBank.Antifraude.Domain.Entities;
 using EuroBank.Antifraude.Domain.Enums;
 using EuroBank.Antifraude.Domain.Rules;
 using EuroBank.Antifraude.Domain.ValueObjects;
+using EuroBank.Antifraude.Features.Services;
 
 namespace EuroBank.Antifraude.Domain.Services;
 
@@ -64,6 +65,7 @@ public sealed class MotorDecisao
                 ? DecisaoAnalise.EmRevisao
                 : DecisaoAnalise.Aprovada;
 
-        return new ResultadoMotor(decisao, score, sinais, configuracao.Versao);
+        var features = CalculadoraFeatures.Calcular(perfil.ParaHistorico(), operacao.ParaFeatures(listas));
+        return new ResultadoMotor(decisao, score, sinais, configuracao.Versao, features);
     }
 }

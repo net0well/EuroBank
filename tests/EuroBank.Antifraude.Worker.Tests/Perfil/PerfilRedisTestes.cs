@@ -28,6 +28,21 @@ public sealed class PerfilRedisTestes(AntifraudeWorkerFixture worker)
     }
 
     [Fact]
+    public async Task Entradas_FicamNoHistorico_ComOSaldo()
+    {
+        var conta = await ContaComDepositoAsync(100m);
+
+        await worker.EntregarAsync(new EventoEntradaConta(conta, 2_500m, 2_600m, 3, Agora.AddHours(-2)));
+        await worker.EntregarAsync(new EventoEntradaConta(conta, 400m, 3_000m, 4, Agora.AddHours(-1)));
+        await worker.EntregarAsync(new EventoEntradaConta(conta, 400m, 3_000m, 4, Agora.AddHours(-1)));
+
+        var perfil = await worker.PerfilAsync(conta, Agora);
+        perfil.Saldo.ShouldBe(3_000m);
+        perfil.Entradas.Select(entrada => entrada.Valor).ShouldBe([2_500m, 400m], ignoreOrder: true);
+        perfil.Entradas.ShouldContain(entrada => entrada.Momento == Agora.AddHours(-2));
+    }
+
+    [Fact]
     public async Task ContaAbertaEDeposito_DaoIdadeESaldo()
     {
         var conta = await ContaComDepositoAsync(500m, Agora.AddDays(-60));
@@ -149,7 +164,7 @@ public sealed class PerfilRedisTestes(AntifraudeWorkerFixture worker)
 
         var antes = await worker.PerfilAsync(conta, Agora);
 
-        await worker.ApagarRedisAsync();
+        await worker.ApagarPerfilAsync(conta);
         (await worker.PerfilAsync(conta, Agora)).Saldo.ShouldBeNull();
         foreach (var evento in eventos)
         {

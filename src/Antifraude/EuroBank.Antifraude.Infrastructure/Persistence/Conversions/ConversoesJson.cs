@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using EuroBank.Antifraude.Domain.ValueObjects;
+using EuroBank.Antifraude.Features.ValueObjects;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
@@ -25,6 +26,11 @@ public static class ConversoesJson
         (esquerda, direita) => esquerda!.SequenceEqual(direita!),
         sinais => sinais.Aggregate(0, (hash, sinal) => HashCode.Combine(hash, sinal.GetHashCode())),
         sinais => sinais.ToList());
+
+    /// <summary>As features com os nomes de cada campo, para o jsonb ser lido sem saber a ordem do vetor.</summary>
+    public static ValueConverter<VetorFeatures?, string?> Features { get; } = new(
+        features => features == null ? null : JsonSerializer.Serialize(features, Json),
+        json => json == null ? null : JsonSerializer.Deserialize<VetorFeatures>(json, Json));
 
     public static ValueConverter<Dictionary<string, decimal>, string> Parametros { get; } = new(
         parametros => JsonSerializer.Serialize(parametros, Json),

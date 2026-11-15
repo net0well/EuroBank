@@ -4,6 +4,7 @@
     <Project Path="src/Antifraude/EuroBank.Antifraude.Api/EuroBank.Antifraude.Api.csproj" />
     <Project Path="src/Antifraude/EuroBank.Antifraude.Application/EuroBank.Antifraude.Application.csproj" />
     <Project Path="src/Antifraude/EuroBank.Antifraude.Domain/EuroBank.Antifraude.Domain.csproj" />
+    <Project Path="src/Antifraude/EuroBank.Antifraude.Features/EuroBank.Antifraude.Features.csproj" />
     <Project Path="src/Antifraude/EuroBank.Antifraude.Infrastructure/EuroBank.Antifraude.Infrastructure.csproj" />
     <Project Path="src/Antifraude/EuroBank.Antifraude.Worker/EuroBank.Antifraude.Worker.csproj" />
   </Folder>
@@ -44,6 +45,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/EuroBank.Antifraude.Api.Tests/EuroBank.Antifraude.Api.Tests.csproj" />
     <Project Path="tests/EuroBank.Antifraude.Domain.Tests/EuroBank.Antifraude.Domain.Tests.csproj" />
+    <Project Path="tests/EuroBank.Antifraude.Features.Tests/EuroBank.Antifraude.Features.Tests.csproj" />
     <Project Path="tests/EuroBank.Antifraude.Worker.Tests/EuroBank.Antifraude.Worker.Tests.csproj" />
     <Project Path="tests/EuroBank.Contas.Api.Tests/EuroBank.Contas.Api.Tests.csproj" />
     <Project Path="tests/EuroBank.Contas.Domain.Tests/EuroBank.Contas.Domain.Tests.csproj" />

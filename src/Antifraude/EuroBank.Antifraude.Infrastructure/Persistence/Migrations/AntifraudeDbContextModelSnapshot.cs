@@ -51,6 +51,10 @@ namespace EuroBank.Antifraude.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(20)")
                         .HasColumnName("decisao");
 
+                    b.Property<string>("Features")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("features");
+
                     b.Property<string>("Justificativa")
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)")

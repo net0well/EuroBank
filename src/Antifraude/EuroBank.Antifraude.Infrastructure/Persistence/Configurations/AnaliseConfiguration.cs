@@ -34,6 +34,10 @@ public sealed class AnaliseConfiguration : IEntityTypeConfiguration<Analise>
         builder.Property<string?>("_ibanDestino").HasColumnName("iban_destino").HasMaxLength(34);
         builder.Property<DateTimeOffset>("_momento").HasColumnName("momento");
 
+        builder.Property(analise => analise.Features)
+            .HasColumnName("features")
+            .HasColumnType("jsonb")
+            .HasConversion(ConversoesJson.Features);
         builder.Ignore(analise => analise.Sinais);
         builder.Property<List<SinalRegra>>("_sinais")
             .HasColumnName("sinais")

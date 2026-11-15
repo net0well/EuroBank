@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Antifraude\EuroBank.Antifraude.Features\EuroBank.Antifraude.Features.csproj" />
+  </ItemGroup>
+</Project>

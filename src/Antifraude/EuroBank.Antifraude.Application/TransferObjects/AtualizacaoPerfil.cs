@@ -2,7 +2,7 @@ namespace EuroBank.Antifraude.Application.TransferObjects;
 
 /// <summary>
 /// O que um evento de Contas muda no perfil. Campos nulos não mudam nada; a versão sempre avança. A saída entra no
-/// histórico (e o IBAN nos beneficiários conhecidos).
+/// histórico (e o IBAN nos beneficiários conhecidos); a entrada, no histórico de entradas.
 /// </summary>
 public sealed record AtualizacaoPerfil(
     Guid ContaId,
@@ -11,4 +11,5 @@ public sealed record AtualizacaoPerfil(
     decimal? SaldoApos = null,
     DateTimeOffset? AbertaEm = null,
     string? Moeda = null,
-    SaidaPerfil? Saida = null);
+    SaidaPerfil? Saida = null,
+    EntradaPerfil? Entrada = null);
