@@ -32,6 +32,11 @@ public static class ConversoesJson
         features => features == null ? null : JsonSerializer.Serialize(features, Json),
         json => json == null ? null : JsonSerializer.Deserialize<VetorFeatures>(json, Json));
 
+    /// <summary>A pontuação do modelo numa análise (ativa ou challenger), com a explicação; nula sem modelo.</summary>
+    public static ValueConverter<PontuacaoModelo?, string?> Pontuacao { get; } = new(
+        pontuacao => pontuacao == null ? null : JsonSerializer.Serialize(pontuacao, Json),
+        json => json == null ? null : JsonSerializer.Deserialize<PontuacaoModelo>(json, Json));
+
     public static ValueConverter<MetricasModelo, string> Metricas { get; } = new(
         metricas => JsonSerializer.Serialize(metricas, Json),
         json => JsonSerializer.Deserialize<MetricasModelo>(json, Json)!);

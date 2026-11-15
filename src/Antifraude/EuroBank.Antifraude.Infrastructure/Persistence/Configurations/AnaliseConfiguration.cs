@@ -38,6 +38,14 @@ public sealed class AnaliseConfiguration : IEntityTypeConfiguration<Analise>
             .HasColumnName("features")
             .HasColumnType("jsonb")
             .HasConversion(ConversoesJson.Features);
+        builder.Property(analise => analise.Modelo)
+            .HasColumnName("modelo")
+            .HasColumnType("jsonb")
+            .HasConversion(ConversoesJson.Pontuacao);
+        builder.Property(analise => analise.Challenger)
+            .HasColumnName("challenger")
+            .HasColumnType("jsonb")
+            .HasConversion(ConversoesJson.Pontuacao);
         builder.Ignore(analise => analise.Sinais);
         builder.Property<List<SinalRegra>>("_sinais")
             .HasColumnName("sinais")

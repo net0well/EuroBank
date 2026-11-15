@@ -32,6 +32,9 @@ public sealed class ConfiguracaoEndpointsTestes(AntifraudeFixture antifraude) : 
         velocidade.GetProperty("parametros").GetProperty("quantidade").GetDecimal().ShouldBe(3m);
 
         await DeveSerProblemaAsync(await _analista.Http.GetAsync("/regras/inexistente", Ct), HttpStatusCode.NotFound, "regra_nao_encontrada");
+
+        // O sinal do modelo tem código de regra, mas não é uma regra da tabela.
+        await DeveSerProblemaAsync(await _analista.Http.GetAsync("/regras/ModeloFraude", Ct), HttpStatusCode.NotFound, "regra_nao_encontrada");
     }
 
     [Fact]
@@ -89,7 +92,7 @@ public sealed class ConfiguracaoEndpointsTestes(AntifraudeFixture antifraude) : 
         }
         finally
         {
-            await OkAsync(await _analista.PutAsync("/configuracao-decisao", new { limiarRevisao = 30, limiarRecusa = 70, pesoModelo = 0 }));
+            await OkAsync(await _analista.PutAsync("/configuracao-decisao", new { limiarRevisao = 30, limiarRecusa = 70, pesoModelo = 50 }));
         }
     }
 

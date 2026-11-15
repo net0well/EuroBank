@@ -14,18 +14,23 @@ public sealed class ConfiguracaoDecisao
         // Usado pelo EF Core.
     }
 
+    public const int PesoModeloPadrao = 50;
+
     public int Versao { get; private set; }
 
     public int LimiarRevisao { get; private set; }
 
     public int LimiarRecusa { get; private set; }
 
-    /// <summary>Quanto o score do modelo (0 a 1) vale em pontos; 0 enquanto não há modelo.</summary>
+    /// <summary>
+    /// Quanto a probabilidade do modelo (0 a 1) vale em pontos: 50 por padrão. Sem versão ativa, não pontua; 0 desliga o
+    /// modelo sem trocar a versão.
+    /// </summary>
     public int PesoModelo { get; private set; }
 
     public DateTimeOffset CriadaEm { get; private set; }
 
-    public static ConfiguracaoDecisao Inicial(DateTimeOffset agora) => Criar(1, 30, 70, 0, agora);
+    public static ConfiguracaoDecisao Inicial(DateTimeOffset agora) => Criar(1, 30, 70, PesoModeloPadrao, agora);
 
     public ConfiguracaoDecisao NovaVersao(int limiarRevisao, int limiarRecusa, int pesoModelo, DateTimeOffset agora) =>
         Criar(Versao + 1, limiarRevisao, limiarRecusa, pesoModelo, agora);

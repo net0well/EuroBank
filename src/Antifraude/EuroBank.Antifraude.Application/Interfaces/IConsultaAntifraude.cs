@@ -18,4 +18,9 @@ public interface IConsultaAntifraude
     Task<IReadOnlyList<PaisRiscoDto>> ListarPaisesRiscoAsync(CancellationToken cancellationToken);
 
     Task<VisaoGeralDto> VisaoGeralAsync(DateTimeOffset desde, CancellationToken cancellationToken);
+
+    /// <summary>As versões do modelo, da mais nova para a mais antiga, sem o arquivo.</summary>
+    Task<IReadOnlyList<VersaoModeloResumoDto>> ListarModelosAsync(CancellationToken cancellationToken);
+
+    Task<VersaoModeloDetalheDto?> ObterModeloAsync(int versao, CancellationToken cancellationToken);
 }

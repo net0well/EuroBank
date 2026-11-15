@@ -56,7 +56,8 @@ public static class RegrasEndpoints
     {
         var regras = await barramento.InvokeAsync<IReadOnlyList<RegraDto>>(new ListarRegras(), cancellationToken);
         var codigoRegra = Codigo(codigo).ToString();
-        return TypedResults.Ok(regras.Single(regra => regra.Codigo == codigoRegra));
+        // O sinal do modelo tem código de regra, mas não é uma linha da tabela: 404 como qualquer outra ausente.
+        return TypedResults.Ok(regras.SingleOrDefault(regra => regra.Codigo == codigoRegra) ?? throw new ExcecaoRegraNaoEncontrada(codigo));
     }
 
     private static async Task<IResult> AjustarAsync(

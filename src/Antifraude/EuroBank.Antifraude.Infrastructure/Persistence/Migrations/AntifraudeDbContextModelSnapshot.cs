@@ -33,6 +33,10 @@ namespace EuroBank.Antifraude.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("analista");
 
+                    b.Property<string>("Challenger")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("challenger");
+
                     b.Property<Guid>("ContaId")
                         .HasColumnType("uuid")
                         .HasColumnName("conta_id");
@@ -59,6 +63,10 @@ namespace EuroBank.Antifraude.Infrastructure.Persistence.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)")
                         .HasColumnName("justificativa");
+
+                    b.Property<string>("Modelo")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("modelo");
 
                     b.Property<Guid>("OperacaoId")
                         .HasColumnType("uuid")

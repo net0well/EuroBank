@@ -1,11 +1,14 @@
 using EuroBank.Antifraude.Application.Exceptions;
+using EuroBank.Antifraude.Application.Mappers;
 using EuroBank.Antifraude.Application.TransferObjects;
 using EuroBank.Antifraude.Domain.Enums;
 using EuroBank.Antifraude.Domain.ValueObjects;
 using EuroBank.Shared.Enums;
 using EuroBank.Shared.ValueObjects;
 using Google.Protobuf.WellKnownTypes;
+using ContribuicaoFeatureGrpc = EuroBank.Antifraude.Grpc.ContribuicaoFeature;
 using DecisaoGrpc = EuroBank.Antifraude.Grpc.Decisao;
+using PontuacaoModeloGrpc = EuroBank.Antifraude.Grpc.PontuacaoModelo;
 using ResultadoAvaliacao = EuroBank.Antifraude.Grpc.ResultadoAvaliacao;
 using SinalRegraGrpc = EuroBank.Antifraude.Grpc.SinalRegra;
 using SolicitacaoAvaliacao = EuroBank.Antifraude.Grpc.SolicitacaoAvaliacao;
@@ -79,6 +82,8 @@ public static class ConversaoGrpc
             AvaliadaEm = Timestamp.FromDateTimeOffset(resultado.AvaliadaEm),
             DecididaEm = resultado.DecididaEm is { } decididaEm ? Timestamp.FromDateTimeOffset(decididaEm) : null,
             Simulacao = resultado.Simulacao,
+            Modelo = resultado.Modelo?.ParaGrpc(),
+            Challenger = resultado.Challenger?.ParaGrpc(),
         };
         mensagem.Sinais.AddRange(resultado.Sinais.Select(sinal => new SinalRegraGrpc
         {
@@ -89,6 +94,15 @@ public static class ConversaoGrpc
             Sombra = sinal.Sombra,
             Motivo = sinal.Motivo,
         }));
+        return mensagem;
+    }
+
+    private static PontuacaoModeloGrpc ParaGrpc(this PontuacaoModelo pontuacao)
+    {
+        var dto = pontuacao.ParaDto();
+        var mensagem = new PontuacaoModeloGrpc { Versao = dto.Versao, Probabilidade = dto.Probabilidade, Pontos = dto.Pontos };
+        mensagem.Contribuicoes.AddRange(dto.Contribuicoes.Select(contribuicao =>
+            new ContribuicaoFeatureGrpc { Feature = contribuicao.Feature, Valor = contribuicao.Valor }));
         return mensagem;
     }
 }

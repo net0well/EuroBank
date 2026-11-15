@@ -14,8 +14,9 @@ public static class DependencyInjection
     public static IServiceCollection AdicionarAplicacaoAntifraude(this IServiceCollection services)
     {
         services.AddOptions<OpcoesRevisao>().BindConfiguration(OpcoesRevisao.Secao);
-        // Construtor sem parâmetros: o container escolheria o que recebe IEnumerable<IAvaliadorRegra> (lista vazia).
-        services.AddSingleton(_ => new MotorDecisao());
+        // Fábrica explícita: o container escolheria o construtor que recebe IEnumerable<IAvaliadorRegra> (lista
+        // vazia). O pontuador (os modelos carregados) vem da infraestrutura.
+        services.AddSingleton(provedor => new MotorDecisao(provedor.GetRequiredService<IPontuadorFraude>()));
         services.AddScoped<AvaliadorOperacoes>();
         return services;
     }

@@ -25,6 +25,7 @@ builder.AdicionarObservabilidade("eurobank-antifraude");
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AdicionarAplicacaoAntifraude();
 builder.Services.AdicionarInfraestruturaAntifraude();
+builder.Services.AdicionarModelosEmProducao();
 builder.Services.AdicionarPerfilRedis();
 
 // Wolverine só como mediator in-process: quem publica no Kafka é o Debezium, lendo a outbox.
@@ -70,6 +71,7 @@ app.MapearEndpointsCasos();
 app.MapearEndpointsRegras();
 app.MapearEndpointsListas();
 app.MapearEndpointsAcompanhamento();
+app.MapearEndpointsModelos();
 app.MapGrpcService<AntifraudeGrpcService>();
 app.MapGrpcReflectionService();
 app.MapGrpcHealthChecksService();

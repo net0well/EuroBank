@@ -12,4 +12,10 @@ public enum CodigoRegra
     ContaRecemAberta = 7,
     HorarioIncomum = 8,
     PaisDeRisco = 9,
+
+    /// <summary>
+    /// O score do modelo de ML. Não é uma linha da tabela de regras: aparece entre os sinais quando há versão ativa,
+    /// com o peso da configuração de decisão.
+    /// </summary>
+    ModeloFraude = 10,
 }

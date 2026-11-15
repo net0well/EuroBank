@@ -1,4 +1,5 @@
 using EuroBank.Antifraude.Application.Interfaces;
+using EuroBank.Antifraude.Application.Mappers;
 using EuroBank.Antifraude.Application.TransferObjects;
 using EuroBank.Antifraude.Domain.Entities;
 using EuroBank.Antifraude.Domain.Enums;
@@ -127,6 +128,60 @@ public sealed class ConsultaAntifraude(AntifraudeDbContext contexto) : IConsulta
             regras);
     }
 
+    /// <summary>
+    /// Projeta as colunas (sem o arquivo) e monta o resumo em memória: métricas e dados são jsonb com conversor, e o EF
+    /// não traduz um membro de dentro deles.
+    /// </summary>
+    public async Task<IReadOnlyList<VersaoModeloResumoDto>> ListarModelosAsync(CancellationToken cancellationToken)
+    {
+        var versoes = await contexto.VersoesModelo.AsNoTracking()
+            .OrderByDescending(versao => versao.Versao)
+            .Select(versao => new
+            {
+                versao.Versao,
+                versao.Status,
+                versao.Metricas,
+                versao.LimiarRecomendado,
+                versao.Dados,
+                versao.TreinadaEm,
+                versao.AtivadaEm,
+                versao.AposentadaEm,
+            })
+            .ToListAsync(cancellationToken);
+
+        return versoes
+            .Select(versao => new VersaoModeloResumoDto(
+                versao.Versao,
+                versao.Status.ToString(),
+                versao.Metricas.AucPr,
+                versao.Metricas.Precisao,
+                versao.Metricas.Recall,
+                versao.Metricas.F1,
+                versao.LimiarRecomendado,
+                versao.Dados.MetaAtingida,
+                versao.TreinadaEm,
+                versao.AtivadaEm,
+                versao.AposentadaEm))
+            .ToList();
+    }
+
+    /// <summary>Sem o arquivo (centenas de KB): só o tamanho, calculado no banco.</summary>
+    public async Task<VersaoModeloDetalheDto?> ObterModeloAsync(int versao, CancellationToken cancellationToken) =>
+        await contexto.VersoesModelo.AsNoTracking()
+            .Where(modelo => modelo.Versao == versao)
+            .Select(modelo => new VersaoModeloDetalheDto(
+                modelo.Versao,
+                modelo.Status.ToString(),
+                modelo.LimiarRecomendado,
+                modelo.Metricas,
+                modelo.Dados,
+                EF.Property<List<DistribuicaoFeature>>(modelo, "_distribuicao"),
+                modelo.Arquivo.Length,
+                modelo.TreinadaEm,
+                modelo.AtivadaEm,
+                modelo.AposentadaEm))
+            .SingleOrDefaultAsync(cancellationToken);
+
     private static AnaliseDetalheDto Detalhe(Analise analise)
     {
         var operacao = analise.Contexto;
@@ -145,6 +200,9 @@ public sealed class ConsultaAntifraude(AntifraudeDbContext contexto) : IConsulta
             analise.CriadaEm,
             analise.DecididaEm,
             analise.Sinais.Select(sinal => new SinalRegraDto(
-                sinal.Codigo.ToString(), sinal.Tipo.ToString(), sinal.Disparou, sinal.Pontos, sinal.Sombra, sinal.Motivo)).ToList());
+                sinal.Codigo.ToString(), sinal.Tipo.ToString(), sinal.Disparou, sinal.Pontos, sinal.Sombra, sinal.Motivo)).ToList(),
+            analise.Features?.ParaDicionario(),
+            analise.Modelo?.ParaDto(),
+            analise.Challenger?.ParaDto());
     }
 }

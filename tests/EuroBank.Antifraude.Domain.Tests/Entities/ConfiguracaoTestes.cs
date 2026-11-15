@@ -82,14 +82,14 @@ public sealed class ConfiguracaoTestes
     }
 
     [Fact]
-    public void ConfiguracaoInicial_Trinta_Setenta_ModeloSemPeso()
+    public void ConfiguracaoInicial_Trinta_Setenta_ModeloComPeso50()
     {
         var configuracao = Configuracao();
 
         configuracao.Versao.ShouldBe(1);
         configuracao.LimiarRevisao.ShouldBe(30);
         configuracao.LimiarRecusa.ShouldBe(70);
-        configuracao.PesoModelo.ShouldBe(0);
+        configuracao.PesoModelo.ShouldBe(50);
     }
 
     [Fact]
