@@ -175,6 +175,9 @@ public sealed class LaboratorioFixture : IAsyncLifetime
     /// <summary>API HTTP do Mailpit (mensagens recebidas pelo SMTP).</summary>
     public HttpClient Mailpit { get; private set; } = null!;
 
+    /// <summary>Conexão própria dos testes com o Redis do laboratório, para conferir o que as aplicações gravaram.</summary>
+    public StackExchange.Redis.IConnectionMultiplexer Redis { get; private set; } = null!;
+
     public string BootstrapKafka => _kafka.GetBootstrapAddress();
 
     public string ConnectionStringTransferencias =>
@@ -205,6 +208,7 @@ public sealed class LaboratorioFixture : IAsyncLifetime
         await _rede.CreateAsync();
         await Task.WhenAll(_postgres.StartAsync(), _kafka.StartAsync(), _mailpit.StartAsync(), _redis.StartAsync());
         Mailpit = new HttpClient { BaseAddress = new Uri($"http://{_mailpit.Hostname}:{_mailpit.GetMappedPublicPort(8025)}") };
+        Redis = await StackExchange.Redis.ConnectionMultiplexer.ConnectAsync(_redis.GetConnectionString());
 
         await CriarBancosAsync();
         await CriarTopicosAsync();
@@ -508,6 +512,7 @@ public sealed class LaboratorioFixture : IAsyncLifetime
         Extrato?.Dispose();
         Transferencias?.Dispose();
         Antifraude?.Dispose();
+        Redis?.Dispose();
         Mailpit?.Dispose();
         foreach (var aplicacao in Enumerable.Reverse(_aplicacoes))
         {
