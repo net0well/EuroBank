@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Antifraude\EuroBank.Antifraude.Treinamento\EuroBank.Antifraude.Treinamento.csproj" />
+  </ItemGroup>
+</Project>

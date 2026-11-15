@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EuroBank.Antifraude.Features\EuroBank.Antifraude.Features.csproj" />
+  </ItemGroup>
+</Project>
