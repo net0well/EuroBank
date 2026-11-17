@@ -11,7 +11,7 @@ namespace EuroBank.Shared.Tests.Build;
 /// </summary>
 public sealed partial class DockerfilesTestes
 {
-    private static readonly string Raiz = AcharRaiz();
+    private static readonly string Raiz = RaizRepositorio.Caminho;
 
     public static TheoryData<string> Dockerfiles =>
         [.. Directory.GetFiles(Path.Combine(Raiz, "src"), "Dockerfile", SearchOption.AllDirectories).Select(Relativo).Order()];
@@ -72,17 +72,6 @@ public sealed partial class DockerfilesTestes
     }
 
     private static string Relativo(string caminho) => Path.GetRelativePath(Raiz, caminho).Replace('\\', '/');
-
-    private static string AcharRaiz()
-    {
-        var pasta = new DirectoryInfo(AppContext.BaseDirectory);
-        while (pasta is not null && !File.Exists(Path.Combine(pasta.FullName, "EuroBank.slnx")))
-        {
-            pasta = pasta.Parent;
-        }
-
-        return pasta?.FullName ?? throw new InvalidOperationException("Raiz do repositório (EuroBank.slnx) não encontrada.");
-    }
 
     [GeneratedRegex(@"dotnet publish (\S+\.csproj)")]
     private static partial Regex Publicacao();

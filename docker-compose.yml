@@ -180,7 +180,7 @@ services:
       Antifraude__Ativo: ${CONTAS_ANALISE_RISCO:-true}
       Antifraude__Endereco: http://antifraude-api:8081
       Antifraude__ApiKey: ${ANTIFRAUDE_API_KEY}
-      ConnectionStrings__Redis: "redis:6379"
+      ConnectionStrings__Redis: "${REDIS_CONEXAO:-redis:6379}"
       # Rate limit por API key (janela deslizante de 1 s no Redis; 429 com Retry-After; com o Redis fora, deixa passar).
       LimiteRequisicoes__PorSegundo: ${RATE_LIMIT_POR_SEGUNDO:-100}
       # true: insere e apaga a linha da outbox na mesma transação (o evento sai mesmo assim, pelo WAL).
@@ -236,7 +236,7 @@ services:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_HTTP_PORTS: "8080"
       ConnectionStrings__Extrato: "Host=postgres;Port=5432;Database=eurobank_extrato;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
-      ConnectionStrings__Redis: "redis:6379"
+      ConnectionStrings__Redis: "${REDIS_CONEXAO:-redis:6379}"
       # Nenhuma, CacheAside, WriteThrough ou WriteBehind (resumo e primeira página de cada conta no Redis).
       Cache__Estrategia: ${EXTRATO_CACHE_ESTRATEGIA:-WriteThrough}
       Seguranca__ApiKey: ${EXTRATO_API_KEY}
@@ -268,7 +268,7 @@ services:
       ASPNETCORE_HTTP_PORTS: "8080"
       ConnectionStrings__Transferencias: "Host=postgres;Port=5432;Database=eurobank_transferencias;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
       # Idempotency-Key reservada no Redis antes da constraint do Postgres (com o Redis fora, só a constraint).
-      ConnectionStrings__Redis: "redis:6379"
+      ConnectionStrings__Redis: "${REDIS_CONEXAO:-redis:6379}"
       Seguranca__ApiKey: ${TRANSFERENCIAS_API_KEY}
       # Rate limit por API key (janela deslizante de 1 s no Redis; 429 com Retry-After; com o Redis fora, deixa passar).
       LimiteRequisicoes__PorSegundo: ${RATE_LIMIT_POR_SEGUNDO:-100}
@@ -327,11 +327,16 @@ services:
   # Antifraude
   # ---------------------------------------------------------------------------------------------------------
 
-  # Perfil de comportamento das contas (e, depois, cache e controles das APIs). Sem volume nem persistência: o perfil
-  # é derivado dos eventos e se reconstrói reprocessando o tópico. Porta do host configurável (REDIS_PORTA_HOST).
+  # Perfil de comportamento das contas, cache do extrato, Idempotency-Key, cotações e rate limit. Sem volume nem
+  # persistência: o que importa se reconstrói pelos eventos. Porta do host configurável (REDIS_PORTA_HOST). As
+  # aplicações conectam por REDIS_CONEXAO (padrão: este Redis direto; com o profile ha, os sentinels). Ele se anuncia
+  # pelo nome, para voltar como réplica depois de um failover.
   redis:
     image: redis:8.10.3
-    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--replica-announce-ip", "redis"]
+    # Só os nomes da rede do compose: o nome de um container parado falha na hora, em vez de esperar ~8 s pelo DNS do
+    # host, que trava o Redis (a réplica resolve o primário a cada reconexão; o sentinel entra em TILT e não elege).
+    dns: ["127.0.0.1"]
     ports:
       - "${REDIS_PORTA_HOST:-6379}:6379"
     healthcheck:
@@ -339,6 +344,71 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+
+  # Alta disponibilidade sob demanda (profile ha): duas réplicas do redis e três sentinels, que elegem uma réplica
+  # como primária quando o primário cai (quórum 2, 5 s sem resposta). As aplicações conectam pelos sentinels:
+  #   export REDIS_CONEXAO="redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379,serviceName=eurobank"
+  #   docker compose --profile ha up -d
+  # A replicação é assíncrona: o que foi escrito no primário e ainda não chegou à réplica se perde no failover.
+  redis-replica-1:
+    image: redis:8.10.3
+    profiles: ["ha"]
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--replicaof", "redis", "6379", "--replica-announce-ip", "redis-replica-1"]
+    dns: ["127.0.0.1"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis-replica-2:
+    image: redis:8.10.3
+    profiles: ["ha"]
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--replicaof", "redis", "6379", "--replica-announce-ip", "redis-replica-2"]
+    dns: ["127.0.0.1"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis-sentinel-1: &sentinel
+    image: redis:8.10.3
+    profiles: ["ha"]
+    # O sentinel reescreve o próprio arquivo de configuração: ele é gerado na subida, num lugar gravável.
+    command:
+      - sh
+      - -c
+      - |
+        cat > /tmp/sentinel.conf <<'CONF'
+        port 26379
+        sentinel resolve-hostnames yes
+        sentinel announce-hostnames yes
+        sentinel monitor eurobank redis 6379 2
+        sentinel down-after-milliseconds eurobank 5000
+        sentinel failover-timeout eurobank 15000
+        sentinel parallel-syncs eurobank 1
+        CONF
+        exec redis-server /tmp/sentinel.conf --sentinel
+    dns: ["127.0.0.1"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "26379", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis-sentinel-2: *sentinel
+
+  redis-sentinel-3: *sentinel
 
   # UI do Redis em http://localhost:5540, já com a conexão "eurobank" (redis:6379): veja as chaves
   # antifraude:{conta}:perfil, :saidas e :beneficiarios.
@@ -373,7 +443,7 @@ services:
       Kestrel__Endpoints__Rest__Url: http://+:8080
       Kestrel__Endpoints__Grpc__Url: http://+:8081
       ConnectionStrings__Antifraude: "Host=postgres;Port=5432;Database=eurobank_antifraude;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
-      ConnectionStrings__Redis: "redis:6379"
+      ConnectionStrings__Redis: "${REDIS_CONEXAO:-redis:6379}"
       Seguranca__ApiKey: ${ANTIFRAUDE_API_KEY}
       # Rate limit por API key (janela deslizante de 1 s no Redis; 429 com Retry-After; com o Redis fora, deixa passar).
       LimiteRequisicoes__PorSegundo: ${RATE_LIMIT_POR_SEGUNDO:-100}
@@ -402,7 +472,7 @@ services:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_HTTP_PORTS: "8080"
       ConnectionStrings__Antifraude: "Host=postgres;Port=5432;Database=eurobank_antifraude;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
-      ConnectionStrings__Redis: "redis:6379"
+      ConnectionStrings__Redis: "${REDIS_CONEXAO:-redis:6379}"
       Kafka__BootstrapServers: kafka:29092
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
       # Drift do modelo ativo: PSI das análises das últimas 24 h contra o treino, a cada 5 min (mais curto nos exercícios).
@@ -552,7 +622,7 @@ services:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_HTTP_PORTS: "8080"
       ConnectionStrings__Cambio: "Host=postgres;Port=5432;Database=eurobank_cambio;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
-      ConnectionStrings__Redis: "redis:6379"
+      ConnectionStrings__Redis: "${REDIS_CONEXAO:-redis:6379}"
       Kafka__BootstrapServers: kafka:29092
       Cambio__LatenciaMs: ${CAMBIO_LATENCIA_MS:-500}
       Cambio__ValidadeMinutos: ${CAMBIO_VALIDADE_MINUTOS:-10}
