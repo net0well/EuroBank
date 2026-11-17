@@ -17,6 +17,8 @@ RUN dotnet restore src/Contas/EuroBank.Contas.Api/EuroBank.Contas.Api.csproj
 
 COPY src/Shared/ src/Shared/
 COPY src/Contas/ src/Contas/
+# O cliente gRPC do antifraude é gerado do mesmo .proto do serviço (link no csproj da infraestrutura).
+COPY src/Antifraude/EuroBank.Antifraude.Api/Protos/antifraude.proto src/Antifraude/EuroBank.Antifraude.Api/Protos/
 RUN dotnet publish src/Contas/EuroBank.Contas.Api/EuroBank.Contas.Api.csproj -c Release -o /app --no-restore
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final

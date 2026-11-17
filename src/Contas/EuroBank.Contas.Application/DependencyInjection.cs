@@ -14,6 +14,7 @@ public static class DependencyInjection
     {
         services.AddSingleton<ServicoTransferencia>();
         services.AddScoped<PassoDaSaga>();
+        services.AddScoped<ConferenciaAntifraude>();
         services.AddScoped<SemeadorContas>();
         return services;
     }

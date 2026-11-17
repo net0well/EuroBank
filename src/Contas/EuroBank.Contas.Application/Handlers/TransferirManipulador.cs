@@ -1,6 +1,8 @@
 using EuroBank.Contas.Application.Commands;
+using EuroBank.Contas.Application.Enums;
 using EuroBank.Contas.Application.Extensions;
 using EuroBank.Contas.Application.Mappers;
+using EuroBank.Contas.Application.Services;
 using EuroBank.Contas.Application.TransferObjects;
 using EuroBank.Contas.Domain.Exceptions;
 using EuroBank.Contas.Domain.Repositories;
@@ -14,6 +16,7 @@ namespace EuroBank.Contas.Application.Handlers;
 public sealed class TransferirManipulador(
     IRepositorioContas repositorio,
     ServicoTransferencia servicoTransferencia,
+    ConferenciaAntifraude antifraude,
     IUnidadeDeTrabalho unidadeDeTrabalho,
     TimeProvider relogio)
 {
@@ -28,8 +31,11 @@ public sealed class TransferirManipulador(
 
         // O valor é na moeda da conta de origem; entre moedas diferentes o serviço recusa (vai para o câmbio).
         var valor = Dinheiro.De(comando.Valor, origem.Moeda);
+        var agora = relogio.GetUtcNow();
+        await antifraude.GarantirAprovadaAsync(
+            TipoOperacaoRisco.TransferenciaInterna, origem.Id.Valor, valor, ibanDestino.Valor, comando.DispositivoId, comando.Localizacao, agora, cancellationToken);
 
-        servicoTransferencia.Transferir(origem, destino, valor, relogio.GetUtcNow());
+        servicoTransferencia.Transferir(origem, destino, valor, agora);
 
         // As duas contas e os dois eventos da outbox vão no mesmo SaveChanges, numa transação só.
         await unidadeDeTrabalho.SalvarAsync(cancellationToken);

@@ -168,11 +168,18 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+      antifraude-api:
+        condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_HTTP_PORTS: "8080"
       ConnectionStrings__Contas: "Host=postgres;Port=5432;Database=eurobank_contas;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
       Seguranca__ApiKey: ${CONTAS_API_KEY}
+      # Saque e transferência interna passam pelo antifraude (gRPC h2c): recusa ou revisão, 422 antifraude_revisao;
+      # sem resposta, 422 antifraude_indisponivel. false volta ao fluxo sem antifraude (a carga do k6 usa assim).
+      Antifraude__Ativo: ${CONTAS_ANALISE_RISCO:-true}
+      Antifraude__Endereco: http://antifraude-api:8081
+      Antifraude__ApiKey: ${ANTIFRAUDE_API_KEY}
       ConnectionStrings__Redis: "redis:6379"
       # Rate limit por API key (janela deslizante de 1 s no Redis; 429 com Retry-After; com o Redis fora, deixa passar).
       LimiteRequisicoes__PorSegundo: ${RATE_LIMIT_POR_SEGUNDO:-100}
