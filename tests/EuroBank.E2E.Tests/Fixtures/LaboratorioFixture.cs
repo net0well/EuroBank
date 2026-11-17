@@ -7,6 +7,8 @@ using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using DotNet.Testcontainers.Networks;
 using EuroBank.Antifraude.Api;
+using EuroBank.Antifraude.Painel;
+using EuroBank.Antifraude.Painel.Clients;
 using EuroBank.Antifraude.Worker;
 using EuroBank.Contas.Api;
 using EuroBank.Contas.Worker;
@@ -104,6 +106,7 @@ public sealed class LaboratorioFixture : IAsyncLifetime
     private readonly RedisContainer _redis = new RedisBuilder("redis:8.10.3").Build();
     private readonly ActivityListener _ouvinteAtividades;
     private WebApplicationFactory<MarcadorAntifraudeApi> _antifraude = null!;
+    private readonly string _grupoPainel = $"eurobank-antifraude-painel-e2e-{Guid.NewGuid():N}";
     private WebApplicationFactory<MarcadorContasApi> _contas = null!;
     private WebApplicationFactory<MarcadorExtratoWorker> _extrato = null!;
 
@@ -168,6 +171,12 @@ public sealed class LaboratorioFixture : IAsyncLifetime
 
     /// <summary>REST do analista (e o JSON transcoding do gRPC) na API do antifraude.</summary>
     public HttpClient Antifraude { get; private set; } = null!;
+
+    /// <summary>
+    /// Os serviços do painel do analista in-process: o cliente da REST (com a API key, pelo TestServer do antifraude) e os
+    /// avisos da fila que chegam pelo Kafka.
+    /// </summary>
+    public IServiceProvider Painel { get; private set; } = null!;
 
     /// <summary>Ligado, as chamadas do worker de Transferências ao antifraude falham como se ele estivesse fora do ar.</summary>
     public bool AntifraudeForaDoAr { get; set; }
@@ -336,6 +345,35 @@ public sealed class LaboratorioFixture : IAsyncLifetime
             ["Kafka:GrupoConsumidor"] = $"eurobank-antifraude-worker-e2e-{Guid.NewGuid():N}",
             ["Expiracao:Intervalo"] = "00:00:01",
         });
+
+        // O painel começa do fim do tópico: só vale esperar eventos depois de o consumer group receber as partições.
+        Painel = Subir(
+            new WebApplicationFactory<MarcadorAntifraudePainel>(),
+            new()
+            {
+                ["Antifraude:Endereco"] = _antifraude.Server.BaseAddress.ToString(),
+                ["Antifraude:ApiKey"] = ApiKeyAntifraude,
+                ["Kafka:BootstrapServers"] = BootstrapKafka,
+                ["Kafka:GrupoConsumidor"] = _grupoPainel,
+            },
+            services => services.Configure<HttpClientFactoryOptions>(
+                nameof(ClienteAntifraude),
+                opcoes => opcoes.HttpMessageHandlerBuilderActions.Add(construtor => construtor.PrimaryHandler = _antifraude.Server.CreateHandler())))
+            .Services;
+        await EsperarPainelOuvindoAsync(TimeSpan.FromSeconds(60));
+    }
+
+    /// <summary>Espera o consumer group do painel (o configurado mais o nome da máquina) estável e com partições.</summary>
+    private async Task EsperarPainelOuvindoAsync(TimeSpan limite)
+    {
+        var grupo = $"{_grupoPainel}-{Environment.MachineName}";
+        using var admin = new AdminClientBuilder(new AdminClientConfig { BootstrapServers = BootstrapKafka }).Build();
+        await Esperar.AteAsync(async () =>
+        {
+            var descricao = (await admin.DescribeConsumerGroupsAsync([grupo])).ConsumerGroupDescriptions.Single();
+            return descricao.State == ConsumerGroupState.Stable
+                && descricao.Members.SelectMany(membro => membro.Assignment.TopicPartitions).Any();
+        }, limite, $"o painel não começou a ouvir eurobank.antifraude.eventos (grupo {grupo})");
     }
 
     /// <summary>
