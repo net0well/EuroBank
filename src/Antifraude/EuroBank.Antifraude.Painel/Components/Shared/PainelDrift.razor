@@ -1,0 +1,45 @@
+@* A última medição de drift da versão ativa: o nível geral e o PSI de cada feature, do maior para o menor. *@
+@switch (Drift.Situacao)
+{
+    case "SemModeloAtivo":
+        <MudAlert Severity="Severity.Info" Dense="true">Sem modelo ativo: só as regras pontuam. Treine e promova uma versão em Modelos.</MudAlert>
+        break;
+    case "AguardandoMedicao":
+        <MudAlert Severity="Severity.Info" Dense="true">A versão @Drift.VersaoModelo ainda não foi medida (o worker mede a cada 5 minutos).</MudAlert>
+        break;
+    default:
+        var medicao = Drift.UltimaMedicao!;
+        <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Class="mb-2">
+            <MudText>Versão @medicao.VersaoModelo, @Formatos.Data(medicao.MedidaEm)</MudText>
+            @if (medicao.Nivel is { } nivel)
+            {
+                <MudChip T="string" Color="Formatos.CorNivelDrift(nivel)" Size="Size.Small">@nivel</MudChip>
+            }
+        </MudStack>
+        @if (medicao.Situacao == "AmostraInsuficiente")
+        {
+            <MudAlert Severity="Severity.Normal" Dense="true">Amostra insuficiente: @medicao.Amostra análises na janela.</MudAlert>
+        }
+        else
+        {
+            <MudText Typo="Typo.caption">@medicao.Amostra análises (@medicao.AmostraScore pontuadas pela versão). PSI: abaixo de 0,1 estável, até 0,25 moderado.</MudText>
+            <MudSimpleTable Dense="true" Elevation="0" Class="mt-1">
+                <tbody>
+                    @foreach (var psi in medicao.Psis)
+                    {
+                        <tr>
+                            <td>@psi.Nome</td>
+                            <td class="painel-numero" style="text-align: right">@Formatos.Decimal(psi.Psi)</td>
+                            <td><MudChip T="string" Color="Formatos.CorNivelDrift(psi.Nivel)" Size="Size.Small" Variant="Variant.Outlined">@psi.Nivel</MudChip></td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        }
+        break;
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public Drift Drift { get; set; } = null!;
+}

@@ -1,0 +1,35 @@
+@* O que cada regra disse (e o modelo, com o código ModeloFraude): as que dispararam primeiro. *@
+<MudTable T="SinalRegra" Items="Ordenados" Dense="true" Hover="true" Elevation="0">
+    <HeaderContent>
+        <MudTh>Regra</MudTh>
+        <MudTh>Tipo</MudTh>
+        <MudTh>Disparou</MudTh>
+        <MudTh Style="text-align: right">Pontos</MudTh>
+        <MudTh>Motivo</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Regra">
+            @context.Codigo
+            @if (context.Sombra)
+            {
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="ml-1">sombra</MudChip>
+            }
+        </MudTd>
+        <MudTd DataLabel="Tipo">@context.Tipo</MudTd>
+        <MudTd DataLabel="Disparou">
+            @if (context.Disparou)
+            {
+                <MudIcon Icon="@Icons.Material.Filled.Warning" Color="Color.Warning" Size="Size.Small" />
+            }
+        </MudTd>
+        <MudTd DataLabel="Pontos" Style="text-align: right" Class="painel-numero">@context.Pontos</MudTd>
+        <MudTd DataLabel="Motivo">@context.Motivo</MudTd>
+    </RowTemplate>
+</MudTable>
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyList<SinalRegra> Sinais { get; set; } = [];
+
+    private IEnumerable<SinalRegra> Ordenados => Sinais.OrderByDescending(sinal => sinal.Disparou).ThenByDescending(sinal => sinal.Pontos);
+}

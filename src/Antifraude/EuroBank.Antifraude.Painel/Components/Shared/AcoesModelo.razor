@@ -1,0 +1,52 @@
+@inject ClienteAntifraude Antifraude
+@inject IDialogService Dialogos
+@inject ISnackbar Alertas
+
+@* Promover ou pôr em sombra, conforme o status; a ativa não vai para a sombra (para trocar, ative outra versão). *@
+<MudStack Row="true" Spacing="1">
+    @if (Versao.Status != "Ativa")
+    {
+        <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small" OnClick="AtivarAsync">Ativar</MudButton>
+    }
+    @if (Versao.Status is "Registrada" or "Aposentada")
+    {
+        <MudButton Variant="Variant.Outlined" Color="Color.Info" Size="Size.Small" OnClick="ColocarEmSombraAsync">Pôr em sombra</MudButton>
+    }
+</MudStack>
+
+@code {
+    [Parameter, EditorRequired]
+    public VersaoModeloResumo Versao { get; set; } = null!;
+
+    /// <summary>Chamado depois de uma troca, para a tela recarregar.</summary>
+    [Parameter]
+    public EventCallback Mudou { get; set; }
+
+    private async Task AtivarAsync()
+    {
+        var mensagem = $"A versão {Versao.Versao} passa a decidir em todas as instâncias da API; a ativa atual é aposentada.";
+        if (await Dialogos.ShowMessageBoxAsync($"Ativar a versão {Versao.Versao}", mensagem, yesText: "Ativar", cancelText: "Cancelar") != true)
+        {
+            return;
+        }
+
+        await TrocarAsync(() => Antifraude.AtivarModeloAsync(Versao.Versao, CancellationToken.None), $"Versão {Versao.Versao} ativa.");
+    }
+
+    private Task ColocarEmSombraAsync() =>
+        TrocarAsync(() => Antifraude.ColocarEmSombraAsync(Versao.Versao, CancellationToken.None), $"Versão {Versao.Versao} em sombra.");
+
+    private async Task TrocarAsync(Func<Task<VersaoModeloResumo>> troca, string sucesso)
+    {
+        try
+        {
+            await troca();
+            Alertas.Add(sucesso, Severity.Success);
+            await Mudou.InvokeAsync();
+        }
+        catch (ExcecaoApiAntifraude erro)
+        {
+            Alertas.Add(erro.Message, Severity.Error);
+        }
+    }
+}

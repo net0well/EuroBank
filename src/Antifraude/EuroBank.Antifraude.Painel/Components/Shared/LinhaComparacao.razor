@@ -1,0 +1,19 @@
+@* Uma métrica das duas versões lado a lado; a maior em negrito. *@
+<tr>
+    <td>@Metrica</td>
+    <td class="painel-numero" style="@Destaque(Ativa >= Challenger)">@Formatos.Decimal(Ativa)</td>
+    <td class="painel-numero" style="@Destaque(Challenger > Ativa)">@Formatos.Decimal(Challenger)</td>
+</tr>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Metrica { get; set; } = string.Empty;
+
+    [Parameter]
+    public double Ativa { get; set; }
+
+    [Parameter]
+    public double Challenger { get; set; }
+
+    private static string? Destaque(bool melhor) => melhor ? "font-weight: 600" : null;
+}

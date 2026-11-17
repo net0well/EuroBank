@@ -1,0 +1,123 @@
+@page "/listas"
+@inject ClienteAntifraude Antifraude
+@inject SessaoAnalista Sessao
+@inject ISnackbar Alertas
+
+<PageTitle>Listas</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Listas</MudText>
+
+<MudGrid>
+    <MudItem xs="12" md="7">
+        <MudPaper Outlined="true" Class="pa-3">
+            <MudText Typo="Typo.subtitle1">IBANs bloqueados</MudText>
+            <MudText Typo="Typo.caption">Uma transferência para um IBAN da lista é recusada pela regra dura, sem ir ao analista.</MudText>
+            <MudStack Row="true" AlignItems="AlignItems.End" Class="mt-2" Wrap="Wrap.Wrap">
+                <MudTextField T="string" @bind-Value="_iban" Label="IBAN" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                <MudTextField T="string" @bind-Value="_motivo" Label="Motivo" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="BloquearAsync" Disabled="@(!Sessao.Identificado || string.IsNullOrWhiteSpace(_iban))">Bloquear</MudButton>
+            </MudStack>
+            @if (!Sessao.Identificado)
+            {
+                <MudText Typo="Typo.caption">Informe seu nome no topo da página para bloquear.</MudText>
+            }
+            <MudSimpleTable Dense="true" Elevation="0" Class="mt-3">
+                <thead><tr><th>IBAN</th><th>Motivo</th><th>Por</th><th>Em</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var bloqueado in _ibans)
+                    {
+                        <tr>
+                            <td>@bloqueado.Iban</td>
+                            <td>@bloqueado.Motivo</td>
+                            <td>@bloqueado.BloqueadoPor</td>
+                            <td>@Formatos.Data(bloqueado.BloqueadoEm)</td>
+                            <td><MudIconButton Icon="@Icons.Material.Filled.LockOpen" Size="Size.Small" OnClick="@(() => DesbloquearAsync(bloqueado.Iban))" aria-label="Desbloquear" /></td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" md="5">
+        <MudPaper Outlined="true" Class="pa-3">
+            <MudText Typo="Typo.subtitle1">Países de risco</MudText>
+            <MudText Typo="Typo.caption">O país vem dos dois primeiros caracteres do IBAN de destino.</MudText>
+            <MudStack Row="true" AlignItems="AlignItems.End" Class="mt-2">
+                <MudTextField T="string" @bind-Value="_pais" Label="Código (ex.: MT)" MaxLength="2" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                <MudButton Variant="Variant.Filled" Color="Color.Warning" OnClick="IncluirPaisAsync" Disabled="@(string.IsNullOrWhiteSpace(_pais))">Incluir</MudButton>
+            </MudStack>
+            <div class="mt-3">
+                @foreach (var pais in _paises)
+                {
+                    <MudChip T="string" OnClose="@(_ => RemoverPaisAsync(pais.Codigo))" Color="Color.Warning" Variant="Variant.Outlined">@pais.Codigo</MudChip>
+                }
+            </div>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private IReadOnlyList<IbanBloqueado> _ibans = [];
+    private IReadOnlyList<PaisRisco> _paises = [];
+    private string? _iban;
+    private string? _motivo;
+    private string? _pais;
+
+    protected override Task OnInitializedAsync() => ExecutarAsync(CarregarAsync, "ler as listas");
+
+    private async Task CarregarAsync()
+    {
+        _ibans = await Antifraude.ListarIbansBloqueadosAsync(CancellationToken.None);
+        _paises = await Antifraude.ListarPaisesRiscoAsync(CancellationToken.None);
+    }
+
+    private Task BloquearAsync() =>
+        ExecutarAsync(
+            async () =>
+            {
+                await Antifraude.BloquearIbanAsync(new BloqueioIbanRequisicao(_iban!.Trim(), _motivo, Sessao.Nome!), CancellationToken.None);
+                (_iban, _motivo) = (null, null);
+                await CarregarAsync();
+            },
+            "bloquear o IBAN");
+
+    private Task DesbloquearAsync(string iban) =>
+        ExecutarAsync(
+            async () =>
+            {
+                await Antifraude.DesbloquearIbanAsync(iban, CancellationToken.None);
+                await CarregarAsync();
+            },
+            "desbloquear o IBAN");
+
+    private Task IncluirPaisAsync() =>
+        ExecutarAsync(
+            async () =>
+            {
+                await Antifraude.IncluirPaisRiscoAsync(_pais!.Trim().ToUpperInvariant(), CancellationToken.None);
+                _pais = null;
+                await CarregarAsync();
+            },
+            "incluir o país");
+
+    private Task RemoverPaisAsync(string codigo) =>
+        ExecutarAsync(
+            async () =>
+            {
+                await Antifraude.RemoverPaisRiscoAsync(codigo, CancellationToken.None);
+                await CarregarAsync();
+            },
+            "remover o país");
+
+    private async Task ExecutarAsync(Func<Task> acao, string oQue)
+    {
+        try
+        {
+            await acao();
+        }
+        catch (Exception erro) when (erro is ExcecaoApiAntifraude or HttpRequestException)
+        {
+            Alertas.Add($"Não foi possível {oQue}: {erro.Message}", Severity.Error);
+        }
+    }
+}

@@ -1,0 +1,107 @@
+@page "/regras"
+@inject ClienteAntifraude Antifraude
+@inject ISnackbar Alertas
+
+<PageTitle>Regras e limiares</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Regras e limiares</MudText>
+<MudText Typo="Typo.body2" Class="mb-4">Cada mudança vale na próxima avaliação, sem reiniciar. Em sombra, a regra aparece na análise com os pontos que daria, mas não pontua nem decide.</MudText>
+
+@if (_configuracao is not null)
+{
+    <MudPaper Outlined="true" Class="pa-3 mb-4">
+        <MudText Typo="Typo.subtitle1">Configuração de decisão (versão @_versaoConfiguracao)</MudText>
+        <MudText Typo="Typo.caption">Abaixo do limiar de revisão aprova; a partir do de recusa, recusa; entre os dois, revisão humana. O peso multiplica a probabilidade do modelo ativo (0 desliga o modelo).</MudText>
+        <MudStack Row="true" AlignItems="AlignItems.End" Class="mt-2" Wrap="Wrap.Wrap">
+            <MudNumericField T="int" @bind-Value="_configuracao.LimiarRevisao" Label="Limiar de revisão" Min="1" Max="100" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudNumericField T="int" @bind-Value="_configuracao.LimiarRecusa" Label="Limiar de recusa" Min="1" Max="100" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudNumericField T="int" @bind-Value="_configuracao.PesoModelo" Label="Peso do modelo" Min="0" Max="100" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SalvarConfiguracaoAsync">Salvar versão nova</MudButton>
+        </MudStack>
+    </MudPaper>
+}
+
+<MudTable T="RegraEditavel" Items="_regras" Dense="true" Hover="true" Loading="_regras.Count == 0" Elevation="1">
+    <HeaderContent>
+        <MudTh>Regra</MudTh>
+        <MudTh>Peso</MudTh>
+        <MudTh>Ativa</MudTh>
+        <MudTh>Sombra</MudTh>
+        <MudTh>Parâmetros</MudTh>
+        <MudTh></MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Regra">
+            <MudText Typo="Typo.body2"><b>@context.Original.Codigo</b> (@context.Original.Tipo@(context.Original.Efeito is { } efeito ? $": {efeito}" : string.Empty))</MudText>
+            <MudText Typo="Typo.caption">@context.Original.Descricao</MudText>
+        </MudTd>
+        <MudTd DataLabel="Peso" Style="width: 7rem">
+            <MudNumericField T="int" @bind-Value="context.Peso" Min="0" Max="100" Disabled="context.Dura" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudTd>
+        <MudTd DataLabel="Ativa"><MudSwitch T="bool" @bind-Value="context.Ativa" Color="Color.Primary" /></MudTd>
+        <MudTd DataLabel="Sombra"><MudSwitch T="bool" @bind-Value="context.Sombra" Color="Color.Warning" /></MudTd>
+        <MudTd DataLabel="Parâmetros">
+            @foreach (var nome in context.Parametros.Keys.Order().ToList())
+            {
+                var regra = context;
+                <MudNumericField T="decimal" Value="regra.Parametros[nome]" ValueChanged="@(valor => regra.Parametros[nome] = valor)"
+                                 Label="@nome" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-1" Style="max-width: 12rem" />
+            }
+        </MudTd>
+        <MudTd>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="!context.Alterada" OnClick="@(() => SalvarRegraAsync(context))">Salvar</MudButton>
+        </MudTd>
+    </RowTemplate>
+</MudTable>
+
+@code {
+    private List<RegraEditavel> _regras = [];
+    private ConfiguracaoEditavel? _configuracao;
+    private int _versaoConfiguracao;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _regras = [.. (await Antifraude.ListarRegrasAsync(CancellationToken.None)).Select(RegraEditavel.De)];
+            MostrarConfiguracao(await Antifraude.ObterConfiguracaoAsync(CancellationToken.None));
+        }
+        catch (Exception erro) when (erro is ExcecaoApiAntifraude or HttpRequestException)
+        {
+            Alertas.Add($"Não foi possível ler as regras: {erro.Message}", Severity.Error);
+        }
+    }
+
+    private async Task SalvarRegraAsync(RegraEditavel regra)
+    {
+        try
+        {
+            var salva = await Antifraude.AjustarRegraAsync(regra.Original.Codigo, regra.ParaAjuste(), CancellationToken.None);
+            _regras[_regras.IndexOf(regra)] = RegraEditavel.De(salva);
+            Alertas.Add($"{salva.Codigo} salva: vale na próxima avaliação.", Severity.Success);
+        }
+        catch (ExcecaoApiAntifraude erro)
+        {
+            Alertas.Add($"{regra.Original.Codigo} não foi salva: {erro.Message}", Severity.Error);
+        }
+    }
+
+    private async Task SalvarConfiguracaoAsync()
+    {
+        try
+        {
+            MostrarConfiguracao(await Antifraude.AlterarConfiguracaoAsync(_configuracao!.ParaRequisicao(), CancellationToken.None));
+            Alertas.Add($"Configuração salva na versão {_versaoConfiguracao}.", Severity.Success);
+        }
+        catch (ExcecaoApiAntifraude erro)
+        {
+            Alertas.Add($"Configuração não salva: {erro.Message}", Severity.Error);
+        }
+    }
+
+    private void MostrarConfiguracao(ConfiguracaoDecisao configuracao)
+    {
+        _configuracao = ConfiguracaoEditavel.De(configuracao);
+        _versaoConfiguracao = configuracao.Versao;
+    }
+}

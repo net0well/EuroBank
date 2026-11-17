@@ -406,6 +406,34 @@ services:
       timeout: 5s
       retries: 30
 
+  # Painel do analista (Blazor Server, MudBlazor) em http://localhost:5500: fila de casos em tempo real, decisão,
+  # regras, limiares e listas, modelos (métricas, curva, champion e challenger, promoção), simulador e visão geral.
+  # Fala com a REST do antifraude pelo servidor (a API key não vai ao navegador) e ouve eurobank.antifraude.eventos num
+  # consumer group próprio por instância, sem inbox: o evento só faz a fila recarregar.
+  antifraude-painel:
+    build:
+      context: .
+      dockerfile: src/Antifraude/EuroBank.Antifraude.Painel/Dockerfile
+    ports:
+      - "5500:8080"
+    depends_on:
+      antifraude-api:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_HTTP_PORTS: "8080"
+      Antifraude__Endereco: http://antifraude-api:8080
+      Antifraude__ApiKey: ${ANTIFRAUDE_API_KEY}
+      Kafka__BootstrapServers: kafka:29092
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8080/health > /dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
   # Treino do modelo de fraude sob demanda (não sobe no "up"): gera o CSV sintético no volume antifraude-dados (só na
   # primeira vez), junta os rótulos reais do banco do Antifraude, treina, avalia e registra uma versão. A versão nasce
   # Registrada; quem a ativa ou põe em sombra é o analista, pela API do Antifraude.
