@@ -14,8 +14,9 @@ gRPC), mais dois sistemas "de fora" simulados:
   diferentes (cotação, débito, crédito), com prazos, reenvios, cancelamento, regras SEPA com horário de corte,
   devolução pelo banco e reconciliação quando o dinheiro não fecha. Antes de cada débito, pergunta ao antifraude.
 - **Antifraude**: analisa o risco de cada transferência com regras duras e com peso, sobre um perfil de
-  comportamento de cada conta mantido no Redis; aprova, recusa ou manda para a fila de um analista humano. Atende a
-  saga por gRPC e o analista por REST.
+  comportamento de cada conta mantido no Redis, e com o score de um modelo de machine learning (ML.NET) treinado em
+  dados sintéticos, com challenger em sombra e drift medido contra o treino; aprova, recusa ou manda para a fila de
+  um analista humano. Atende a saga por gRPC e o analista por REST.
 - **Banco externo simulado**: um sistema "de fora" que liquida, recusa, atrasa, some, confirma tarde demais ou
   devolve, conforme o final do IBAN.
 - **Câmbio simulado**: um provedor de cotações "de fora", com spread e cotação travada por 10 minutos.
@@ -55,6 +56,10 @@ dois sistemas precisam ficar consistentes sem compartilhar uma transação:
 9. **Usar o Redis sabendo o que acontece quando ele cai.** O mesmo Redis serve o perfil do antifraude, o cache do
    extrato em três estratégias, a Idempotency-Key, as cotações e o rate limit; cada uso tem um caminho para o Redis
    fora do ar (ler do Postgres, deixar passar ou recusar) e um teste que o percorre.
+10. **Pôr um modelo de machine learning em produção com ciclo de vida.** As mesmas features no treino e na
+    produção, dados sintéticos reproduzíveis, avaliação que faz sentido com fraude rara (AUC-PR, separação temporal),
+    registro de versões, promoção sem reiniciar, challenger em sombra, explicação de cada decisão e drift medido
+    contra o treino.
 
 ## O que foi construído
 
@@ -69,15 +74,16 @@ dois sistemas precisam ficar consistentes sem compartilhar uma transação:
 | API de Transferências | `POST /transferencias-externas` e `POST /transferencias-cambio` com `Idempotency-Key` (reservada no Redis antes da constraint única do Postgres), consulta com histórico e cotação, listagem com filtros, cancelamento e `POST /transferencias-externas/{id}/reconciliacao`; o limite diário é conferido com um advisory lock por conta |
 | Worker de Transferências | Respostas de Contas, do câmbio e do banco externo e decisões do antifraude (inbox durável), a projeção local das contas (eventos `ContaAberta` e `ContaEncerrada`) e uma varredura que começa as agendadas, chama o antifraude pelo gRPC (deadline de 2 s, retry ou hedging no canal) e trata os prazos com `FOR UPDATE SKIP LOCKED` |
 | Worker de Contas | Executa os comandos da saga (debitar, creditar, estornar, liberar a trava, debitar a reconciliação, creditar a devolução) com idempotência pelo id da transferência e responde pela outbox; a trava semântica impede encerrar a conta no meio da saga |
-| Domínio do Antifraude | Agregados `Analise` (uma por operação) e `CasoRevisao` (aberto, em análise, aprovado, recusado, expirado ou cancelado pelo cliente, com justificativa obrigatória e auditoria), 9 regras configuráveis (uma dura e oito com peso, com modo sombra), configuração de decisão versionada (limiares 30 e 70) e o motor que soma os pontos e decide |
-| API do Antifraude | `AntifraudeService` em gRPC (`Avaliar` idempotente, `ObterAnalise`, `Simular`) com API key por interceptor, erros de domínio em status gRPC, reflection, `grpc.health.v1` e JSON transcoding; REST do analista (fila, detalhe, atribuição e decisão de casos, regras, limiares, listas de bloqueio e de países de risco, fraudes confirmadas, visão geral das últimas 24 h) |
-| Worker do Antifraude | Perfil de comportamento de cada conta no Redis (saídas de 31 dias, beneficiários, saldo e idade da conta, atualizados por scripts Lua a partir de `eurobank.contas.eventos`), expiração dos casos sem decisão e fechamento do caso quando o cliente cancela a transferência (`eurobank.transferencias.eventos`) |
+| Domínio do Antifraude | Agregados `Analise` (uma por operação) e `CasoRevisao` (aberto, em análise, aprovado, recusado, expirado ou cancelado pelo cliente, com justificativa obrigatória e auditoria), 9 regras configuráveis (uma dura e oito com peso, com modo sombra), configuração de decisão versionada (limiares 30 e 70, peso do modelo 50) e o motor que soma os pontos das regras e, com uma versão ativa, a probabilidade do modelo vezes o peso; versões do modelo (Registrada, Challenger, Ativa, Aposentada) e medições de drift por PSI |
+| API do Antifraude | `AntifraudeService` em gRPC (`Avaliar` idempotente, `ObterAnalise`, `Simular`) com API key por interceptor, erros de domínio em status gRPC, reflection, `grpc.health.v1` e JSON transcoding; REST do analista (fila, detalhe, atribuição e decisão de casos, regras, limiares, listas de bloqueio e de países de risco, fraudes confirmadas, visão geral das últimas 24 h com o drift do modelo ativo); registro de modelos (versões, métricas, curva por limiar, ativação, challenger) com a troca em todas as instâncias sem reiniciar, por `LISTEN/NOTIFY` do Postgres |
+| Worker do Antifraude | Perfil de comportamento de cada conta no Redis (saídas de 31 dias, entradas, beneficiários, saldo e idade da conta, atualizados por scripts Lua a partir de `eurobank.contas.eventos`), expiração dos casos sem decisão, fechamento do caso quando o cliente cancela a transferência (`eurobank.transferencias.eventos`) e a medição do drift do modelo ativo a cada 5 minutos |
+| Machine learning | `Antifraude.Features` (11 features com o mesmo cálculo no treino e na produção, com teste de paridade), gerador de 99 mil transferências sintéticas com quatro padrões de fraude, treino com FastTree (peso por classe, separação temporal), avaliação com AUC-PR, precisão, recall, F1, matriz e curva por limiar e limiar recomendado por meta, rótulos dos analistas e das fraudes confirmadas, inferência com pool de `PredictionEngine` e explicação pela contribuição de cada feature |
 | Simuladores | Banco externo e câmbio com Confluent.Kafka e Npgsql puros, sem Wolverine e sem EF: inbox escrita à mão e respostas agendadas no banco, compartilhadas pelos dois; o câmbio guarda a cotação válida no Redis e a reaproveita nos reenvios |
 | Notificações | Worker com Wolverine consumindo `eurobank.transferencias.eventos`: e-mail em pt-BR (HTML e texto, pelo MailKit) para o Mailpit, inbox durável mais a tabela `notificacoes` com o id do evento como chave (reprocessar o tópico não repete e-mail), novas tentativas agendadas quando o SMTP falha e dead letter depois delas |
 | Segurança | Uma API key por API (`X-Api-Key`; no gRPC, o metadata `x-api-key`), com `/health`, Swagger, reflection e `grpc.health.v1` abertos, e rate limit por API key nas rotas REST das quatro APIs (janela deslizante no Redis, 429 com `Retry-After`) |
-| Infraestrutura | Docker Compose com PostgreSQL em replicação lógica, Kafka em modo KRaft, Kafka Connect, Kafbat UI, Jaeger, Mailpit, Redis e RedisInsight, com os databases, os tópicos e os conectores criados automaticamente |
+| Infraestrutura | Docker Compose com PostgreSQL em replicação lógica, Kafka em modo KRaft, Kafka Connect, Kafbat UI, Jaeger, Mailpit, Redis e RedisInsight, com os databases, os tópicos e os conectores criados automaticamente; profile `treino` para o treino do modelo |
 | Observabilidade | Serilog estruturado e OpenTelemetry, com o `traceparent` levado pela outbox até o consumidor e de volta nas respostas da saga |
-| Testes | 740 testes: unitários, de integração com Testcontainers e ponta a ponta com Debezium real, incluindo cada caminho das sagas, os e-mails no Mailpit, as decisões do antifraude no meio da saga e cada uso do Redis com ele ligado e fora do ar |
+| Testes | 845 testes: unitários, de integração com Testcontainers e ponta a ponta com Debezium real, incluindo cada caminho das sagas, os e-mails no Mailpit, as decisões do antifraude no meio da saga, cada uso do Redis com ele ligado e fora do ar e o treino de um modelo de verdade, promovido e trocado sem reiniciar |
 | Carga | Script k6 que mistura operações de Contas com sagas externas e de câmbio e, no fim, confere que todas as sagas terminaram, que o Extrato convergiu e que nenhum dinheiro sumiu, moeda a moeda; respeita o 429 esperando o `Retry-After` |
 
 ## Como funciona
@@ -330,8 +336,9 @@ gerados do mesmo arquivo, sem assembly compartilhado, e o valor viaja como `Deci
 protobuf não tem decimal. A chamada é idempotente pelo id da operação: repetida, devolve a mesma análise e o mesmo
 caso, com a decisão atual.
 
-O motor soma os pontos das regras que disparam e decide pelos limiares: abaixo de 30 aprova, de 30 a 69 manda para
-revisão, a partir de 70 recusa. A regra dura recusa sozinha.
+O motor soma os pontos das regras que disparam e, com uma versão do modelo ativa, a probabilidade de fraude vezes
+o peso do modelo (50), e decide pelos limiares: abaixo de 30 aprova, de 30 a 69 manda para revisão, a partir de 70
+recusa. A regra dura recusa sozinha.
 
 | Regra | Tipo | Pontos | Dispara quando |
 |---|---|---|---|
@@ -344,13 +351,15 @@ revisão, a partir de 70 recusa. A regra dura recusa sozinha.
 | `ContaRecemAberta` | peso | 20 | conta com menos de 7 dias manda 1.000 ou mais |
 | `HorarioIncomum` | peso | 10 | hora do dia (UTC) sem saídas nos últimos 30 dias (com pelo menos 10 saídas) |
 | `PaisDeRisco` | peso | 30 | o país do IBAN está na lista de países de risco (IR, KP e MM já vêm nela) |
+| `ModeloFraude` | peso | probabilidade × 50 | há uma versão do modelo ativa (veja a seção seguinte) |
 
 Peso, parâmetros, ativação, modo sombra (a regra aparece na análise mas não pontua), limiares e listas mudam pela
 REST do analista e valem na próxima avaliação, sem reiniciar. O roteiro está em
 [`http/antifraude.http`](http/antifraude.http).
 
-- **Perfil no Redis.** O worker do antifraude mantém, por conta, as saídas de 31 dias num sorted set, os
-  beneficiários já usados e um hash com saldo, moeda, data de abertura e a versão da conta, a partir dos eventos de
+- **Perfil no Redis.** O worker do antifraude mantém, por conta, as saídas de 31 dias e as entradas (depósitos e
+  transferências recebidas) em sorted sets, os beneficiários já usados e um hash com saldo, moeda, data de abertura
+  e a versão da conta, a partir dos eventos de
   `eurobank.contas.eventos`. Cada atualização é um script Lua atômico que só aplica eventos de versão nova da conta,
   sem inbox: perder o Redis é voltar o offset do consumer group e reconstruir. Uma conta sem perfil é avaliada como
   nova.
@@ -367,6 +376,71 @@ REST do analista e valem na próxima avaliação, sem reiniciar. O roteiro está
   chamada, que o cliente .NET só manda num canal inseguro com `UnsafeUseInsecureChannelCallCredentials`.
 - **O cliente não vê as regras.** O e-mail de uma recusa diz que a transferência não foi aprovada na análise de
   segurança, sem dizer qual regra disparou.
+
+### Machine learning no antifraude
+
+O laboratório sobe sem modelo ativo: só as regras pontuam até alguém treinar uma versão e promovê-la. O modelo é
+um classificador FastTree (árvores com boosting, do ML.NET); o treino roda no console `EuroBank.Antifraude.Treinamento`,
+pelo profile `treino` do compose ou por `dotnet run`.
+
+- **As mesmas features no treino e na produção.** O projeto `EuroBank.Antifraude.Features`, sem dependências,
+  calcula as 11 features a partir do histórico da conta antes da operação. O treino passa o histórico simulado; a
+  produção, o perfil do Redis. Um teste de paridade confere que os dois caminhos dão os mesmos números.
+
+| Feature | O que mede |
+|---|---|
+| `ValorSobreMedia` | valor sobre a média das saídas de 30 dias (até 100; 0 sem saídas) |
+| `SaidasUltimaHora` | saídas na hora anterior |
+| `PequenasEm15Min` | saídas abaixo de 10,00 nos 15 minutos anteriores |
+| `BeneficiarioNovo` | 1 se a conta nunca mandou para esse IBAN |
+| `IdadeContaDias` | dias desde a abertura da conta |
+| `HoraDoDia` | hora da operação (UTC) |
+| `FracaoDoSaldo` | valor sobre o saldo (até 10) |
+| `LogValor` | logaritmo decimal de 1 mais o valor |
+| `PaisDeRisco` | 1 se o país do IBAN está na lista de risco |
+| `SemHistorico` | 1 se o antifraude não conhece a conta (nem abertura, nem saldo, nem movimentos) |
+| `EntradasSobreValor` | o que entrou nas 24 h anteriores sobre o valor (até 10): a mula recebe e repassa |
+
+- **Dados sintéticos.** `gerar` simula 2.000 contas por 90 dias: cerca de 99 mil transferências, 1,5% delas fraude,
+  em quatro padrões rotulados: tomada de conta (alguém esvazia a conta para um IBAN novo, de madrugada), mula de
+  dinheiro (conta nova que recebe de várias origens e repassa rápido), teste de cartão (vários valores pequenos em
+  sequência) e engenharia social (o próprio cliente, convencido por um golpista, manda um valor fora do padrão para
+  um IBAN novo). A mesma semente gera o mesmo CSV, que fica fora do git (em `dados/`, ou no volume
+  `antifraude-dados` no compose) com a semente na primeira linha.
+- **Treino e avaliação.** `treinar` junta o CSV (gerado na hora se faltar) com os rótulos reais do banco do
+  antifraude: recusa do analista é fraude, aprovação não é, fraude confirmada depois é sempre fraude; expiradas,
+  canceladas e decididas só pelo motor ficam de fora, porque ninguém disse se eram fraude. Os 22% mais recentes do
+  mundo sintético ficam para o teste (separação temporal: o modelo é avaliado no futuro que não viu), cada fraude
+  pesa no treino o que pesam as normais juntas, e a avaliação usa o arquivo recarregado, o mesmo que a produção vai
+  carregar: AUC-PR (com fraude rara, acurácia não diz nada), precisão, recall, F1, matriz de confusão e a curva de
+  0,05 em 0,05. O limiar recomendado é o mais alto que ainda pega 90% das fraudes; a meta conta como atingida se ele
+  sinaliza no máximo 5% das operações. Abaixo da AUC-PR mínima (0,6), nada é registrado. No mundo padrão: AUC-PR
+  0,991, limiar 0,99, precisão 0,972 e recall 0,943, com 1,4% das operações acima do limiar.
+- **Registro e promoção.** Cada treino vira uma versão `Registrada` na tabela `versoes_modelo` (o arquivo do
+  ML.NET em `bytea`, as métricas, os dados do treino e a distribuição de cada feature e do score). O analista ativa
+  uma versão (`POST /modelos/{versao}/ativacao`; a ativa anterior é aposentada) ou a põe em sombra
+  (`POST /modelos/{versao}/challenger`; `DELETE /modelos/challenger` retira). Um gatilho em `versoes_modelo` chama
+  `pg_notify` a cada mudança de status; cada instância da API faz `LISTEN antifraude_modelos` numa conexão dedicada
+  e recarrega quando o aviso chega (só depois do commit), ao reconectar e a cada minuto sem aviso. Ninguém reinicia.
+- **O score na decisão e a explicação.** A probabilidade da versão ativa vezes o peso da configuração (50; 0 desliga
+  o modelo sem trocar a versão) entra como o sinal `ModeloFraude`, somado às regras. O challenger é pontuado em cada
+  avaliação e gravado na análise, mas não soma nem decide. Cada análise guarda as features, o score e a explicação:
+  quanto cada feature empurrou o score (as contribuições do FastTree, na escala do score bruto), da maior para a
+  menor, no detalhe do caso (`GET /casos/{id}`) e no gRPC.
+- **Falha do modelo.** Uma versão que não carrega não derruba nada: fica a que estava em memória, com o erro no log
+  e na métrica `antifraude.modelo.failures`. Erro na inferência: a avaliação segue só com as regras.
+- **Drift.** A cada 5 minutos, o worker compara as features das análises das últimas 24 horas (e o score das que a
+  versão ativa pontuou) com a distribuição do treino dessa versão, pelo PSI (population stability index): abaixo de
+  0,1 estável, até 0,25 moderado, acima disso significativo. A referência são os decis de cada coluna no treino, e
+  cada limite fecha a sua faixa, para que numa feature quase sempre zero o zero fique separado do resto. Cada
+  medição fica em `medicoes_drift` por 7 dias, a visão geral (`GET /visao-geral`) mostra a última e o gauge
+  `antifraude.drift.psi` traz o PSI de cada feature. Com menos de 100 análises na janela, a medição fica como
+  amostra insuficiente; sem versão ativa, não há medição.
+
+AUC-PR de 0,991 diz que os padrões simulados são fáceis de separar, não que o modelo pega fraude de verdade. No
+tráfego do laboratório, ele é muito confiante (probabilidades perto de 0 ou de 1) e, com peso 50, sozinho já manda
+para a revisão e, junto com as regras, recusa: pesa quase como uma regra dura. O peso na configuração de decisão é a
+alavanca para isso, e o drift mostra o quanto o tráfego se afasta do mundo em que o modelo aprendeu.
 
 ### Redis no laboratório
 
@@ -510,6 +584,27 @@ Problemas reais encontrados durante a construção, cada um com um teste que o r
     janela. É o comportamento desejado (várias instâncias de uma API dividem o limite), e o teste passou a usar uma
     key própria.
 
+29. **Um limiar de float comparado em double perde a fronteira.** O modelo devolve a probabilidade em float, e
+    0,95f vale 0,9499999 em double: no teste da escolha do limiar, uma fraude com 0,95 ficava abaixo do limiar 0,95.
+    A comparação passou a ser feita em float, como o modelo devolve.
+30. **O EF não lê um membro de dentro de uma coluna com conversor.** A lista de modelos projetava
+    `Metricas.AucPr`, um campo dentro do jsonb, e a consulta falhava com `Nullable object must have a value`. A
+    lista passou a projetar as colunas e montar o resumo em memória.
+31. **Um código novo no enum vira rota.** O sinal do modelo ganhou um código de regra (`ModeloFraude`), e
+    `GET /regras/ModeloFraude` passou a cair num `Single` sem resultado, um 500. Agora é 404, como qualquer regra que
+    não existe.
+32. **Os testes passam e a imagem não constrói.** O projeto novo de features entrou na solução, mas os Dockerfiles
+    da API e do worker do antifraude restauravam só os `.csproj` que já conheciam, e nenhum teste constrói imagem: o
+    erro só apareceu no `docker compose build`. Agora um teste confere que cada Dockerfile copia o `.csproj` de todas
+    as referências do projeto que publica.
+33. **Decis não enxergam uma feature quase sempre zero.** No primeiro teste com carga, `SaidasUltimaHora` deu PSI 0,
+    embora a regra de velocidade tivesse disparado em quase todas as análises: com mais de 90% de zeros no treino,
+    todos os decis caíam em 0, e o zero e os positivos ficavam na mesma faixa. Com cada limite fechando a sua faixa, o
+    limite 0 separa o zero do resto, e o PSI dela foi para 8,4.
+34. **A semente do FastTree não muda nada sem amostragem.** Treinar de novo com outra semente deu um modelo
+    idêntico: com todas as linhas e todas as features em cada árvore, não há sorteio. Reproduzir o modelo depende
+    dos dados; o mesmo CSV dá as mesmas métricas no Windows e no Linux.
+
 ## Arquitetura
 
 CDC de Contas para o Extrato:
@@ -569,7 +664,9 @@ flowchart LR
     ce[[eurobank.contas.eventos]] --> afworker[Worker do Antifraude<br/>perfil + expiração]
     te[[eurobank.transferencias.eventos]] -->|cancelamento| afworker
     afworker -->|scripts Lua| redis
-    afworker --> pga
+    afworker -->|drift| pga
+    treino[Treinamento<br/>profile treino] -->|registra a versão| pga
+    pga -. "NOTIFY antifraude_modelos" .-> afapi
 ```
 
 ## Tecnologias
@@ -588,6 +685,7 @@ flowchart LR
 | gRPC para .NET (com JSON transcoding) e Google.Protobuf | 2.85 e 3.36 |
 | Redis, RedisInsight e StackExchange.Redis | 8.10, 3.8 e 2.13 |
 | grpc_health_probe (healthcheck do antifraude) | 0.4.63 |
+| ML.NET e ML.NET FastTree | 6.0 |
 | Kafbat UI | 1.5.0 |
 | Jaeger | 2.22 |
 | k6 | 2.3 |
@@ -656,7 +754,9 @@ src/
   Contas/   Domain | Application | Infrastructure | Api | Worker (comandos das sagas)
   Extrato/  Domain | Application | Infrastructure | Worker
   Transferencias/  Domain | Application | Infrastructure | Api | Worker (orquestrador das sagas)
-  Antifraude/  Domain | Application | Infrastructure | Api (gRPC e REST do analista) | Worker (perfil no Redis e expiração)
+  Antifraude/  Features (o cálculo das features, sem dependências) | Domain | Application | Infrastructure
+               Api (gRPC, REST do analista e modelos) | Worker (perfil no Redis, expiração e drift)
+               Treinamento (gerador de dados sintéticos e treino do modelo, em console)
   Notificacoes/  Worker (e-mails dos eventos finais das sagas; um projeto só, com as pastas técnicas)
   Simuladores/  Comum | BancoExterno | Cambio (sistemas de fora: Confluent.Kafka e Npgsql puros, sem Wolverine e sem EF)
 tests/      testes unitários, de integração (Testcontainers) e ponta a ponta (Debezium de verdade)
@@ -695,6 +795,15 @@ Pontos do código que valem a leitura:
 - `src/Antifraude/EuroBank.Antifraude.Api/Interceptors/`: a API key e o mapeamento das exceções para status gRPC.
 - `src/Antifraude/EuroBank.Antifraude.Infrastructure/Perfil/PerfisContasRedis.cs`: os scripts Lua que mantêm o
   perfil de cada conta, com a versão da conta como deduplicação.
+- `src/Antifraude/EuroBank.Antifraude.Features/Services/CalculadoraFeatures.cs` e o teste de paridade em
+  `tests/EuroBank.Antifraude.Worker.Tests/Perfil/ParidadeFeaturesTestes.cs`: as features num lugar só.
+- `src/Antifraude/EuroBank.Antifraude.Treinamento/Training/TreinadorModelo.cs` e `AvaliadorLimiares.cs`: separação
+  temporal, peso por classe, a cadeia modelo mais contribuições salva num arquivo só e o limiar recomendado.
+- `src/Antifraude/EuroBank.Antifraude.Infrastructure/MachineLearning/`: o ouvinte do `LISTEN/NOTIFY`, o carregador
+  que mantém a versão anterior quando a nova não carrega e o pontuador fail-open; o gatilho está na migration
+  `ModeloNaAnalise`.
+- `src/Antifraude/EuroBank.Antifraude.Domain/Entities/MedicaoDrift.cs` e `Services/CalculadoraDrift.cs`: o PSI de
+  cada feature e do score contra o treino.
 - `src/Extrato/EuroBank.Extrato.Infrastructure/Cache/`: as estratégias do cache do extrato (`ScriptsCache.cs` com a
   regra de versão em Lua, `UnidadeDeTrabalhoComCache.cs`, a pasta `WriteBehind/` com a descarga das pendências) e a
   marca de cache suspeito.
@@ -737,6 +846,10 @@ para `localhost:1025`, o SMTP do Mailpit. Todas as aplicações que usam o Redis
 as APIs de Contas e de Transferências e o câmbio simulado) apontam para `localhost:6379`; com outra porta no `.env`,
 rode-as com `ConnectionStrings__Redis=localhost:<porta>`.
 
+O treino também roda no host, contra o Postgres do compose (`localhost:5434`), com o CSV em `dados/`:
+`dotnet run --project src/Antifraude/EuroBank.Antifraude.Treinamento -- treinar`. Para outro banco, use
+`ConnectionStrings__Antifraude`.
+
 Fora do compose, a análise de risco começa desligada (`Saga:AnaliseRiscoAtiva=false` nos `appsettings.json`). Para
 a saga passar pelo antifraude, rode a API e o worker de Transferências com `Saga__AnaliseRiscoAtiva=true` (os dois
 começam sagas, então a configuração precisa ser igual); o worker já aponta para `localhost:5410` com a chave de
@@ -772,7 +885,13 @@ write-behind repetida sem duplicar nada), o Redis fora com o cache marcado como 
 Idempotency-Key em paralelo com o Redis ligado e desligado, a espera pelo pedido igual em andamento e o 409 com
 `Retry-After`, as cotações reaproveitadas (pelo Redis e pela tabela), o 429 com `Retry-After`, o `/health` e o gRPC
 fora do limite e o fail-open; e, ponta a ponta, o extrato servido do Redis logo depois do evento e a Idempotency-Key
-em paralelo no laboratório.
+em paralelo no laboratório. Para o machine learning: cada feature e a paridade entre o caminho do treino e o do
+Redis; o gerador reproduzível pela semente, com a assinatura de cada padrão; o treino num mundo pequeno acima da
+AUC-PR mínima, o mesmo modelo para a mesma semente, o arquivo recarregado pontuando fraude acima do normal e
+explicando cada feature, e os rótulos reais e o registro num Postgres de verdade; o motor com o sinal do modelo e o
+challenger; e, na API com um modelo treinado de verdade, a promoção trocando o modelo pelo `LISTEN/NOTIFY` sem
+reiniciar, o challenger em sombra e promovido, a versão que não carrega mantendo a anterior, a migration do peso do
+modelo e o PSI, com a medição gravada pelo worker e mostrada na visão geral.
 
 ## Roteiro de exercícios
 
@@ -1056,6 +1175,10 @@ ANTIFRAUDE_PRAZO_REVISAO=00:01:00 docker compose up -d antifraude-api antifraude
 Cancele uma transferência em revisão pelo `http/transferencias.http`: ela termina `Cancelada`, e o caso some da
 fila (`GET /casos?status=CanceladoPeloCliente`).
 
+Com uma versão do modelo ativa (exercício 27), a mesma transferência de 1.000 EUR costuma ser recusada direto: o
+modelo dá probabilidade perto de 1 e soma 50 pontos aos 30 das regras. Para ver o caminho da revisão com o modelo
+ativo, baixe o peso (`PUT /configuracao-decisao` com `pesoModelo` 0 ou 20).
+
 ### 19. Regras, limiares e listas sem reiniciar
 
 Mande uma transferência para `DE89370400440532013066`, que vem na lista de bloqueio: `Recusada`
@@ -1173,6 +1296,82 @@ depois, a janela libera de novo (logo depois da subida, a primeira requisição 
 outras, deixando passar uma a mais). O `/health` nunca conta. A janela fica no Redis (`limite:EuroBank.Contas.Api:...`), então
 duas instâncias da mesma API dividem o mesmo limite.
 
+### 26. Treinar o modelo
+
+```bash
+docker compose --profile treino run --rm antifraude-treino
+```
+
+Na primeira vez, o treino gera o CSV sintético no volume `antifraude-dados` (99.167 transferências, 1.464 fraudes)
+e treina, em pouco mais de um minuto com a construção da imagem. A saída mostra a AUC-PR no teste temporal, o
+limiar recomendado com precisão, recall e matriz de confusão e a curva de 0,05 em 0,05; no fim, `Versão 1
+registrada`. Pelo `http/antifraude.http`, veja `GET /modelos` e `GET /modelos/1`. Para mudar a meta:
+`... antifraude-treino treinar --meta-recall 0.95`. A semente do `treinar` só vale para gerar o CSV que falta: sem
+amostragem, o FastTree dá o mesmo modelo para os mesmos dados. Um modelo diferente sai de outro mundo:
+
+```bash
+docker compose --profile treino run --rm antifraude-treino gerar --semente 7 --saida dados/mundo-7.csv
+docker compose --profile treino run --rm antifraude-treino treinar --dados dados/mundo-7.csv
+```
+
+### 27. Promover sem reiniciar
+
+Ative a versão 1 (`POST /modelos/1/ativacao`) e olhe o log da API:
+
+```bash
+docker compose logs --tail 5 antifraude-api
+```
+
+`Aviso de troca de modelo (versão 1): recarregando`, `Versão 1 do modelo carregada` e `Modelos em uso: ativa 1`.
+Deposite 1.000 EUR na conta da Carla (fica com 1.250) e faça duas transferências para IBANs novos; a análise de
+cada uma está em `GET /v1/avaliacoes/{analiseRiscoId}`. Com 100 EUR, a probabilidade fica perto de 0, e a
+transferência é aprovada com os 10 pontos do beneficiário novo; com 1.000 EUR (80% do saldo, conta recém-aberta), a
+probabilidade fica perto de 1, e os 50 pontos do `ModeloFraude` se somam aos 30 das regras: recusada. No bloco `modelo`, as contribuições mostram por quê (`LogValor`, `FracaoDoSaldo`,
+`BeneficiarioNovo` empurrando para fraude). Com `pesoModelo` 0 na configuração, o modelo continua aparecendo na
+análise, mas não pontua.
+
+### 28. Challenger em sombra
+
+Treine a versão do outro mundo (exercício 26) e ponha-a em sombra (`POST /modelos/2/challenger`). Cada análise
+passa a ter também o bloco `challenger`, com a probabilidade e os pontos que ele somaria, sem mudar o score nem a
+decisão. Compare as duas versões em `GET /modelos` e promova o challenger (`POST /modelos/2/ativacao`): a versão 1
+fica `Aposentada`, a sombra fica vazia, e a API carrega a 2 sem ler de novo o arquivo. `DELETE /modelos/challenger`
+retira um challenger sem promover.
+
+### 29. Drift
+
+Com uma versão ativa, gere tráfego com o antifraude ligado (sem o `SAGA_ANALISE_RISCO=false` do exercício 6 no
+shell) e encurte o intervalo da medição:
+
+```bash
+export SEPA_HORARIO_DE_CORTE=false ANTIFRAUDE_DRIFT_INTERVALO=00:00:30
+docker compose up -d transferencias-api antifraude-worker
+docker compose --profile carga run --rm -e DURACAO=1m k6
+```
+
+Com a análise de risco ligada, boa parte das sagas da carga para na fila do analista, e o k6 acusa as sagas
+pendentes no fim (o dinheiro e o extrato fecham). Para o drift, isso não importa: cada transferência virou uma
+análise. Em `GET /visao-geral`, o `drift` sai `Medido` e `Significativo`, com o PSI de cada feature do maior para o
+menor: `EntradasSobreValor` (o k6 deposita e logo transfere), `HoraDoDia` (todo o tráfego na mesma hora),
+`SaidasUltimaHora`, `IdadeContaDias` (contas recém-abertas) e o próprio score, todos bem acima de 0,25; `PaisDeRisco`
+fica estável, porque a carga não usa países de risco. O histórico fica no banco:
+
+```bash
+docker compose exec postgres psql -U eurobank -d eurobank_antifraude \
+  -c "SELECT medida_em, nivel, round(psi_maximo::numeric, 2) AS psi_maximo, amostra FROM medicoes_drift ORDER BY medida_em DESC LIMIT 5;"
+```
+
+O modelo foi treinado num mundo que não se parece com o tráfego de teste, e o drift diz exatamente onde. Para
+voltar ao normal: `unset SEPA_HORARIO_DE_CORTE ANTIFRAUDE_DRIFT_INTERVALO` e
+`docker compose up -d transferencias-api antifraude-worker`.
+
+### 30. Retreinar com os rótulos do laboratório
+
+Decida alguns casos da fila (aprovar e recusar) e marque uma transferência aprovada como fraude confirmada
+(`POST /fraudes-confirmadas`). Treine de novo: a saída mostra os rótulos reais que entraram (`N rótulos reais (M
+fraudes)`), sempre no treino, e a versão nova traz a contagem em `dados.rotulosReais`. Os rótulos vêm das decisões
+que o próprio sistema mandou para a revisão: é o ciclo de realimentação que um modelo em produção precisa vigiar.
+
 ## Laboratório e produção
 
 Atalhos que este laboratório toma de propósito:
@@ -1205,6 +1404,11 @@ Atalhos que este laboratório toma de propósito:
 | Uma marca global de cache suspeito, que esvazia o cache inteiro | Versão por entrada comparada na leitura, ou invalidação só das chaves cuja escrita falhou |
 | Rate limit por API key, com uma key por API | Uma key (ou um token) por cliente, cotas por plano e limites também por IP no gateway |
 | Rate limit que deixa passar com o Redis fora | Limite local em memória como segunda linha, para um Redis fora não deixar a API sem proteção |
+| Modelo treinado em dados sintéticos fáceis de separar | Dados reais rotulados com atraso (um chargeback leva semanas), sabendo que só se conhece o desfecho do que foi aprovado ou revisado |
+| O arquivo do modelo numa coluna do Postgres | Registro de modelos (MLflow, Azure ML) com linhagem, aprovação e artefatos num storage de objetos |
+| Promoção pelo analista, na hora | Promoção com aprovação, rollout gradual e o challenger comparado em produção por semanas |
+| Drift medido e mostrado | Alerta, investigação e retreino agendado ou disparado pelo drift, com a taxa de fraude real acompanhada ao lado |
+| Rótulos das decisões do próprio sistema | Cuidado com o ciclo de realimentação: o modelo aprende com o que ele mesmo mandou para a revisão; parte do tráfego avaliado sem o modelo, para medir |
 
 ## Próximos passos
 
@@ -1213,10 +1417,11 @@ cancelamento, agendamento, tarifa, limite diário e `Idempotency-Key`), o **câm
 cotação travada com spread, externa em outra moeda e câmbio entre contas EuroBank) e as regras **SEPA e SWIFT**
 com horário de corte, a **devolução** pelo banco externo, o estado **`Divergente`** com reconciliação e saldo
 negativo controlado, as **notificações** por e-mail, o **cenário de carga** que confere o dinheiro de todas as
-sagas, o **antifraude** com regras, perfil no Redis, revisão humana e gRPC no meio da saga, e o **Redis no restante
-do laboratório** (cache do extrato em três estratégias, Idempotency-Key, cotações e rate limit).
+sagas, o **antifraude** com regras, perfil no Redis, revisão humana e gRPC no meio da saga, o **Redis no restante
+do laboratório** (cache do extrato em três estratégias, Idempotency-Key, cotações e rate limit) e o **machine
+learning** no antifraude (features compartilhadas, dados sintéticos, treino, registro, troca sem reiniciar,
+challenger em sombra, explicação e drift).
 
-As próximas, no antifraude: machine learning com ML.NET (dados sintéticos, treino, modelo em
-produção com challenger em sombra e drift), o painel do analista, dispositivo e localização, o saque em Contas
-passando pelo antifraude, alta disponibilidade do Redis, métricas e a carga com o antifraude no caminho. Depois,
-uma interface em Vue para a análise de fraude e para acompanhar o fluxo de ponta a ponta.
+As próximas, no antifraude: o painel do analista, dispositivo e localização, o saque em Contas passando pelo
+antifraude, alta disponibilidade do Redis, métricas (com o alerta de drift no Grafana) e a carga com o antifraude no
+caminho. Depois, uma interface em Vue para a análise de fraude e para acompanhar o fluxo de ponta a ponta.

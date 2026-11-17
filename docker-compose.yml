@@ -379,7 +379,8 @@ services:
       retries: 30
 
   # Mantém no Redis o perfil de cada conta (eurobank.contas.eventos, sem inbox: a versão da conta no Redis descarta
-  # o repetido). Para reconstruir: apague o Redis e volte o offset do grupo eurobank-antifraude-worker.
+  # o repetido). Para reconstruir: apague o Redis e volte o offset do grupo eurobank-antifraude-worker. Também expira
+  # os casos vencidos e mede o drift do modelo ativo (tabela medicoes_drift).
   # Espera a API ficar saudável, porque é ela que aplica as migrations do banco do Antifraude.
   antifraude-worker:
     build:
@@ -397,6 +398,8 @@ services:
       ConnectionStrings__Redis: "redis:6379"
       Kafka__BootstrapServers: kafka:29092
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      # Drift do modelo ativo: PSI das análises das últimas 24 h contra o treino, a cada 5 min (mais curto nos exercícios).
+      Drift__Intervalo: ${ANTIFRAUDE_DRIFT_INTERVALO:-00:05:00}
     healthcheck:
       test: ["CMD-SHELL", "curl -fs http://localhost:8080/health > /dev/null"]
       interval: 5s
