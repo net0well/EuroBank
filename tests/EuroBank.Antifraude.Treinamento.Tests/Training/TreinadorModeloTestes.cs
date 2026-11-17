@@ -89,6 +89,16 @@ public sealed class TreinadorModeloTestes
     }
 
     [Fact]
+    public void OutraSemente_MesmoModelo_PorqueOFastTreeNaoSorteiaNada()
+    {
+        // Todas as linhas e todas as features em cada árvore: sem amostragem, a semente não muda o modelo.
+        var outraSemente = new TreinadorModelo(new OpcoesTreino(Semente: 99)).Treinar(Mundo.Semente, Sinteticas.Value, Reais);
+
+        outraSemente.Metricas.AucPr.ShouldBe(Resultado.Value.Metricas.AucPr);
+        outraSemente.Metricas.Curva.ShouldBe(Resultado.Value.Metricas.Curva);
+    }
+
+    [Fact]
     public void MesmaSemente_MesmoModelo()
     {
         var outraVez = new TreinadorModelo(new OpcoesTreino()).Treinar(Mundo.Semente, Sinteticas.Value, Reais);
