@@ -1,0 +1,29 @@
+@* Um número da visão geral num cartão; com Href, o cartão leva à tela do detalhe. *@
+<MudItem xs="6" sm="4" md="2">
+    <MudPaper Outlined="true" Class="@("pa-3" + (Href is null ? string.Empty : " painel-clicavel"))" @onclick="Abrir">
+        <MudText Typo="Typo.caption">@Titulo</MudText>
+        <MudText Typo="Typo.h5" Class="painel-numero">@Valor</MudText>
+    </MudPaper>
+</MudItem>
+
+@code {
+    [Inject]
+    private NavigationManager Navegacao { get; set; } = null!;
+
+    [Parameter, EditorRequired]
+    public string Titulo { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public string Valor { get; set; } = string.Empty;
+
+    [Parameter]
+    public string? Href { get; set; }
+
+    private void Abrir()
+    {
+        if (Href is not null)
+        {
+            Navegacao.NavigateTo(Href);
+        }
+    }
+}

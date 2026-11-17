@@ -1,0 +1,45 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject SessaoAnalista Sessao
+
+<MudThemeProvider />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="1" Dense="true">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="AlternarMenu" />
+        <MudText Typo="Typo.h6" Class="ml-2">EuroBank Antifraude</MudText>
+        <MudSpacer />
+        <NomeAnalista />
+    </MudAppBar>
+    <MudDrawer @bind-Open="_menuAberto" ClipMode="DrawerClipMode.Always" Elevation="1">
+        <NavMenu />
+    </MudDrawer>
+    <MudMainContent>
+        <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
+            @Body
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    private bool _menuAberto = true;
+
+    protected override void OnInitialized() => Sessao.Mudou += AoMudarAnalista;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Sessao.CarregarAsync();
+        }
+    }
+
+    private void AlternarMenu() => _menuAberto = !_menuAberto;
+
+    private void AoMudarAnalista() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Sessao.Mudou -= AoMudarAnalista;
+}

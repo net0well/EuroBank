@@ -6,6 +6,7 @@
 ### Revisão rápida num laboratório novo: 1.000 EUR de uma conta recém-aberta para um IBAN novo dá 30
 ### (ContaRecemAberta 20 + BeneficiarioNovo 10). Os casos expiram em 30 min (ANTIFRAUDE_PRAZO_REVISAO no compose).
 ### Com uma versão do modelo ativa, a probabilidade de fraude vezes o peso (50) soma como mais um sinal (ModeloFraude).
+### O mesmo, com telas e a fila em tempo real: o painel do analista em http://localhost:5500.
 
 @api = http://localhost:5400
 @apiKey = antifraude-lab-key

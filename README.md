@@ -16,7 +16,8 @@ gRPC), mais dois sistemas "de fora" simulados:
 - **Antifraude**: analisa o risco de cada transferência com regras duras e com peso, sobre um perfil de
   comportamento de cada conta mantido no Redis, e com o score de um modelo de machine learning (ML.NET) treinado em
   dados sintéticos, com challenger em sombra e drift medido contra o treino; aprova, recusa ou manda para a fila de
-  um analista humano. Atende a saga por gRPC e o analista por REST.
+  um analista humano. Atende a saga por gRPC e o analista por REST e por um painel web (Blazor Server), com a fila de
+  casos em tempo real.
 - **Banco externo simulado**: um sistema "de fora" que liquida, recusa, atrasa, some, confirma tarde demais ou
   devolve, conforme o final do IBAN.
 - **Câmbio simulado**: um provedor de cotações "de fora", com spread e cotação travada por 10 minutos.
@@ -60,6 +61,9 @@ dois sistemas precisam ficar consistentes sem compartilhar uma transação:
     produção, dados sintéticos reproduzíveis, avaliação que faz sentido com fraude rara (AUC-PR, separação temporal),
     registro de versões, promoção sem reiniciar, challenger em sombra, explicação de cada decisão e drift medido
     contra o treino.
+11. **Levar um evento do Kafka até a tela de uma pessoa.** O painel do analista é Blazor Server: o caso novo sai da
+    outbox do antifraude, passa pelo Debezium e pelo Kafka e chega à fila aberta no navegador pelo circuito, sem
+    ninguém recarregar a página.
 
 ## O que foi construído
 
@@ -77,13 +81,14 @@ dois sistemas precisam ficar consistentes sem compartilhar uma transação:
 | Domínio do Antifraude | Agregados `Analise` (uma por operação) e `CasoRevisao` (aberto, em análise, aprovado, recusado, expirado ou cancelado pelo cliente, com justificativa obrigatória e auditoria), 9 regras configuráveis (uma dura e oito com peso, com modo sombra), configuração de decisão versionada (limiares 30 e 70, peso do modelo 50) e o motor que soma os pontos das regras e, com uma versão ativa, a probabilidade do modelo vezes o peso; versões do modelo (Registrada, Challenger, Ativa, Aposentada) e medições de drift por PSI |
 | API do Antifraude | `AntifraudeService` em gRPC (`Avaliar` idempotente, `ObterAnalise`, `Simular`) com API key por interceptor, erros de domínio em status gRPC, reflection, `grpc.health.v1` e JSON transcoding; REST do analista (fila, detalhe, atribuição e decisão de casos, regras, limiares, listas de bloqueio e de países de risco, fraudes confirmadas, visão geral das últimas 24 h com o drift do modelo ativo); registro de modelos (versões, métricas, curva por limiar, ativação, challenger) com a troca em todas as instâncias sem reiniciar, por `LISTEN/NOTIFY` do Postgres |
 | Worker do Antifraude | Perfil de comportamento de cada conta no Redis (saídas de 31 dias, entradas, beneficiários, saldo e idade da conta, atualizados por scripts Lua a partir de `eurobank.contas.eventos`), expiração dos casos sem decisão, fechamento do caso quando o cliente cancela a transferência (`eurobank.transferencias.eventos`) e a medição do drift do modelo ativo a cada 5 minutos |
+| Painel do analista | Blazor Server com MudBlazor (5500): visão geral, fila de casos em tempo real, caso com sinais, features, explicação do modelo e do challenger, assumir e decidir, fraude confirmada, regras e limiares, listas, modelos (métricas, curva, champion e challenger, promoção) e simulador; chama a REST do antifraude pelo servidor (a API key não vai ao navegador) e ouve `eurobank.antifraude.eventos` num consumer group por instância |
 | Machine learning | `Antifraude.Features` (11 features com o mesmo cálculo no treino e na produção, com teste de paridade), gerador de 99 mil transferências sintéticas com quatro padrões de fraude, treino com FastTree (peso por classe, separação temporal), avaliação com AUC-PR, precisão, recall, F1, matriz e curva por limiar e limiar recomendado por meta, rótulos dos analistas e das fraudes confirmadas, inferência com pool de `PredictionEngine` e explicação pela contribuição de cada feature |
 | Simuladores | Banco externo e câmbio com Confluent.Kafka e Npgsql puros, sem Wolverine e sem EF: inbox escrita à mão e respostas agendadas no banco, compartilhadas pelos dois; o câmbio guarda a cotação válida no Redis e a reaproveita nos reenvios |
 | Notificações | Worker com Wolverine consumindo `eurobank.transferencias.eventos`: e-mail em pt-BR (HTML e texto, pelo MailKit) para o Mailpit, inbox durável mais a tabela `notificacoes` com o id do evento como chave (reprocessar o tópico não repete e-mail), novas tentativas agendadas quando o SMTP falha e dead letter depois delas |
 | Segurança | Uma API key por API (`X-Api-Key`; no gRPC, o metadata `x-api-key`), com `/health`, Swagger, reflection e `grpc.health.v1` abertos, e rate limit por API key nas rotas REST das quatro APIs (janela deslizante no Redis, 429 com `Retry-After`) |
 | Infraestrutura | Docker Compose com PostgreSQL em replicação lógica, Kafka em modo KRaft, Kafka Connect, Kafbat UI, Jaeger, Mailpit, Redis e RedisInsight, com os databases, os tópicos e os conectores criados automaticamente; profile `treino` para o treino do modelo |
 | Observabilidade | Serilog estruturado e OpenTelemetry, com o `traceparent` levado pela outbox até o consumidor e de volta nas respostas da saga |
-| Testes | 845 testes: unitários, de integração com Testcontainers e ponta a ponta com Debezium real, incluindo cada caminho das sagas, os e-mails no Mailpit, as decisões do antifraude no meio da saga, cada uso do Redis com ele ligado e fora do ar e o treino de um modelo de verdade, promovido e trocado sem reiniciar |
+| Testes | 879 testes: unitários, de integração com Testcontainers e ponta a ponta com Debezium real, incluindo cada caminho das sagas, os e-mails no Mailpit, as decisões do antifraude no meio da saga, cada uso do Redis com ele ligado e fora do ar, o treino de um modelo de verdade, promovido e trocado sem reiniciar, e as telas do painel com bUnit |
 | Carga | Script k6 que mistura operações de Contas com sagas externas e de câmbio e, no fim, confere que todas as sagas terminaram, que o Extrato convergiu e que nenhum dinheiro sumiu, moeda a moeda; respeita o 429 esperando o `Retry-After` |
 
 ## Como funciona
@@ -442,6 +447,32 @@ tráfego do laboratório, ele é muito confiante (probabilidades perto de 0 ou d
 para a revisão e, junto com as regras, recusa: pesa quase como uma regra dura. O peso na configuração de decisão é a
 alavanca para isso, e o drift mostra o quanto o tráfego se afasta do mundo em que o modelo aprendeu.
 
+### Painel do analista
+
+Em http://localhost:5500. O analista informa o nome no topo (fica guardado no navegador e vai em cada ação; não há
+login) e trabalha pelas telas:
+
+- **Visão geral:** análises, taxas de revisão e de recusa, casos pendentes e expirados das últimas 24 horas, as
+  regras que mais dispararam e o drift do modelo ativo.
+- **Fila de casos:** os pendentes primeiro (os que expiram antes no topo), com filtro por situação. Um caso novo
+  aparece sozinho, com um alerta.
+- **Caso:** a operação, os sinais de cada regra, as features, a explicação do modelo ativo e a do challenger (quanto
+  cada feature empurrou o score), a auditoria; assumir, aprovar ou recusar com justificativa (ao recusar, bloquear o
+  IBAN) e marcar a fraude confirmada depois.
+- **Regras e limiares:** peso, ativação, modo sombra e parâmetros de cada regra; limiares e peso do modelo.
+- **Listas:** IBANs bloqueados e países de risco.
+- **Modelos:** as versões com as métricas, ativar e pôr em sombra (com confirmação), a comparação champion e
+  challenger e, em cada versão, a curva de precisão, recall e fração sinalizada por limiar, a matriz e os dados do
+  treino.
+- **Simulador:** uma avaliação hipotética, com a mesma resposta do `Simular`.
+
+O painel não referencia as camadas do antifraude: é um cliente da REST, com DTOs próprios, e a chamada sai do servidor
+do painel com a API key. O tempo real vem do Kafka: o painel ouve `eurobank.antifraude.eventos` com o Wolverine, num
+consumer group próprio por instância (todas recebem todos os eventos), começando do fim do tópico e sem inbox. Só
+`CasoAberto` e as decisões que fecham um caso (do analista, da expiração ou do cliente) viram aviso; as do motor
+ficam de fora, para a carga não fazer a fila piscar. O aviso só manda as telas abertas recarregarem pela REST,
+dentro do circuito de cada uma.
+
 ### Redis no laboratório
 
 | Uso | Chaves | Validade | Com o Redis fora |
@@ -604,6 +635,10 @@ Problemas reais encontrados durante a construção, cada um com um teste que o r
 34. **A semente do FastTree não muda nada sem amostragem.** Treinar de novo com outra semente deu um modelo
     idêntico: com todas as linhas e todas as features em cada árvore, não há sorteio. Reproduzir o modelo depende
     dos dados; o mesmo CSV dá as mesmas métricas no Windows e no Linux.
+35. **As chaves do Data Protection morrem com o container.** O nome do analista fica no navegador protegido pelo
+    Data Protection do servidor, e as chaves ficavam dentro do container do painel (o log avisa na subida). Recriado o
+    container, a leitura do nome lançaria `CryptographicException` e derrubaria o circuito de quem abrisse o painel.
+    Agora o nome ilegível é apagado e o analista digita de novo.
 
 ## Arquitetura
 
@@ -661,6 +696,9 @@ flowchart LR
     afapi -->|lê o perfil| redis[(Redis)]
     pga -->|Debezium| ae[[eurobank.antifraude.eventos]]
     ae -->|AnaliseDecidida| tworker
+    analista -->|navegador| painel[Painel do analista<br/>Blazor Server :5500]
+    painel -->|"REST + x-api-key"| afapi
+    ae -->|"CasoAberto, AnaliseDecidida"| painel
     ce[[eurobank.contas.eventos]] --> afworker[Worker do Antifraude<br/>perfil + expiração]
     te[[eurobank.transferencias.eventos]] -->|cancelamento| afworker
     afworker -->|scripts Lua| redis
@@ -689,7 +727,8 @@ flowchart LR
 | Kafbat UI | 1.5.0 |
 | Jaeger | 2.22 |
 | k6 | 2.3 |
-| xUnit v3, Shouldly, Testcontainers | 4.0, 4.3, 4.16 |
+| MudBlazor (painel do analista) | 9.14 |
+| xUnit v3, Shouldly, Testcontainers, bUnit | 4.0, 4.3, 4.16, 2.15 |
 
 ## Pré-requisitos
 
@@ -711,13 +750,15 @@ A ordem de subida é controlada pelo compose: Postgres, Kafka e Redis, criação
 partições, Kafka Connect, registro dos conectores, APIs de Contas (aplica as migrations e cria as contas de
 exemplo Ana, Bruno e Carla), de Transferências (aplica as migrations) e do Antifraude (aplica as migrations e
 grava as regras, os limiares e as listas iniciais), e depois os workers (o de notificações aplica as próprias
-migrations; o de Transferências espera o antifraude responder no `grpc.health.v1`), os simuladores e o Mailpit.
+migrations; o de Transferências espera o antifraude responder no `grpc.health.v1`), o painel do analista, os
+simuladores e o Mailpit.
 
 | Serviço | URL |
 |---|---|
 | API de Contas (Swagger) | http://localhost:5100/swagger |
 | Extrato (Swagger) | http://localhost:5200/swagger |
 | API de Transferências (Swagger) | http://localhost:5300/swagger |
+| Painel do analista | http://localhost:5500 |
 | API do Antifraude (Swagger da REST e das rotas do transcoding) | http://localhost:5400/swagger |
 | Antifraude em gRPC (h2c, com reflection) | `localhost:5410` |
 | RedisInsight (perfis do antifraude) | http://localhost:5540 (porta configurável em `.env`: `REDISINSIGHT_PORTA`) |
@@ -757,6 +798,7 @@ src/
   Antifraude/  Features (o cálculo das features, sem dependências) | Domain | Application | Infrastructure
                Api (gRPC, REST do analista e modelos) | Worker (perfil no Redis, expiração e drift)
                Treinamento (gerador de dados sintéticos e treino do modelo, em console)
+               Painel (o painel do analista, Blazor Server com MudBlazor)
   Notificacoes/  Worker (e-mails dos eventos finais das sagas; um projeto só, com as pastas técnicas)
   Simuladores/  Comum | BancoExterno | Cambio (sistemas de fora: Confluent.Kafka e Npgsql puros, sem Wolverine e sem EF)
 tests/      testes unitários, de integração (Testcontainers) e ponta a ponta (Debezium de verdade)
@@ -804,6 +846,8 @@ Pontos do código que valem a leitura:
   `ModeloNaAnalise`.
 - `src/Antifraude/EuroBank.Antifraude.Domain/Entities/MedicaoDrift.cs` e `Services/CalculadoraDrift.cs`: o PSI de
   cada feature e do score contra o treino.
+- `src/Antifraude/EuroBank.Antifraude.Painel/Messaging/ConfiguracaoMensageriaPainel.cs`, `Services/AvisosFila.cs` e
+  `Components/Pages/PaginaCasos.razor`: o caminho do evento do Kafka até a fila aberta no navegador.
 - `src/Extrato/EuroBank.Extrato.Infrastructure/Cache/`: as estratégias do cache do extrato (`ScriptsCache.cs` com a
   regra de versão em Lua, `UnidadeDeTrabalhoComCache.cs`, a pasta `WriteBehind/` com a descarga das pendências) e a
   marca de cache suspeito.
@@ -828,11 +872,12 @@ Pontos do código que valem a leitura:
 A infra continua no Docker; só as aplicações rodam no host.
 
 ```bash
-docker compose stop contas-api extrato-worker transferencias-api transferencias-worker notificacoes-worker antifraude-api antifraude-worker
+docker compose stop contas-api extrato-worker transferencias-api transferencias-worker notificacoes-worker antifraude-api antifraude-worker antifraude-painel
 dotnet run --project src/Contas/EuroBank.Contas.Api
 dotnet run --project src/Extrato/EuroBank.Extrato.Worker
 dotnet run --project src/Antifraude/EuroBank.Antifraude.Api
 dotnet run --project src/Antifraude/EuroBank.Antifraude.Worker
+dotnet run --project src/Antifraude/EuroBank.Antifraude.Painel
 dotnet run --project src/Transferencias/EuroBank.Transferencias.Api
 dotnet run --project src/Transferencias/EuroBank.Transferencias.Worker
 dotnet run --project src/Notificacoes/EuroBank.Notificacoes.Worker
@@ -841,7 +886,7 @@ dotnet run --project src/Notificacoes/EuroBank.Notificacoes.Worker
 Os `appsettings.json` já apontam para `localhost:5434` (Postgres), `localhost:9092` (Kafka) e `localhost:6379`
 (Redis), e as portas continuam 5100, 5200 e 5300 (os workers de Contas e de Transferências ficam em 5101 e 5301,
 o de notificações em 5501, o banco externo simulado em 5401, o câmbio simulado em 5402, a API do antifraude em
-5400 para a REST e 5410 para o gRPC, e o worker do antifraude em 5403). O worker de notificações manda os e-mails
+5400 para a REST e 5410 para o gRPC, o worker do antifraude em 5403 e o painel do analista em 5500). O worker de notificações manda os e-mails
 para `localhost:1025`, o SMTP do Mailpit. Todas as aplicações que usam o Redis (as duas do antifraude, o Extrato,
 as APIs de Contas e de Transferências e o câmbio simulado) apontam para `localhost:6379`; com outra porta no `.env`,
 rode-as com `ConnectionStrings__Redis=localhost:<porta>`.
@@ -891,7 +936,11 @@ AUC-PR mínima, o mesmo modelo para a mesma semente, o arquivo recarregado pontu
 explicando cada feature, e os rótulos reais e o registro num Postgres de verdade; o motor com o sinal do modelo e o
 challenger; e, na API com um modelo treinado de verdade, a promoção trocando o modelo pelo `LISTEN/NOTIFY` sem
 reiniciar, o challenger em sombra e promovido, a versão que não carrega mantendo a anterior, a migration do peso do
-modelo e o PSI, com a medição gravada pelo worker e mostrada na visão geral.
+modelo e o PSI, com a medição gravada pelo worker e mostrada na visão geral. Para o painel: com bUnit e uma API falsa,
+cada tela com o que a REST devolve, a fila recarregando sozinha quando o aviso chega (e parando de receber quando a
+tela fecha), só quem assumiu o caso podendo decidir, a explicação do modelo e do challenger e a comparação champion e
+challenger; e, ponta a ponta, o caso novo chegando ao painel pelo Kafka, o analista assumindo e aprovando pelo cliente
+do painel e a saga concluindo.
 
 ## Roteiro de exercícios
 
@@ -1162,8 +1211,8 @@ tabela `notificacoes` guarda o id de cada evento já notificado.
 
 Num laboratório novo, as contas de exemplo têm menos de 7 dias. Deposite 1.000 EUR na conta da Ana (fica com
 2.000) e mande 1.000 EUR para um IBAN que ela nunca usou: conta recém-aberta (20) mais beneficiário novo (10) dá
-30, e a saga fica `EmAnaliseManual`, com o `casoRevisaoId`. Pelo `http/antifraude.http`, veja o caso na fila, o
-detalhe com os pontos de cada regra, assuma e decida. No Kafbat UI, siga o `CasoAberto` e o `AnaliseDecidida` em
+30, e a saga fica `EmAnaliseManual`, com o `casoRevisaoId`. Pelo painel (http://localhost:5500/casos) ou pelo
+`http/antifraude.http`, veja o caso na fila, o detalhe com os pontos de cada regra, assuma e decida. No Kafbat UI, siga o `CasoAberto` e o `AnaliseDecidida` em
 `eurobank.antifraude.eventos`; a saga segue para o débito (ou termina `Recusada`, `RecusadaPeloAntifraude`) logo
 que o evento chega. Sem decisão, o caso expira em 30 minutos e a saga termina `Recusada` (`RevisaoExpirada`); para
 ver isso sem esperar tanto:
@@ -1372,6 +1421,17 @@ Decida alguns casos da fila (aprovar e recusar) e marque uma transferência apro
 fraudes)`), sempre no treino, e a versão nova traz a contagem em `dados.rotulosReais`. Os rótulos vêm das decisões
 que o próprio sistema mandou para a revisão: é o ciclo de realimentação que um modelo em produção precisa vigiar.
 
+### 31. O painel em tempo real
+
+Abra http://localhost:5500, informe um nome no topo e deixe a fila aberta. Faça a transferência do exercício 18: o
+caso aparece na fila sem recarregar a página, com o alerta `Caso novo na fila`. Abra o caso: os sinais, as features e,
+com um modelo ativo, a explicação de cada feature em barras (vermelho empurra para fraude). Assuma e aprove; a saga
+segue para o débito, e a fila tira o caso sozinha. Numa segunda janela anônima, com outro nome, abra o mesmo caso: ele
+aparece `Em análise por` quem assumiu, sem os botões de decisão. Em Modelos, ative uma versão e ponha outra em sombra
+(exercícios 26 a 28): a comparação champion e challenger aparece no topo, e o detalhe de cada versão mostra a curva
+por limiar. O consumer group de cada painel aparece no Kafbat UI como `eurobank-antifraude-painel-` mais o nome do
+container.
+
 ## Laboratório e produção
 
 Atalhos que este laboratório toma de propósito:
@@ -1404,6 +1464,10 @@ Atalhos que este laboratório toma de propósito:
 | Uma marca global de cache suspeito, que esvazia o cache inteiro | Versão por entrada comparada na leitura, ou invalidação só das chaves cuja escrita falhou |
 | Rate limit por API key, com uma key por API | Uma key (ou um token) por cliente, cotas por plano e limites também por IP no gateway |
 | Rate limit que deixa passar com o Redis fora | Limite local em memória como segunda linha, para um Redis fora não deixar a API sem proteção |
+| Nome do analista digitado, sem login | Login com SSO (OpenID Connect), papéis (analista, supervisor) e auditoria pelo usuário autenticado |
+| Chaves do Data Protection dentro do container do painel | Chaves persistidas e protegidas (volume, Redis ou cofre), as mesmas em todas as instâncias |
+| Painel com a mesma API key da saga | Uma credencial por cliente, com o painel autorizado só nas rotas do analista |
+| Cada instância do painel ouve o tópico inteiro e recarrega a fila pela REST | Atualização incremental da tela e, com várias instâncias de Blazor Server, sessão fixa no balanceador ou um serviço de SignalR |
 | Modelo treinado em dados sintéticos fáceis de separar | Dados reais rotulados com atraso (um chargeback leva semanas), sabendo que só se conhece o desfecho do que foi aprovado ou revisado |
 | O arquivo do modelo numa coluna do Postgres | Registro de modelos (MLflow, Azure ML) com linhagem, aprovação e artefatos num storage de objetos |
 | Promoção pelo analista, na hora | Promoção com aprovação, rollout gradual e o challenger comparado em produção por semanas |
@@ -1418,10 +1482,11 @@ cotação travada com spread, externa em outra moeda e câmbio entre contas Euro
 com horário de corte, a **devolução** pelo banco externo, o estado **`Divergente`** com reconciliação e saldo
 negativo controlado, as **notificações** por e-mail, o **cenário de carga** que confere o dinheiro de todas as
 sagas, o **antifraude** com regras, perfil no Redis, revisão humana e gRPC no meio da saga, o **Redis no restante
-do laboratório** (cache do extrato em três estratégias, Idempotency-Key, cotações e rate limit) e o **machine
+do laboratório** (cache do extrato em três estratégias, Idempotency-Key, cotações e rate limit), o **machine
 learning** no antifraude (features compartilhadas, dados sintéticos, treino, registro, troca sem reiniciar,
-challenger em sombra, explicação e drift).
+challenger em sombra, explicação e drift) e o **painel do analista** em Blazor Server, com a fila em tempo real.
 
-As próximas, no antifraude: o painel do analista, dispositivo e localização, o saque em Contas passando pelo
-antifraude, alta disponibilidade do Redis, métricas (com o alerta de drift no Grafana) e a carga com o antifraude no
-caminho. Depois, uma interface em Vue para a análise de fraude e para acompanhar o fluxo de ponta a ponta.
+As próximas, no antifraude: dispositivo e localização (com a viagem impossível), o saque e a transferência interna
+em Contas passando pelo antifraude, alta disponibilidade do Redis com Sentinel, métricas no Prometheus e no Grafana
+(com o alerta de drift) e a carga com o antifraude no caminho. Depois, uma interface em Vue para acompanhar o fluxo
+de ponta a ponta, convivendo com o painel.
