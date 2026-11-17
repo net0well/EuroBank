@@ -42,7 +42,7 @@ public sealed class CasosEndpointsTestes(AntifraudeFixture antifraude) : IDispos
         caso.GetProperty("estado").GetString().ShouldBe("Aberto");
         var analise = caso.GetProperty("analise");
         analise.GetProperty("decisao").GetString().ShouldBe("EmRevisao");
-        analise.GetProperty("sinais").GetArrayLength().ShouldBe(9);
+        analise.GetProperty("sinais").GetArrayLength().ShouldBe(12);
         analise.GetProperty("sinais").EnumerateArray()
             .Where(sinal => sinal.GetProperty("disparou").GetBoolean())
             .Select(sinal => sinal.GetProperty("codigo").GetString())

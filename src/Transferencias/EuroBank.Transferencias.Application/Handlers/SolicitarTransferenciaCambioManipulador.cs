@@ -34,7 +34,7 @@ public sealed class SolicitarTransferenciaCambioManipulador(SolicitacaoDeTransfe
                     ?? throw new ExcecaoContaDestinoDesconhecida(iban.Valor);
                 var moedaDoValor = string.IsNullOrWhiteSpace(comando.MoedaDoValor) ? origem.Moeda : Moedas.Ler(comando.MoedaDoValor);
 
-                return Transferencia.SolicitarCambioInterno(
+                var transferencia = Transferencia.SolicitarCambioInterno(
                     origem,
                     destino,
                     Dinheiro.De(comando.Valor, moedaDoValor),
@@ -44,6 +44,8 @@ public sealed class SolicitarTransferenciaCambioManipulador(SolicitacaoDeTransfe
                     hash,
                     comando.ExecutarEm,
                     agora);
+                transferencia.InformarOrigem(comando.DispositivoId, comando.Localizacao);
+                return transferencia;
             },
             cancellationToken);
     }

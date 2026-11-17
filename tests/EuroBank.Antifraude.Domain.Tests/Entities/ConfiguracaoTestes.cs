@@ -14,7 +14,7 @@ public sealed class ConfiguracaoTestes
     {
         var regras = Regras().ToDictionary(regra => regra.Codigo);
 
-        regras.Count.ShouldBe(9);
+        regras.Count.ShouldBe(12);
         regras[CodigoRegra.ListaBloqueio].Tipo.ShouldBe(TipoRegra.Dura);
         regras[CodigoRegra.ValorAcimaDaMedia].Peso.ShouldBe(25);
         regras[CodigoRegra.ValorAcimaDaMedia].Parametro("multiplicador").ShouldBe(5m);
@@ -29,6 +29,13 @@ public sealed class ConfiguracaoTestes
         regras[CodigoRegra.HorarioIncomum].Parametro("minimoSaidas").ShouldBe(10m);
         regras[CodigoRegra.PaisDeRisco].Peso.ShouldBe(30);
         regras[CodigoRegra.BeneficiarioNovo].Peso.ShouldBe(10);
+        regras[CodigoRegra.DispositivoNovo].Peso.ShouldBe(15);
+        regras[CodigoRegra.PaisDiferenteDoHabitual].Peso.ShouldBe(15);
+        regras[CodigoRegra.PaisDiferenteDoHabitual].Parametro("minimoOperacoes").ShouldBe(3m);
+        regras[CodigoRegra.ViagemImpossivel].Tipo.ShouldBe(TipoRegra.Dura);
+        regras[CodigoRegra.ViagemImpossivel].Efeito.ShouldBe(EfeitoRegraDura.Revisar);
+        regras[CodigoRegra.ViagemImpossivel].Parametro("velocidadeMaximaKmH").ShouldBe(900m);
+        regras[CodigoRegra.ViagemImpossivel].Parametro("distanciaMinimaKm").ShouldBe(100m);
         regras.Values.ShouldAllBe(regra => regra.Ativa && !regra.Sombra);
     }
 
@@ -122,7 +129,7 @@ public sealed class ConfiguracaoTestes
     [Fact]
     public void Catalogo_DescreveCadaRegra()
     {
-        CatalogoRegras.Definicoes.Count.ShouldBe(9);
+        CatalogoRegras.Definicoes.Count.ShouldBe(12);
         CatalogoRegras.Definicoes.ShouldAllBe(definicao => !string.IsNullOrWhiteSpace(definicao.Descricao));
     }
 }

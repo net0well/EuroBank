@@ -36,6 +36,12 @@ public static class ConfiguracaoMensageriaWorker
             .UseInterop((IWolverineRuntime _, KafkaTopic _) => new MapeadorEnvelopeDebezium(TiposEventosContas.Mapa))
             .ProcessInline();
 
+        // Dispositivo e localização das aprovadas: como o perfil de Contas, sem inbox (set e sorted set no Redis são
+        // idempotentes pelo membro) e reconstruível voltando o offset.
+        opcoes.ListenToKafkaTopic(TiposEventosAntifraude.Topico)
+            .UseInterop((IWolverineRuntime _, KafkaTopic _) => new MapeadorEnvelopeDebezium(TiposEventosAntifraude.Mapa))
+            .ProcessInline();
+
         // Cancelamento pelo cliente fecha o caso de revisão: grava no Postgres, então aqui a inbox durável vale.
         opcoes.OuvirTopicoDebezium(TiposEventosTransferencias.Topico, TiposEventosTransferencias.Mapa);
 

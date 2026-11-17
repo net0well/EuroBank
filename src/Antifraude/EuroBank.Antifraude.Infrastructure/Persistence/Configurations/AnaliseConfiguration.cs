@@ -33,6 +33,10 @@ public sealed class AnaliseConfiguration : IEntityTypeConfiguration<Analise>
         builder.Property<Moeda>("_moeda").HasColumnName("moeda").HasConversion<string>().HasMaxLength(3);
         builder.Property<string?>("_ibanDestino").HasColumnName("iban_destino").HasMaxLength(34);
         builder.Property<DateTimeOffset>("_momento").HasColumnName("momento");
+        builder.Property<string?>("_dispositivoId").HasColumnName("dispositivo_id").HasMaxLength(100);
+        builder.Property<double?>("_latitude").HasColumnName("latitude");
+        builder.Property<double?>("_longitude").HasColumnName("longitude");
+        builder.Property<string?>("_paisLocalizacao").HasColumnName("pais_localizacao").HasMaxLength(2);
 
         builder.Property(analise => analise.Features)
             .HasColumnName("features")

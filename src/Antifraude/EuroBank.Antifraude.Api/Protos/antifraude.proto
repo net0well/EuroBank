@@ -73,6 +73,17 @@ message SolicitacaoAvaliacao {
   string iban_destino = 6;
   // Quando a operação aconteceu; vazio: agora.
   google.protobuf.Timestamp momento = 7;
+  // Id estável do aparelho do cliente (header X-Dispositivo-Id); vazio: não informado.
+  string dispositivo_id = 8;
+  // Onde o cliente estava (header X-Localizacao); ausente: não informada.
+  Localizacao localizacao = 9;
+}
+
+message Localizacao {
+  double latitude = 1;
+  double longitude = 2;
+  // ISO 3166, duas letras.
+  string pais = 3;
 }
 
 message ObterAnaliseRequest {

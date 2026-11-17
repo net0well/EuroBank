@@ -7,7 +7,8 @@ namespace EuroBank.Antifraude.Domain.ValueObjects;
 
 /// <summary>
 /// A operação a avaliar, como o chamador a descreve. OperacaoId é o id da transferência (ou do saque) e torna a
-/// avaliação idempotente. Valor vem na moeda da conta, que é a moeda das regras (médias, saldo, limites).
+/// avaliação idempotente. Valor vem na moeda da conta, que é a moeda das regras (médias, saldo, limites). Dispositivo
+/// e localização vêm dos headers do cliente, quando ele os manda.
 /// </summary>
 public sealed record ContextoOperacao(
     Guid OperacaoId,
@@ -15,7 +16,9 @@ public sealed record ContextoOperacao(
     Guid ContaId,
     Dinheiro Valor,
     string? IbanDestino,
-    DateTimeOffset Momento)
+    DateTimeOffset Momento,
+    string? DispositivoId = null,
+    Localizacao? Localizacao = null)
 {
     /// <summary>Código do país do IBAN de destino (as duas primeiras letras), quando há destino.</summary>
     public string? PaisDestino => NormalizacaoIban.Pais(IbanDestino);

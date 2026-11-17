@@ -37,6 +37,8 @@ else
                         <tr><td>Conta</td><td>@analise.ContaId</td></tr>
                         <tr><td>Operação</td><td>@analise.OperacaoId</td></tr>
                         <tr><td>Momento</td><td>@Formatos.Data(analise.Momento)</td></tr>
+                        <tr><td>Dispositivo</td><td>@(analise.DispositivoId ?? "-")</td></tr>
+                        <tr><td>Localização</td><td>@(analise.Localizacao ?? "-")</td></tr>
                         <tr><td>Aberto em</td><td>@Formatos.Data(_caso.AbertoEm)</td></tr>
                         <tr><td>Expira em</td><td>@Formatos.Data(_caso.ExpiraEm)</td></tr>
                     </tbody>

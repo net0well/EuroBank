@@ -35,6 +35,9 @@ public sealed class MotorDecisao
             new AvaliadorContaRecemAberta(),
             new AvaliadorHorarioIncomum(),
             new AvaliadorPaisDeRisco(),
+            new AvaliadorDispositivoNovo(),
+            new AvaliadorPaisDiferenteDoHabitual(),
+            new AvaliadorViagemImpossivel(),
         ],
         pontuador)
     {

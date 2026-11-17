@@ -8,6 +8,7 @@ using EuroBank.Shared.ValueObjects;
 using Google.Protobuf.WellKnownTypes;
 using ContribuicaoFeatureGrpc = EuroBank.Antifraude.Grpc.ContribuicaoFeature;
 using DecisaoGrpc = EuroBank.Antifraude.Grpc.Decisao;
+using LocalizacaoGrpc = EuroBank.Antifraude.Grpc.Localizacao;
 using PontuacaoModeloGrpc = EuroBank.Antifraude.Grpc.PontuacaoModelo;
 using ResultadoAvaliacao = EuroBank.Antifraude.Grpc.ResultadoAvaliacao;
 using SinalRegraGrpc = EuroBank.Antifraude.Grpc.SinalRegra;
@@ -43,6 +44,11 @@ public static class ConversaoGrpc
             throw new ExcecaoPedidoAvaliacaoInvalido("informe o valor");
         }
 
+        if (pedido.DispositivoId.Length > 100)
+        {
+            throw new ExcecaoPedidoAvaliacaoInvalido("dispositivo_id com no máximo 100 caracteres");
+        }
+
         decimal valor = pedido.Valor;
         if (valor <= 0m)
         {
@@ -55,8 +61,14 @@ public static class ConversaoGrpc
             contaId,
             Dinheiro.De(valor, moeda),
             string.IsNullOrWhiteSpace(pedido.IbanDestino) ? null : pedido.IbanDestino,
-            pedido.Momento?.ToDateTimeOffset() ?? agora);
+            pedido.Momento?.ToDateTimeOffset() ?? agora,
+            string.IsNullOrWhiteSpace(pedido.DispositivoId) ? null : pedido.DispositivoId.Trim(),
+            ParaLocalizacao(pedido.Localizacao));
     }
+
+    /// <summary>Fora dos limites (latitude, longitude, país de duas letras): InvalidArgument, pela exceção de validação.</summary>
+    private static Localizacao? ParaLocalizacao(LocalizacaoGrpc? localizacao) =>
+        localizacao is null ? null : new Localizacao(localizacao.Latitude, localizacao.Longitude, localizacao.Pais);
 
     public static Guid ParaAnaliseId(string analiseId) =>
         Guid.TryParse(analiseId, out var id) ? id : throw new ExcecaoPedidoAvaliacaoInvalido("analise_id deve ser um Guid");
