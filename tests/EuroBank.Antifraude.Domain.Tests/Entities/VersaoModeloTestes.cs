@@ -62,9 +62,10 @@ public sealed class VersaoModeloTestes
 
     [Theory]
     [InlineData(0.05, 0)]
-    [InlineData(1, 1)]
-    [InlineData(1.99, 1)]
-    [InlineData(2, 2)]
+    [InlineData(1, 0)]
+    [InlineData(1.01, 1)]
+    [InlineData(2, 1)]
+    [InlineData(2.01, 2)]
     [InlineData(50, 2)]
     public void Faixa_DaDistribuicao(double valor, int faixa)
     {

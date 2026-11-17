@@ -21,7 +21,7 @@ public sealed class MedicaoDriftTestes(AntifraudeWorkerFixture worker)
     /// <summary>O treino: metade com beneficiário novo; o score quase sempre baixo.</summary>
     private static readonly IReadOnlyList<DistribuicaoFeature> Referencia =
     [
-        new("BeneficiarioNovo", [1], [0.5, 0.5]),
+        new("BeneficiarioNovo", [0], [0.5, 0.5]),
         new(DistribuicaoFeature.NomeScore, [0.5], [0.9, 0.1]),
     ];
 

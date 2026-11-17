@@ -14,7 +14,7 @@ public sealed class MedicaoDriftTestes
     /// <summary>O treino: metade das contas com beneficiário novo; valores sempre na mesma faixa; score quase sempre baixo.</summary>
     private static readonly IReadOnlyList<DistribuicaoFeature> Referencia =
     [
-        new("BeneficiarioNovo", [1], [0.5, 0.5]),
+        new("BeneficiarioNovo", [0], [0.5, 0.5]),
         new("LogValor", [3, 6], [0.1, 0.8, 0.1]),
         new(DistribuicaoFeature.NomeScore, [0.5], [0.9, 0.1]),
     ];
