@@ -1,5 +1,6 @@
 using EuroBank.Antifraude.Application.Interfaces;
 using EuroBank.Antifraude.Domain.ValueObjects;
+using EuroBank.Antifraude.Infrastructure.Perfil;
 using EuroBank.Antifraude.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -44,6 +45,8 @@ public sealed class AntifraudeWorkerFixture : IAsyncLifetime
             builder.UseSetting("OTEL_SDK_DISABLED", "true");
             // A varredura automática não roda durante os testes: eles chamam a expiração direto.
             builder.UseSetting("Expiracao:Intervalo", "01:00:00");
+            // Nem a medição de drift: os testes chamam um ciclo com o momento que quiserem.
+            builder.UseSetting("Drift:Intervalo", "01:00:00");
             builder.ConfigureServices(services => services.DisableAllExternalWolverineTransports());
         });
         using var _ = _worker.CreateClient();
@@ -78,14 +81,20 @@ public sealed class AntifraudeWorkerFixture : IAsyncLifetime
         return await escopo.ServiceProvider.GetRequiredService<IPerfisContas>().ObterAsync(contaId, agora, TestContext.Current.CancellationToken);
     }
 
-    /// <summary>Simula o Redis perdendo os dados.</summary>
-    public async Task ApagarRedisAsync()
+    /// <summary>
+    /// Simula o Redis perdendo os dados da conta. Só as chaves dela: apagar o Redis inteiro atrapalharia os testes que
+    /// rodam em paralelo.
+    /// </summary>
+    public async Task ApagarPerfilAsync(Guid contaId)
     {
         var redis = _worker.Services.GetRequiredService<IConnectionMultiplexer>();
-        foreach (var servidor in redis.GetServers())
-        {
-            await servidor.FlushAllDatabasesAsync();
-        }
+        await redis.GetDatabase().KeyDeleteAsync(
+        [
+            ChavesPerfil.Dados(contaId),
+            ChavesPerfil.Saidas(contaId),
+            ChavesPerfil.Entradas(contaId),
+            ChavesPerfil.Beneficiarios(contaId),
+        ]);
     }
 
     public async ValueTask DisposeAsync()

@@ -5,6 +5,7 @@
 ### Limiares: abaixo de 30 aprova, de 30 a 69 vai para revisão, a partir de 70 recusa. Lista de bloqueio recusa direto.
 ### Revisão rápida num laboratório novo: 1.000 EUR de uma conta recém-aberta para um IBAN novo dá 30
 ### (ContaRecemAberta 20 + BeneficiarioNovo 10). Os casos expiram em 30 min (ANTIFRAUDE_PRAZO_REVISAO no compose).
+### Com uma versão do modelo ativa, a probabilidade de fraude vezes o peso (50) soma como mais um sinal (ModeloFraude).
 
 @api = http://localhost:5400
 @apiKey = antifraude-lab-key
@@ -20,7 +21,7 @@ x-api-key: {{apiKey}}
 ###
 @casoId = cole-aqui-o-id-do-caso
 
-### Detalhe: a análise com os pontos de cada regra e a auditoria do caso
+### Detalhe: a análise com os pontos de cada regra, as features, o score e a explicação do modelo e a auditoria
 GET {{api}}/casos/{{casoId}}
 x-api-key: {{apiKey}}
 
@@ -54,7 +55,7 @@ Content-Type: application/json
 
 { "peso": 20, "ativa": true, "sombra": false, "parametros": { "valorMinimo": 500 } }
 
-### Limiares de decisão (cada alteração cria uma versão nova)
+### Limiares de decisão e peso do modelo (cada alteração cria uma versão nova; peso 0 desliga o modelo)
 GET {{api}}/configuracao-decisao
 x-api-key: {{apiKey}}
 
@@ -63,7 +64,7 @@ PUT {{api}}/configuracao-decisao
 x-api-key: {{apiKey}}
 Content-Type: application/json
 
-{ "limiarRevisao": 30, "limiarRecusa": 70, "pesoModelo": 0 }
+{ "limiarRevisao": 30, "limiarRecusa": 70, "pesoModelo": 50 }
 
 ### Lista de bloqueio (DE89370400440532013066 já vem bloqueado)
 GET {{api}}/listas/bloqueio
@@ -103,8 +104,31 @@ Content-Type: application/json
 
 { "operacaoId": "cole-aqui-o-id-da-transferencia", "analista": "Marta", "observacao": "Cliente não reconhece" }
 
-### Visão geral das últimas 24 h: decisões, casos e as regras que mais dispararam
+### Visão geral das últimas 24 h: decisões, casos, as regras que mais dispararam e o drift do modelo ativo
 GET {{api}}/visao-geral
+x-api-key: {{apiKey}}
+
+### Modelos: as versões registradas pelo treino (docker compose --profile treino run --rm antifraude-treino)
+GET {{api}}/modelos
+x-api-key: {{apiKey}}
+
+###
+@versao = 1
+
+### Detalhe: métricas no teste temporal, matriz, curva por limiar, dados do treino e distribuição de referência
+GET {{api}}/modelos/{{versao}}
+x-api-key: {{apiKey}}
+
+### Ativar: a versão passa a decidir (a anterior é aposentada) em todas as instâncias, sem reiniciar
+POST {{api}}/modelos/{{versao}}/ativacao
+x-api-key: {{apiKey}}
+
+### Challenger: a versão pontua em sombra, sem decidir (o challenger anterior é aposentado)
+POST {{api}}/modelos/{{versao}}/challenger
+x-api-key: {{apiKey}}
+
+### Retirar o challenger
+DELETE {{api}}/modelos/challenger
 x-api-key: {{apiKey}}
 
 ### gRPC em JSON (transcoding): simulação, sem gravar análise nem abrir caso

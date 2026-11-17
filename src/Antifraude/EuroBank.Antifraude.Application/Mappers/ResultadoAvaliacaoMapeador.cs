@@ -17,7 +17,9 @@ public static class ResultadoAvaliacaoMapeador
             analise.VersaoConfiguracao,
             analise.CriadaEm,
             analise.DecididaEm,
-            Simulacao: false);
+            Simulacao: false,
+            analise.Modelo,
+            analise.Challenger);
 
     public static ResultadoAvaliacaoDto ParaSimulacao(this ResultadoMotor resultado, ContextoOperacao operacao, DateTimeOffset agora) =>
         new(
@@ -30,5 +32,7 @@ public static class ResultadoAvaliacaoMapeador
             resultado.VersaoConfiguracao,
             agora,
             DecididaEm: null,
-            Simulacao: true);
+            Simulacao: true,
+            resultado.Modelo,
+            resultado.Challenger);
 }

@@ -91,6 +91,23 @@ message SinalRegra {
   string motivo = 6;
 }
 
+// Quanto uma feature empurrou o score do modelo (positivo: na direção de fraude).
+message ContribuicaoFeature {
+  string feature = 1;
+  double valor = 2;
+}
+
+// O que uma versão do modelo disse sobre a operação.
+message PontuacaoModelo {
+  int32 versao = 1;
+  // De 0 a 1.
+  double probabilidade = 2;
+  // Probabilidade vezes o peso da configuração; no challenger, o que somaria.
+  int32 pontos = 3;
+  // As que mais empurraram o score primeiro.
+  repeated ContribuicaoFeature contribuicoes = 4;
+}
+
 message ResultadoAvaliacao {
   // Vazio numa simulação.
   string analise_id = 1;
@@ -106,4 +123,8 @@ message ResultadoAvaliacao {
   // Vazio enquanto a revisão não termina.
   google.protobuf.Timestamp decidida_em = 9;
   bool simulacao = 10;
+  // A versão ativa (também entre os sinais, com o código ModeloFraude); ausente sem modelo carregado.
+  PontuacaoModelo modelo = 11;
+  // O challenger, em sombra: não entra no score nem decide.
+  PontuacaoModelo challenger = 12;
 }

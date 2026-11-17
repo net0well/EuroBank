@@ -4,7 +4,7 @@ namespace EuroBank.Antifraude.Infrastructure.Messaging;
 
 /// <summary>
 /// Eventos de eurobank.contas.eventos que o perfil entende, agrupados pela forma que importa a ele: abertura, saída
-/// de dinheiro para um IBAN, outro movimento de saldo, mudança de status. Tipos fora da tabela viram
+/// de dinheiro para um IBAN, entrada de dinheiro, outro movimento de saldo, mudança de status. Tipos fora da tabela viram
 /// EventoDesconhecido e são ignorados com alerta.
 /// </summary>
 public static class TiposEventosContas
@@ -17,10 +17,10 @@ public static class TiposEventosContas
         ["TransferenciaEnviada"] = typeof(EventoSaidaConta),
         ["TransferenciaExternaEnviada"] = typeof(EventoSaidaConta),
         ["TransferenciaCambioEnviada"] = typeof(EventoSaidaConta),
-        ["DepositoRealizado"] = typeof(EventoMovimentoConta),
+        ["DepositoRealizado"] = typeof(EventoEntradaConta),
         ["SaqueRealizado"] = typeof(EventoMovimentoConta),
-        ["TransferenciaRecebida"] = typeof(EventoMovimentoConta),
-        ["TransferenciaCambioRecebida"] = typeof(EventoMovimentoConta),
+        ["TransferenciaRecebida"] = typeof(EventoEntradaConta),
+        ["TransferenciaCambioRecebida"] = typeof(EventoEntradaConta),
         ["EstornoTransferencia"] = typeof(EventoMovimentoConta),
         ["DevolucaoTransferenciaExterna"] = typeof(EventoMovimentoConta),
         ["DebitoReconciliacao"] = typeof(EventoMovimentoConta),

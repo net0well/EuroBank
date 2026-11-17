@@ -37,6 +37,8 @@
 
   <ItemGroup Label="Redis">
     <PackageVersion Include="StackExchange.Redis" Version="2.13.23" />
+    <PackageVersion Include="Microsoft.ML" Version="6.0.0" />
+    <PackageVersion Include="Microsoft.ML.FastTree" Version="6.0.0" />
   </ItemGroup>
 
   <ItemGroup Label="E-mail">

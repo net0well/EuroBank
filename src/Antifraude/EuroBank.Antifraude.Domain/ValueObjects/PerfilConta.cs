@@ -1,3 +1,5 @@
+using EuroBank.Antifraude.Features.ValueObjects;
+
 namespace EuroBank.Antifraude.Domain.ValueObjects;
 
 /// <summary>
@@ -6,16 +8,28 @@ namespace EuroBank.Antifraude.Domain.ValueObjects;
 /// </summary>
 /// <param name="Saidas">Transferências dos últimos 30 dias (pelo menos), em qualquer ordem.</param>
 /// <param name="BeneficiariosConhecidos">IBANs para os quais a conta já transferiu, normalizados.</param>
+/// <param name="Entradas">Depósitos e transferências recebidas dos últimos 30 dias (pelo menos).</param>
 public sealed record PerfilConta(
     Guid ContaId,
     DateTimeOffset? AbertaEm,
     decimal? Saldo,
     IReadOnlyList<SaidaConta> Saidas,
-    IReadOnlySet<string> BeneficiariosConhecidos)
+    IReadOnlySet<string> BeneficiariosConhecidos,
+    IReadOnlyList<EntradaConta>? Entradas = null)
 {
+    public IReadOnlyList<EntradaConta> Entradas { get; } = Entradas ?? [];
+
     public static PerfilConta Vazio(Guid contaId) => new(contaId, null, null, [], new HashSet<string>());
 
     /// <summary>Saídas anteriores ao momento, dentro da janela que termina nele.</summary>
     public IEnumerable<SaidaConta> SaidasNaJanela(DateTimeOffset momento, TimeSpan janela) =>
         Saidas.Where(saida => saida.Momento < momento && saida.Momento >= momento - janela);
+
+    /// <summary>O perfil no modelo de dados das features, o mesmo que o treino monta a partir do histórico gerado.</summary>
+    public HistoricoConta ParaHistorico() => new(
+        AbertaEm,
+        Saldo,
+        Saidas.Select(saida => new MovimentoHistorico(saida.Momento, saida.Valor, saida.IbanDestino)).ToList(),
+        Entradas.Select(entrada => new MovimentoHistorico(entrada.Momento, entrada.Valor)).ToList(),
+        BeneficiariosConhecidos);
 }

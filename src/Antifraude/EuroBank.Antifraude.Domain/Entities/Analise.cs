@@ -2,6 +2,7 @@ using EuroBank.Antifraude.Domain.Enums;
 using EuroBank.Antifraude.Domain.Events;
 using EuroBank.Antifraude.Domain.Exceptions;
 using EuroBank.Antifraude.Domain.ValueObjects;
+using EuroBank.Antifraude.Features.ValueObjects;
 using EuroBank.Shared.Domain;
 using EuroBank.Shared.Enums;
 using EuroBank.Shared.ValueObjects;
@@ -43,6 +44,18 @@ public sealed class Analise : RaizDeAgregado<AnaliseId>
 
     public DecisaoAnalise Decisao { get; private set; }
 
+    /// <summary>
+    /// As features da operação no momento da avaliação: alimentam o modelo, o drift e, com a decisão do analista, o
+    /// retreino. Nulas nas análises anteriores às features.
+    /// </summary>
+    public VetorFeatures? Features { get; private set; }
+
+    /// <summary>A pontuação da versão ativa do modelo (também entre os sinais), com a explicação; nula sem modelo.</summary>
+    public PontuacaoModelo? Modelo { get; private set; }
+
+    /// <summary>A pontuação do challenger, em sombra: registrada para comparar, nunca decide.</summary>
+    public PontuacaoModelo? Challenger { get; private set; }
+
     /// <summary>Versão da configuração de decisão (limiares) usada.</summary>
     public int VersaoConfiguracao { get; private set; }
 
@@ -73,6 +86,9 @@ public sealed class Analise : RaizDeAgregado<AnaliseId>
             ScoreFinal = resultado.ScoreFinal,
             Decisao = resultado.Decisao,
             VersaoConfiguracao = resultado.VersaoConfiguracao,
+            Features = resultado.Features,
+            Modelo = resultado.Modelo,
+            Challenger = resultado.Challenger,
             CriadaEm = agora,
         };
 

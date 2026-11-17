@@ -1,5 +1,6 @@
 using EuroBank.Antifraude.Domain.Enums;
 using EuroBank.Antifraude.Domain.Policies;
+using EuroBank.Antifraude.Features.ValueObjects;
 using EuroBank.Shared.ValueObjects;
 
 namespace EuroBank.Antifraude.Domain.ValueObjects;
@@ -18,4 +19,11 @@ public sealed record ContextoOperacao(
 {
     /// <summary>Código do país do IBAN de destino (as duas primeiras letras), quando há destino.</summary>
     public string? PaisDestino => NormalizacaoIban.Pais(IbanDestino);
+
+    /// <summary>A operação no modelo de dados das features, com o IBAN normalizado e o país conferido nas listas.</summary>
+    public OperacaoAvaliada ParaFeatures(ListasRisco listas)
+    {
+        ArgumentNullException.ThrowIfNull(listas);
+        return new OperacaoAvaliada(Momento, Valor.Valor, NormalizacaoIban.Normalizar(IbanDestino), listas.EhPaisDeRisco(PaisDestino));
+    }
 }

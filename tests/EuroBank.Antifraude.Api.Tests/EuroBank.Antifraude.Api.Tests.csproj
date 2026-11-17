@@ -2,6 +2,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Antifraude\EuroBank.Antifraude.Api\EuroBank.Antifraude.Api.csproj" />
+    <!-- O treino de verdade, num mundo pequeno, para os testes do modelo em produção. -->
+    <ProjectReference Include="..\..\src\Antifraude\EuroBank.Antifraude.Treinamento\EuroBank.Antifraude.Treinamento.csproj" />
   </ItemGroup>
 
   <ItemGroup>

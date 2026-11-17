@@ -10,6 +10,7 @@ COPY src/Shared/EuroBank.Shared/EuroBank.Shared.csproj src/Shared/EuroBank.Share
 COPY src/Shared/EuroBank.Shared.Web/EuroBank.Shared.Web.csproj src/Shared/EuroBank.Shared.Web/
 COPY src/Shared/EuroBank.Shared.Persistence/EuroBank.Shared.Persistence.csproj src/Shared/EuroBank.Shared.Persistence/
 COPY src/Shared/EuroBank.Shared.Messaging/EuroBank.Shared.Messaging.csproj src/Shared/EuroBank.Shared.Messaging/
+COPY src/Antifraude/EuroBank.Antifraude.Features/EuroBank.Antifraude.Features.csproj src/Antifraude/EuroBank.Antifraude.Features/
 COPY src/Antifraude/EuroBank.Antifraude.Domain/EuroBank.Antifraude.Domain.csproj src/Antifraude/EuroBank.Antifraude.Domain/
 COPY src/Antifraude/EuroBank.Antifraude.Application/EuroBank.Antifraude.Application.csproj src/Antifraude/EuroBank.Antifraude.Application/
 COPY src/Antifraude/EuroBank.Antifraude.Infrastructure/EuroBank.Antifraude.Infrastructure.csproj src/Antifraude/EuroBank.Antifraude.Infrastructure/

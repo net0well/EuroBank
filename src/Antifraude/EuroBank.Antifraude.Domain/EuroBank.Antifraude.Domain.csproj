@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
     <ProjectReference Include="..\..\Shared\EuroBank.Shared\EuroBank.Shared.csproj" />
+    <ProjectReference Include="..\EuroBank.Antifraude.Features\EuroBank.Antifraude.Features.csproj" />
   </ItemGroup>
 </Project>

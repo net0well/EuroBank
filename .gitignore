@@ -484,3 +484,6 @@ $RECYCLE.BIN/
 # Documentos locais de spec e plano
 docs/specs/
 docs/plans/
+
+# Dados sintéticos do treino do antifraude (gerados pela semente; não versionar)
+dados/

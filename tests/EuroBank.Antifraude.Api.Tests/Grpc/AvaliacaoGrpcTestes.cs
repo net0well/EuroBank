@@ -1,4 +1,5 @@
 using EuroBank.Antifraude.Api.Tests.Fixtures;
+using EuroBank.Antifraude.Domain.ValueObjects;
 using EuroBank.Antifraude.Grpc;
 using Grpc.Core;
 using Microsoft.EntityFrameworkCore;
@@ -31,6 +32,21 @@ public sealed class AvaliacaoGrpcTestes(AntifraudeFixture antifraude)
         resultado.DecididaEm.ShouldNotBeNull();
         resultado.VersaoConfiguracao.ShouldBeGreaterThanOrEqualTo(1);
         resultado.Simulacao.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Avaliacao_GravaAsFeaturesDaOperacao()
+    {
+        var conta = await _cenario.ContaComHistoricoAsync();
+
+        var resultado = await Cliente.AvaliarAsync(Pedido(conta, 4_600m), cancellationToken: Ct);
+
+        await using var contexto = antifraude.CriarContexto();
+        var analise = await contexto.Analises.AsNoTracking().SingleAsync(a => a.Id == new AnaliseId(Guid.Parse(resultado.AnaliseId)), Ct);
+        var features = analise.Features.ShouldNotBeNull();
+        features.ValorSobreMedia.ShouldBeGreaterThan(5f);
+        features.FracaoDoSaldo.ShouldBeGreaterThan(0.9f);
+        features.SemHistorico.ShouldBe(0f);
     }
 
     [Fact]

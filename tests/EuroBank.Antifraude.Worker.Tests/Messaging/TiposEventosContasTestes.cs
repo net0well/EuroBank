@@ -3,7 +3,7 @@ using EuroBank.Antifraude.Infrastructure.Messaging;
 
 namespace EuroBank.Antifraude.Worker.Tests.Messaging;
 
-/// <summary>O perfil lê os eventos de Contas por forma: abertura, saídas, demais movimentos de saldo e status.</summary>
+/// <summary>O perfil lê os eventos de Contas por forma: abertura, saídas, entradas, demais movimentos de saldo e status.</summary>
 public sealed class TiposEventosContasTestes
 {
     [Theory]
@@ -11,10 +11,10 @@ public sealed class TiposEventosContasTestes
     [InlineData("TransferenciaEnviada", typeof(EventoSaidaConta))]
     [InlineData("TransferenciaExternaEnviada", typeof(EventoSaidaConta))]
     [InlineData("TransferenciaCambioEnviada", typeof(EventoSaidaConta))]
-    [InlineData("DepositoRealizado", typeof(EventoMovimentoConta))]
+    [InlineData("DepositoRealizado", typeof(EventoEntradaConta))]
     [InlineData("SaqueRealizado", typeof(EventoMovimentoConta))]
-    [InlineData("TransferenciaRecebida", typeof(EventoMovimentoConta))]
-    [InlineData("TransferenciaCambioRecebida", typeof(EventoMovimentoConta))]
+    [InlineData("TransferenciaRecebida", typeof(EventoEntradaConta))]
+    [InlineData("TransferenciaCambioRecebida", typeof(EventoEntradaConta))]
     [InlineData("EstornoTransferencia", typeof(EventoMovimentoConta))]
     [InlineData("DevolucaoTransferenciaExterna", typeof(EventoMovimentoConta))]
     [InlineData("DebitoReconciliacao", typeof(EventoMovimentoConta))]

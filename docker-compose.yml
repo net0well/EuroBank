@@ -379,7 +379,8 @@ services:
       retries: 30
 
   # Mantém no Redis o perfil de cada conta (eurobank.contas.eventos, sem inbox: a versão da conta no Redis descarta
-  # o repetido). Para reconstruir: apague o Redis e volte o offset do grupo eurobank-antifraude-worker.
+  # o repetido). Para reconstruir: apague o Redis e volte o offset do grupo eurobank-antifraude-worker. Também expira
+  # os casos vencidos e mede o drift do modelo ativo (tabela medicoes_drift).
   # Espera a API ficar saudável, porque é ela que aplica as migrations do banco do Antifraude.
   antifraude-worker:
     build:
@@ -397,11 +398,33 @@ services:
       ConnectionStrings__Redis: "redis:6379"
       Kafka__BootstrapServers: kafka:29092
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      # Drift do modelo ativo: PSI das análises das últimas 24 h contra o treino, a cada 5 min (mais curto nos exercícios).
+      Drift__Intervalo: ${ANTIFRAUDE_DRIFT_INTERVALO:-00:05:00}
     healthcheck:
       test: ["CMD-SHELL", "curl -fs http://localhost:8080/health > /dev/null"]
       interval: 5s
       timeout: 5s
       retries: 30
+
+  # Treino do modelo de fraude sob demanda (não sobe no "up"): gera o CSV sintético no volume antifraude-dados (só na
+  # primeira vez), junta os rótulos reais do banco do Antifraude, treina, avalia e registra uma versão. A versão nasce
+  # Registrada; quem a ativa ou põe em sombra é o analista, pela API do Antifraude.
+  #   docker compose --profile treino run --rm antifraude-treino
+  #   docker compose --profile treino run --rm antifraude-treino treinar --meta-recall 0.95
+  #   docker compose --profile treino run --rm antifraude-treino gerar --semente 7   (outro mundo sintético)
+  antifraude-treino:
+    build:
+      context: .
+      dockerfile: src/Antifraude/EuroBank.Antifraude.Treinamento/Dockerfile
+    profiles: ["treino"]
+    depends_on:
+      antifraude-api:
+        condition: service_healthy
+    # Sem Kerberos no laboratório: a imagem (só o runtime, sem curl) não tem a libgssapi que o Npgsql tentaria carregar.
+    environment:
+      ConnectionStrings__Antifraude: "Host=postgres;Port=5432;Database=eurobank_antifraude;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};Gss Encryption Mode=Disable"
+    volumes:
+      - antifraude-dados:/app/dados
 
   # E-mail em pt-BR para quem pediu (emailNotificacao) a partir dos eventos finais das sagas
   # (eurobank.transferencias.eventos), com inbox durável e a tabela notificacoes (chave = id do evento) no database
@@ -540,3 +563,4 @@ services:
 
 volumes:
   postgres-dados:
+  antifraude-dados:

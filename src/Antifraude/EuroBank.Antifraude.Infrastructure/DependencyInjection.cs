@@ -1,5 +1,7 @@
 using EuroBank.Antifraude.Application.Interfaces;
 using EuroBank.Antifraude.Domain.Repositories;
+using EuroBank.Antifraude.Domain.Services;
+using EuroBank.Antifraude.Infrastructure.MachineLearning;
 using EuroBank.Antifraude.Infrastructure.Outbox;
 using EuroBank.Antifraude.Infrastructure.Persistence;
 using EuroBank.Antifraude.Infrastructure.Persistence.Queries;
@@ -32,11 +34,31 @@ public static class DependencyInjection
         services.AddScoped<IRepositorioConfiguracao, RepositorioConfiguracao>();
         services.AddScoped<IRepositorioListas, RepositorioListas>();
         services.AddScoped<IRepositorioFraudes, RepositorioFraudes>();
+        services.AddScoped<IRepositorioModelos, RepositorioModelos>();
+        services.AddScoped<IRepositorioDrift, RepositorioDrift>();
         services.AddScoped<IConsultaAntifraude, ConsultaAntifraude>();
+        services.AddScoped<IConsultaDrift, ConsultaDrift>();
         services.AddScoped<SemeadorAntifraude>();
         services.AddScoped<IFilaOutbox, FilaOutbox>();
         services.AddScoped<IUnidadeDeTrabalho, UnidadeDeTrabalhoComOutbox<AntifraudeDbContext>>();
         services.AddScoped<IExecutorTransacional, ExecutorTransacionalEf<AntifraudeDbContext>>();
+
+        // Os modelos em memória: vazios até alguém os carregar (só a API carrega; veja AdicionarModelosEmProducao).
+        services.AddMetrics();
+        services.AddSingleton<TelemetriaModelo>();
+        services.AddSingleton<PontuadorFraude>();
+        services.AddSingleton<IPontuadorFraude>(provedor => provedor.GetRequiredService<PontuadorFraude>());
+        return services;
+    }
+
+    /// <summary>
+    /// Quem avalia operações carrega do Postgres a versão ativa e o challenger e os troca sem reiniciar (LISTEN no
+    /// canal antifraude_modelos).
+    /// </summary>
+    public static IServiceCollection AdicionarModelosEmProducao(this IServiceCollection services)
+    {
+        services.AddSingleton<CarregadorModelos>();
+        services.AddHostedService<OuvinteModelos>();
         return services;
     }
 }
