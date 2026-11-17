@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage;
 
 namespace EuroBank.Antifraude.Painel.Services;
@@ -19,8 +20,19 @@ public sealed class SessaoAnalista(ProtectedLocalStorage armazenamento)
     /// <summary>Lê o nome guardado; só funciona depois da primeira renderização (precisa do navegador).</summary>
     public async Task CarregarAsync()
     {
-        var guardado = await armazenamento.GetAsync<string>(Chave);
-        Nome = guardado.Success ? guardado.Value : null;
+        try
+        {
+            var guardado = await armazenamento.GetAsync<string>(Chave);
+            Nome = guardado.Success ? guardado.Value : null;
+        }
+        catch (CryptographicException)
+        {
+            // Gravado com uma chave que o painel não tem mais (o container foi recriado e as chaves do Data Protection
+            // ficavam nele): o analista digita o nome de novo.
+            Nome = null;
+            await armazenamento.DeleteAsync(Chave);
+        }
+
         Mudou?.Invoke();
     }
 
