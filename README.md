@@ -1055,8 +1055,8 @@ do painel e a saga concluindo. Para a origem e Contas: a localização (formato,
 origem no domínio, o perfil com dispositivos e localizações só das aprovadas, a origem pelo gRPC e pelos headers (400
 fora do formato), o saque e a transferência interna aprovados, em revisão, recusados e com o antifraude fora do ar
 contra um antifraude falso e, ponta a ponta, a viagem impossível na saga, a interna para um IBAN bloqueado recusada
-sem mexer nas contas e o saque com o antifraude fora do ar. Para a infraestrutura: cada Dockerfile copiando os
-`.csproj` e os `.proto` que o projeto publicado usa, e toda conexão Redis do compose passando por `REDIS_CONEXAO`.
+sem mexer nas contas e o saque com o antifraude fora do ar. Para a infraestrutura: cada Dockerfile copiando o
+`global.json`, os `.csproj` e os `.proto` que o projeto publicado usa, e toda conexão Redis do compose passando por `REDIS_CONEXAO`.
 
 ## Roteiro de exercícios
 
