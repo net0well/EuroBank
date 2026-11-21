@@ -73,6 +73,33 @@ public static class ConversoesJson
             .Aggregate(0, (hash, par) => HashCode.Combine(hash, par.Key, par.Value)),
         parametros => new Dictionary<string, decimal>(parametros, StringComparer.Ordinal));
 
+    public static ValueConverter<ParametrosTreino, string> ParametrosTreino { get; } = new(
+        parametros => JsonSerializer.Serialize(parametros, Json),
+        json => JsonSerializer.Deserialize<ParametrosTreino>(json, Json)!);
+
+    public static ValueConverter<List<EtapaExecutada>, string> Etapas { get; } = new(
+        etapas => JsonSerializer.Serialize(etapas, Json),
+        json => JsonSerializer.Deserialize<List<EtapaExecutada>>(json, Json) ?? new List<EtapaExecutada>());
+
+    public static ValueComparer<List<EtapaExecutada>> ComparadorEtapas { get; } = new(
+        (esquerda, direita) => esquerda!.SequenceEqual(direita!),
+        etapas => etapas.Aggregate(0, (hash, etapa) => HashCode.Combine(hash, etapa.GetHashCode())),
+        etapas => etapas.ToList());
+
+    public static ValueConverter<List<RegistroTreino>, string> Registros { get; } = new(
+        registros => JsonSerializer.Serialize(registros, Json),
+        json => JsonSerializer.Deserialize<List<RegistroTreino>>(json, Json) ?? new List<RegistroTreino>());
+
+    public static ValueComparer<List<RegistroTreino>> ComparadorRegistros { get; } = new(
+        (esquerda, direita) => esquerda!.SequenceEqual(direita!),
+        registros => registros.Aggregate(0, (hash, registro) => HashCode.Combine(hash, registro.GetHashCode())),
+        registros => registros.ToList());
+
+    /// <summary>O relatório de um treino: grande, escrito uma vez e só lido inteiro.</summary>
+    public static ValueConverter<RelatorioTreino?, string?> Relatorio { get; } = new(
+        relatorio => relatorio == null ? null : JsonSerializer.Serialize(relatorio, Json),
+        json => json == null ? null : JsonSerializer.Deserialize<RelatorioTreino>(json, Json));
+
     // Fora da expressão do comparador: árvores de expressão não aceitam variável declarada em "out".
     private static bool MesmosParametros(Dictionary<string, decimal> esquerda, Dictionary<string, decimal> direita) =>
         esquerda.Count == direita.Count

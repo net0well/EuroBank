@@ -1,0 +1,44 @@
+@* A explicação de uma pontuação: quanto cada feature empurrou o score (vermelho: para fraude; verde: contra). *@
+<MudPaper Outlined="true" Class="pa-3">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+        <MudText Typo="Typo.subtitle1">@Titulo: versão @Pontuacao.Versao</MudText>
+        <MudStack Row="true" Spacing="2">
+            <MudChip T="string" Color="CorProbabilidade" Size="Size.Small">probabilidade @Formatos.Decimal(Pontuacao.Probabilidade)</MudChip>
+            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@Pontuacao.Pontos pontos@(Sombra ? " (somaria)" : string.Empty)</MudChip>
+        </MudStack>
+    </MudStack>
+    <MudSimpleTable Dense="true" Elevation="0" Class="mt-2">
+        <tbody>
+            @foreach (var contribuicao in Pontuacao.Contribuicoes)
+            {
+                <tr>
+                    <td style="width: 12rem">@contribuicao.Feature</td>
+                    <td style="width: 6rem; text-align: right" class="web-numero">@Formatos.Decimal(contribuicao.Valor, 2)</td>
+                    <td>
+                        <MudProgressLinear Value="@Largura(contribuicao.Valor)" Color="@(contribuicao.Valor > 0 ? Color.Error : Color.Success)" Rounded="true" Size="Size.Medium" />
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired]
+    public PontuacaoModelo Pontuacao { get; set; } = null!;
+
+    [Parameter]
+    public string Titulo { get; set; } = "Modelo";
+
+    /// <summary>Challenger: os pontos são o que ele somaria, não o que somou.</summary>
+    [Parameter]
+    public bool Sombra { get; set; }
+
+    private Color CorProbabilidade => Pontuacao.Probabilidade >= 0.5 ? Color.Error : Pontuacao.Probabilidade >= 0.1 ? Color.Warning : Color.Success;
+
+    private double Largura(double valor)
+    {
+        var maior = Pontuacao.Contribuicoes.Count == 0 ? 0 : Pontuacao.Contribuicoes.Max(contribuicao => Math.Abs(contribuicao.Valor));
+        return maior == 0 ? 0 : Math.Abs(valor) / maior * 100;
+    }
+}

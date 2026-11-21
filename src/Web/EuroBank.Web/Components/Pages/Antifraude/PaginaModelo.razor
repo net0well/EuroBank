@@ -1,0 +1,116 @@
+@page "/antifraude/modelos/{Versao:int}"
+@inject ClienteAntifraude Antifraude
+@inject ISnackbar Alertas
+
+<PageTitle>Modelo @Versao</PageTitle>
+
+@if (_modelo is null)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else
+{
+    var metricas = _modelo.Metricas;
+    var dados = _modelo.Dados;
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-4">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="antifraude/modelos" aria-label="Voltar para os modelos" />
+        <MudText Typo="Typo.h5">Modelo, versão @_modelo.Versao</MudText>
+        <MudChip T="string" Color="Formatos.CorStatusModelo(_modelo.Status)">@_modelo.Status</MudChip>
+        <MudSpacer />
+        <AcoesModelo Versao="Resumo" Mudou="CarregarAsync" />
+    </MudStack>
+
+    <MudGrid>
+        <Indicador Titulo="AUC-PR" Valor="@Formatos.Decimal(metricas.AucPr)" />
+        <Indicador Titulo="Precisão" Valor="@Formatos.Decimal(metricas.Precisao)" />
+        <Indicador Titulo="Recall" Valor="@Formatos.Decimal(metricas.Recall)" />
+        <Indicador Titulo="F1" Valor="@Formatos.Decimal(metricas.F1)" />
+        <Indicador Titulo="Limiar recomendado" Valor="@Formatos.Decimal(_modelo.LimiarRecomendado, 2)" />
+        <Indicador Titulo="Meta" Valor="@(dados.MetaAtingida ? "atingida" : "não atingida")" />
+    </MudGrid>
+
+    <MudGrid Class="mt-2">
+        <MudItem xs="12" md="8">
+            <MudPaper Outlined="true" Class="pa-3">
+                <MudText Typo="Typo.subtitle1">Curva por limiar de probabilidade</MudText>
+                <MudText Typo="Typo.caption">
+                    Subindo o limiar, menos operações são sinalizadas: a precisão cresce e o recall cai. O recomendado é o mais
+                    alto que ainda pega @Formatos.Percentual(dados.MetaRecall) das fraudes.
+                </MudText>
+                <MudChart T="double" ChartType="ChartType.Line" ChartSeries="_series" ChartLabels="_limiares" ChartOptions="_opcoes" Width="100%" Height="320px" />
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudPaper Outlined="true" Class="pa-3 mb-3">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Matriz de confusão no limiar</MudText>
+                <MudSimpleTable Dense="true" Elevation="0">
+                    <thead><tr><th></th><th>Sinalizada</th><th>Não sinalizada</th></tr></thead>
+                    <tbody>
+                        <tr><td>Fraude</td><td class="web-numero">@metricas.Matriz.VerdadeirosPositivos</td><td class="web-numero">@metricas.Matriz.FalsosNegativos</td></tr>
+                        <tr><td>Normal</td><td class="web-numero">@metricas.Matriz.FalsosPositivos</td><td class="web-numero">@metricas.Matriz.VerdadeirosNegativos</td></tr>
+                    </tbody>
+                </MudSimpleTable>
+            </MudPaper>
+            <MudPaper Outlined="true" Class="pa-3">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Dados do treino</MudText>
+                <MudSimpleTable Dense="true" Elevation="0">
+                    <tbody>
+                        <tr><td>Semente</td><td>@dados.Semente</td></tr>
+                        <tr><td>Sintéticas</td><td class="web-numero">@dados.LinhasSinteticas (@dados.FraudesSinteticas fraudes)</td></tr>
+                        <tr><td>Rótulos reais</td><td class="web-numero">@dados.RotulosReais (@dados.FraudesReais fraudes)</td></tr>
+                        <tr><td>Teste temporal</td><td>@dados.LinhasTeste linhas, de @dados.CorteTeste.UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) a @dados.FimTeste.UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)</td></tr>
+                        <tr><td>Arquivo</td><td class="web-numero">@(_modelo.TamanhoArquivo / 1024) KB</td></tr>
+                        <tr><td>Treinada em</td><td>@Formatos.Data(_modelo.TreinadaEm)</td></tr>
+                        <tr><td>Ativada em</td><td>@Formatos.Data(_modelo.AtivadaEm)</td></tr>
+                    </tbody>
+                </MudSimpleTable>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    [Parameter]
+    public int Versao { get; set; }
+
+    private VersaoModeloDetalhe? _modelo;
+    private List<ChartSeries<double>> _series = [];
+    private string[] _limiares = [];
+    private readonly LineChartOptions _opcoes = new() { YAxisTicks = 10, YAxisSuggestedMax = 1 };
+
+    /// <summary>O resumo que as ações (ativar, pôr em sombra) usam.</summary>
+    private VersaoModeloResumo Resumo => new(
+        _modelo!.Versao,
+        _modelo.Status,
+        _modelo.Metricas.AucPr,
+        _modelo.Metricas.Precisao,
+        _modelo.Metricas.Recall,
+        _modelo.Metricas.F1,
+        _modelo.LimiarRecomendado,
+        _modelo.Dados.MetaAtingida,
+        _modelo.TreinadaEm,
+        _modelo.AtivadaEm,
+        _modelo.AposentadaEm);
+
+    protected override Task OnParametersSetAsync() => CarregarAsync();
+
+    private async Task CarregarAsync()
+    {
+        try
+        {
+            _modelo = await Antifraude.ObterModeloAsync(Versao, CancellationToken.None);
+            var curva = _modelo.Metricas.Curva;
+            _limiares = [.. curva.Select(ponto => Formatos.Decimal(ponto.Limiar, 2))];
+            _series =
+            [
+                new() { Name = "Precisão", Data = curva.Select(ponto => ponto.Precisao).ToArray() },
+                new() { Name = "Recall", Data = curva.Select(ponto => ponto.Recall).ToArray() },
+                new() { Name = "Sinalizadas", Data = curva.Select(ponto => ponto.TaxaSinalizada).ToArray() },
+            ];
+        }
+        catch (Exception erro) when (erro is ExcecaoApiAntifraude or HttpRequestException)
+        {
+            Alertas.Add($"Não foi possível ler o modelo: {erro.Message}", Severity.Error);
+        }
+    }
+}

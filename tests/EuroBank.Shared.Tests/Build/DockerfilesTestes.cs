@@ -7,7 +7,8 @@ namespace EuroBank.Shared.Tests.Build;
 /// Cada Dockerfile restaura antes de copiar o código, só com os .csproj: se faltar o de uma referência, a imagem não
 /// constrói, e nenhum outro teste percebe (eles não constroem imagens). Aqui, cada Dockerfile tem de copiar o .csproj
 /// do projeto que publica e o de todas as referências dele, diretas e indiretas, e os .proto que elas ligam de fora da
-/// pasta (o contrato do antifraude, que os clientes geram do mesmo arquivo).
+/// pasta (o contrato do antifraude, que os clientes geram do mesmo arquivo). E o global.json vai junto: sem ele, uma
+/// imagem de SDK antiga em cache publica sem reclamar, e sem os assets que as versões novas trazem.
 /// </summary>
 public sealed partial class DockerfilesTestes
 {
@@ -38,6 +39,18 @@ public sealed partial class DockerfilesTestes
 
         protos.Where(proto => !origens.Any(origem => origem == proto || (origem.EndsWith('/') && proto.StartsWith(origem, StringComparison.Ordinal))))
             .ShouldBeEmpty($"{dockerfile} não copia estes .proto");
+    }
+
+    [Theory]
+    [MemberData(nameof(Dockerfiles))]
+    public void Dockerfile_CopiaOGlobalJsonAntesDoRestore(string dockerfile)
+    {
+        var linhas = File.ReadAllLines(Path.Combine(Raiz, dockerfile));
+        var copia = Array.FindIndex(linhas, linha => linha.StartsWith("COPY ", StringComparison.Ordinal) && linha.Contains(" global.json ", StringComparison.Ordinal));
+        var restore = Array.FindIndex(linhas, linha => linha.Contains("dotnet restore", StringComparison.Ordinal));
+
+        copia.ShouldBeGreaterThanOrEqualTo(0, $"{dockerfile} não copia o global.json");
+        copia.ShouldBeLessThan(restore, $"{dockerfile} copia o global.json depois do restore");
     }
 
     /// <summary>Os arquivos dos itens Protobuf de um projeto, relativos à raiz.</summary>

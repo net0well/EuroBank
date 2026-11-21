@@ -1,0 +1,118 @@
+@page "/antifraude/modelos"
+@inject ClienteAntifraude Antifraude
+@inject IDialogService Dialogos
+@inject ISnackbar Alertas
+
+<PageTitle>Modelos</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-4">
+    <MudText Typo="Typo.h5">Modelos</MudText>
+    <MudStack Row="true">
+        @if (_challenger is not null)
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Info" OnClick="RetirarChallengerAsync">Retirar o challenger</MudButton>
+        }
+        <MudIconButton Icon="@Icons.Material.Filled.Refresh" OnClick="CarregarAsync" aria-label="Atualizar" />
+    </MudStack>
+</MudStack>
+
+<MudText Typo="Typo.body2" Class="mb-4">
+    Só a versão ativa decide: a probabilidade dela vezes o peso da configuração soma como mais um sinal. O challenger pontua
+    em sombra em cada avaliação, sem decidir. As trocas valem em todas as instâncias da API, sem reiniciar. Novas versões
+    vêm do treino: <code>docker compose --profile treino run --rm antifraude-treino</code>.
+</MudText>
+
+@if (_ativa is not null && _challenger is not null)
+{
+    <MudPaper Outlined="true" Class="pa-3 mb-4">
+        <MudText Typo="Typo.subtitle1" Class="mb-2">Champion e challenger no teste temporal</MudText>
+        <MudSimpleTable Dense="true" Elevation="0">
+            <thead><tr><th></th><th>Ativa (versão @_ativa.Versao)</th><th>Challenger (versão @_challenger.Versao)</th></tr></thead>
+            <tbody>
+                <LinhaComparacao Metrica="AUC-PR" Ativa="_ativa.AucPr" Challenger="_challenger.AucPr" />
+                <LinhaComparacao Metrica="Precisão" Ativa="_ativa.Precisao" Challenger="_challenger.Precisao" />
+                <LinhaComparacao Metrica="Recall" Ativa="_ativa.Recall" Challenger="_challenger.Recall" />
+                <LinhaComparacao Metrica="F1" Ativa="_ativa.F1" Challenger="_challenger.F1" />
+                <tr><td>Limiar recomendado</td><td>@Formatos.Decimal(_ativa.LimiarRecomendado, 2)</td><td>@Formatos.Decimal(_challenger.LimiarRecomendado, 2)</td></tr>
+            </tbody>
+        </MudSimpleTable>
+        <MudText Typo="Typo.caption">Para comparar em produção, abra os casos: cada análise traz a pontuação das duas versões.</MudText>
+    </MudPaper>
+}
+
+<MudTable T="VersaoModeloResumo" Items="_versoes" Dense="true" Hover="true" Loading="_carregando" Elevation="1">
+    <HeaderContent>
+        <MudTh>Versão</MudTh>
+        <MudTh>Status</MudTh>
+        <MudTh Style="text-align: right">AUC-PR</MudTh>
+        <MudTh Style="text-align: right">Precisão</MudTh>
+        <MudTh Style="text-align: right">Recall</MudTh>
+        <MudTh Style="text-align: right">Limiar</MudTh>
+        <MudTh>Meta</MudTh>
+        <MudTh>Treinada em</MudTh>
+        <MudTh></MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Versão"><MudLink Href="@($"antifraude/modelos/{context.Versao}")">@context.Versao</MudLink></MudTd>
+        <MudTd DataLabel="Status"><MudChip T="string" Color="Formatos.CorStatusModelo(context.Status)" Size="Size.Small">@context.Status</MudChip></MudTd>
+        <MudTd DataLabel="AUC-PR" Style="text-align: right" Class="web-numero">@Formatos.Decimal(context.AucPr)</MudTd>
+        <MudTd DataLabel="Precisão" Style="text-align: right" Class="web-numero">@Formatos.Decimal(context.Precisao)</MudTd>
+        <MudTd DataLabel="Recall" Style="text-align: right" Class="web-numero">@Formatos.Decimal(context.Recall)</MudTd>
+        <MudTd DataLabel="Limiar" Style="text-align: right" Class="web-numero">@Formatos.Decimal(context.LimiarRecomendado, 2)</MudTd>
+        <MudTd DataLabel="Meta">@(context.MetaAtingida ? "atingida" : "não atingida")</MudTd>
+        <MudTd DataLabel="Treinada em">@Formatos.Data(context.TreinadaEm)</MudTd>
+        <MudTd>
+            <AcoesModelo Versao="context" Mudou="CarregarAsync" />
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText>Nenhuma versão registrada. Rode o treino pelo compose (profile treino).</MudText>
+    </NoRecordsContent>
+</MudTable>
+
+@code {
+    private IReadOnlyList<VersaoModeloResumo> _versoes = [];
+    private VersaoModeloResumo? _ativa;
+    private VersaoModeloResumo? _challenger;
+    private bool _carregando = true;
+
+    protected override Task OnInitializedAsync() => CarregarAsync();
+
+    private async Task CarregarAsync()
+    {
+        _carregando = true;
+        try
+        {
+            _versoes = await Antifraude.ListarModelosAsync(CancellationToken.None);
+            _ativa = _versoes.SingleOrDefault(versao => versao.Status == "Ativa");
+            _challenger = _versoes.SingleOrDefault(versao => versao.Status == "Challenger");
+        }
+        catch (Exception erro) when (erro is ExcecaoApiAntifraude or HttpRequestException)
+        {
+            Alertas.Add($"Não foi possível ler os modelos: {erro.Message}", Severity.Error);
+        }
+        finally
+        {
+            _carregando = false;
+        }
+    }
+
+    private async Task RetirarChallengerAsync()
+    {
+        if (await Dialogos.ShowMessageBoxAsync("Retirar o challenger", $"A versão {_challenger!.Versao} sai da sombra e é aposentada.", yesText: "Retirar", cancelText: "Cancelar") != true)
+        {
+            return;
+        }
+
+        try
+        {
+            await Antifraude.RetirarChallengerAsync(CancellationToken.None);
+            Alertas.Add("Challenger retirado.", Severity.Success);
+            await CarregarAsync();
+        }
+        catch (ExcecaoApiAntifraude erro)
+        {
+            Alertas.Add($"Não foi possível retirar o challenger: {erro.Message}", Severity.Error);
+        }
+    }
+}

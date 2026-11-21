@@ -28,6 +28,8 @@ public sealed class AntifraudeDbContext(DbContextOptions<AntifraudeDbContext> op
 
     public DbSet<MedicaoDrift> MedicoesDrift => Set<MedicaoDrift>();
 
+    public DbSet<ExecucaoTreino> ExecucoesTreino => Set<ExecucaoTreino>();
+
     public DbSet<MensagemOutbox> Outbox => Set<MensagemOutbox>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

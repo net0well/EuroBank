@@ -244,6 +244,83 @@ namespace EuroBank.Antifraude.Infrastructure.Persistence.Migrations
                     b.ToTable("configuracoes_decisao", (string)null);
                 });
 
+            modelBuilder.Entity("EuroBank.Antifraude.Domain.Entities.ExecucaoTreino", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("AtualizadaEm")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("atualizada_em");
+
+                    b.Property<bool>("CancelamentoPedido")
+                        .HasColumnType("boolean")
+                        .HasColumnName("cancelamento_pedido");
+
+                    b.Property<string>("Erro")
+                        .HasColumnType("text")
+                        .HasColumnName("erro");
+
+                    b.Property<DateTimeOffset?>("IniciadaEm")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("iniciada_em");
+
+                    b.Property<string>("Parametros")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("parametros");
+
+                    b.Property<int>("Progresso")
+                        .HasColumnType("integer")
+                        .HasColumnName("progresso");
+
+                    b.Property<string>("Relatorio")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("relatorio");
+
+                    b.Property<DateTimeOffset>("SolicitadaEm")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("solicitada_em");
+
+                    b.Property<string>("Solicitante")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("solicitante");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset?>("TerminadaEm")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("terminada_em");
+
+                    b.Property<int?>("Versao")
+                        .HasColumnType("integer")
+                        .HasColumnName("versao");
+
+                    b.Property<string>("_etapas")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("etapas");
+
+                    b.Property<string>("_registros")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("registros");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex(new[] { "SolicitadaEm" }, "ix_execucoes_treino_solicitada_em")
+                        .IsDescending();
+
+                    b.ToTable("execucoes_treino", (string)null);
+                });
+
             modelBuilder.Entity("EuroBank.Antifraude.Domain.Entities.FraudeConfirmada", b =>
                 {
                     b.Property<Guid>("Id")

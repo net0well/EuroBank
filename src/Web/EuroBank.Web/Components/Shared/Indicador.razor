@@ -1,0 +1,33 @@
+@* Um número da visão geral num cartão; com Href, o cartão leva à tela do detalhe. *@
+<MudItem xs="6" sm="4" md="@Md">
+    <MudPaper Outlined="true" Class="@("pa-3" + (Href is null ? string.Empty : " web-clicavel"))" @onclick="Abrir">
+        <MudText Typo="Typo.caption">@Titulo</MudText>
+        <MudText Typo="Typo.h5" Class="web-numero">@Valor</MudText>
+    </MudPaper>
+</MudItem>
+
+@code {
+    [Inject]
+    private NavigationManager Navegacao { get; set; } = null!;
+
+    [Parameter, EditorRequired]
+    public string Titulo { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public string Valor { get; set; } = string.Empty;
+
+    [Parameter]
+    public string? Href { get; set; }
+
+    /// <summary>Colunas (de 12) a partir da tela média: 2 na largura toda, 4 dentro de um card.</summary>
+    [Parameter]
+    public int Md { get; set; } = 2;
+
+    private void Abrir()
+    {
+        if (Href is not null)
+        {
+            Navegacao.NavigateTo(Href);
+        }
+    }
+}

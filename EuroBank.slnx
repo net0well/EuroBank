@@ -6,7 +6,6 @@
     <Project Path="src/Antifraude/EuroBank.Antifraude.Domain/EuroBank.Antifraude.Domain.csproj" />
     <Project Path="src/Antifraude/EuroBank.Antifraude.Features/EuroBank.Antifraude.Features.csproj" />
     <Project Path="src/Antifraude/EuroBank.Antifraude.Infrastructure/EuroBank.Antifraude.Infrastructure.csproj" />
-    <Project Path="src/Antifraude/EuroBank.Antifraude.Painel/EuroBank.Antifraude.Painel.csproj" />
     <Project Path="src/Antifraude/EuroBank.Antifraude.Treinamento/EuroBank.Antifraude.Treinamento.csproj" />
     <Project Path="src/Antifraude/EuroBank.Antifraude.Worker/EuroBank.Antifraude.Worker.csproj" />
   </Folder>
@@ -44,11 +43,13 @@
     <Project Path="src/Transferencias/EuroBank.Transferencias.Infrastructure/EuroBank.Transferencias.Infrastructure.csproj" />
     <Project Path="src/Transferencias/EuroBank.Transferencias.Worker/EuroBank.Transferencias.Worker.csproj" />
   </Folder>
+  <Folder Name="/src/Web/">
+    <Project Path="src/Web/EuroBank.Web/EuroBank.Web.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/EuroBank.Antifraude.Api.Tests/EuroBank.Antifraude.Api.Tests.csproj" />
     <Project Path="tests/EuroBank.Antifraude.Domain.Tests/EuroBank.Antifraude.Domain.Tests.csproj" />
     <Project Path="tests/EuroBank.Antifraude.Features.Tests/EuroBank.Antifraude.Features.Tests.csproj" />
-    <Project Path="tests/EuroBank.Antifraude.Painel.Tests/EuroBank.Antifraude.Painel.Tests.csproj" />
     <Project Path="tests/EuroBank.Antifraude.Treinamento.Tests/EuroBank.Antifraude.Treinamento.Tests.csproj" />
     <Project Path="tests/EuroBank.Antifraude.Worker.Tests/EuroBank.Antifraude.Worker.Tests.csproj" />
     <Project Path="tests/EuroBank.Contas.Api.Tests/EuroBank.Contas.Api.Tests.csproj" />
@@ -63,5 +64,6 @@
     <Project Path="tests/EuroBank.Transferencias.Api.Tests/EuroBank.Transferencias.Api.Tests.csproj" />
     <Project Path="tests/EuroBank.Transferencias.Domain.Tests/EuroBank.Transferencias.Domain.Tests.csproj" />
     <Project Path="tests/EuroBank.Transferencias.Worker.Tests/EuroBank.Transferencias.Worker.Tests.csproj" />
+    <Project Path="tests/EuroBank.Web.Tests/EuroBank.Web.Tests.csproj" />
   </Folder>
 </Solution>
