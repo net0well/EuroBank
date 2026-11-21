@@ -1,0 +1,217 @@
+@page "/antifraude/casos/{Id:guid}"
+@implements IDisposable
+@inject ClienteAntifraude Antifraude
+@inject AvisosFila Avisos
+@inject SessaoAnalista Sessao
+@inject ISnackbar Alertas
+
+<PageTitle>Caso de revisão</PageTitle>
+
+@if (_caso is null)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else
+{
+    var analise = _caso.Analise;
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-4">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="antifraude/casos" aria-label="Voltar para a fila" />
+        <MudText Typo="Typo.h5">Caso de revisão</MudText>
+        <MudChip T="string" Color="Formatos.CorDecisao(_caso.Estado)">@_caso.Estado</MudChip>
+        <MudChip T="string" Variant="Variant.Outlined">score @analise.ScoreFinal</MudChip>
+        @if (_caso.Analista is { } analista)
+        {
+            <MudChip T="string" Icon="@Icons.Material.Filled.Person" Variant="Variant.Outlined">@analista</MudChip>
+        }
+    </MudStack>
+
+    <MudGrid>
+        <MudItem xs="12" md="5">
+            <MudPaper Outlined="true" Class="pa-3 mb-3">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Operação</MudText>
+                <MudSimpleTable Dense="true" Elevation="0">
+                    <tbody>
+                        <tr><td>Tipo</td><td>@analise.TipoOperacao</td></tr>
+                        <tr><td>Valor</td><td class="painel-numero">@Formatos.Valor(analise.Valor, analise.Moeda)</td></tr>
+                        <tr><td>Destino</td><td>@(analise.IbanDestino ?? "-")</td></tr>
+                        <tr><td>Conta</td><td>@analise.ContaId</td></tr>
+                        <tr><td>Operação</td><td>@analise.OperacaoId</td></tr>
+                        <tr><td>Momento</td><td>@Formatos.Data(analise.Momento)</td></tr>
+                        <tr><td>Dispositivo</td><td>@(analise.DispositivoId ?? "-")</td></tr>
+                        <tr><td>Localização</td><td>@(analise.Localizacao ?? "-")</td></tr>
+                        <tr><td>Aberto em</td><td>@Formatos.Data(_caso.AbertoEm)</td></tr>
+                        <tr><td>Expira em</td><td>@Formatos.Data(_caso.ExpiraEm)</td></tr>
+                    </tbody>
+                </MudSimpleTable>
+            </MudPaper>
+
+            <MudPaper Outlined="true" Class="pa-3 mb-3">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Decisão</MudText>
+                @if (!Sessao.Identificado)
+                {
+                    <MudAlert Severity="Severity.Info" Dense="true">Informe seu nome no topo da página para assumir e decidir.</MudAlert>
+                }
+                else if (_caso.Estado == "Aberto")
+                {
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="AssumirAsync" Disabled="_enviando">Assumir o caso</MudButton>
+                }
+                else if (_caso.Estado == "EmAnalise" && _caso.Analista != Sessao.Nome)
+                {
+                    <MudAlert Severity="Severity.Warning" Dense="true">Em análise por @_caso.Analista: só quem assumiu decide.</MudAlert>
+                }
+                else if (_caso.Estado == "EmAnalise")
+                {
+                    <MudTextField T="string" @bind-Value="_justificativa" Label="Justificativa" Lines="3" Variant="Variant.Outlined" Immediate="true" />
+                    <MudCheckBox T="bool" @bind-Value="_bloquearIban" Label="Ao recusar, bloquear o IBAN de destino" Disabled="analise.IbanDestino is null" />
+                    <MudStack Row="true" Class="mt-2">
+                        <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="@(() => DecidirAsync(aprovar: true))" Disabled="SemJustificativa">Aprovar</MudButton>
+                        <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="@(() => DecidirAsync(aprovar: false))" Disabled="SemJustificativa">Recusar</MudButton>
+                    </MudStack>
+                }
+                else
+                {
+                    <MudText>Decidido em @Formatos.Data(_caso.DecididoEm)@(_caso.Justificativa is { } justificativa ? $": {justificativa}" : string.Empty)</MudText>
+                }
+            </MudPaper>
+
+            @if (Sessao.Identificado)
+            {
+                <MudPaper Outlined="true" Class="pa-3 mb-3">
+                    <MudText Typo="Typo.subtitle1" Class="mb-2">Fraude confirmada depois</MudText>
+                    <MudText Typo="Typo.caption">Reclamação do cliente, investigação: a operação vira rótulo de fraude no próximo treino.</MudText>
+                    <MudTextField T="string" @bind-Value="_observacao" Label="Observação" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    <MudButton Variant="Variant.Outlined" Color="Color.Error" Class="mt-2" OnClick="ConfirmarFraudeAsync" Disabled="_enviando">Confirmar fraude</MudButton>
+                </MudPaper>
+            }
+        </MudItem>
+
+        <MudItem xs="12" md="7">
+            <MudPaper Outlined="true" Class="pa-3 mb-3">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Sinais</MudText>
+                <TabelaSinais Sinais="analise.Sinais" />
+            </MudPaper>
+            @if (analise.Modelo is { } modelo)
+            {
+                <div class="mb-3"><ExplicacaoModelo Pontuacao="modelo" Titulo="Modelo ativo" /></div>
+            }
+            @if (analise.Challenger is { } challenger)
+            {
+                <div class="mb-3"><ExplicacaoModelo Pontuacao="challenger" Titulo="Challenger (sombra)" Sombra="true" /></div>
+            }
+            @if (analise.Features is { } features)
+            {
+                <MudPaper Outlined="true" Class="pa-3 mb-3">
+                    <MudText Typo="Typo.subtitle1" Class="mb-2">Features</MudText>
+                    <MudSimpleTable Dense="true" Elevation="0">
+                        <tbody>
+                            @foreach (var (nome, valor) in features)
+                            {
+                                <tr><td>@nome</td><td class="painel-numero" style="text-align: right">@Formatos.Decimal(valor, 4)</td></tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                </MudPaper>
+            }
+            <MudPaper Outlined="true" Class="pa-3">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Auditoria</MudText>
+                <MudSimpleTable Dense="true" Elevation="0">
+                    <tbody>
+                        @foreach (var registro in _caso.Auditoria)
+                        {
+                            <tr><td>@Formatos.Data(registro.Quando)</td><td>@registro.Quem</td><td>@registro.Acao</td><td>@registro.Detalhe</td></tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    [Parameter]
+    public Guid Id { get; set; }
+
+    private CasoDetalhe? _caso;
+    private string? _justificativa;
+    private bool _bloquearIban;
+    private string? _observacao;
+    private bool _enviando;
+    private IDisposable? _assinatura;
+
+    private bool SemJustificativa => _enviando || string.IsNullOrWhiteSpace(_justificativa);
+
+    protected override async Task OnInitializedAsync()
+    {
+        Sessao.Mudou += AoMudarAnalista;
+        _assinatura = Avisos.Assinar(AoReceberAviso);
+        await CarregarAsync();
+    }
+
+    private async Task CarregarAsync() =>
+        await ExecutarAsync(async () => _caso = await Antifraude.ObterCasoAsync(Id, CancellationToken.None), "ler o caso");
+
+    private Task AssumirAsync() =>
+        ExecutarAsync(async () => _caso = await Antifraude.AssumirAsync(Id, Sessao.Nome!, CancellationToken.None), "assumir o caso");
+
+    private Task DecidirAsync(bool aprovar) =>
+        ExecutarAsync(
+            async () =>
+            {
+                _caso = await Antifraude.DecidirAsync(
+                    Id,
+                    new DecisaoRequisicao(Sessao.Nome!, aprovar ? "Aprovar" : "Recusar", _justificativa!.Trim(), !aprovar && _bloquearIban),
+                    CancellationToken.None);
+                Alertas.Add(aprovar ? "Caso aprovado: a transferência segue." : "Caso recusado: a transferência termina recusada.", Severity.Success);
+            },
+            "decidir o caso");
+
+    private Task ConfirmarFraudeAsync() =>
+        ExecutarAsync(
+            async () =>
+            {
+                await Antifraude.ConfirmarFraudeAsync(
+                    new FraudeConfirmadaRequisicao(_caso!.Analise.OperacaoId, Sessao.Nome!, _observacao), CancellationToken.None);
+                Alertas.Add("Fraude confirmada: entra como rótulo no próximo treino.", Severity.Success);
+            },
+            "confirmar a fraude");
+
+    private async Task ExecutarAsync(Func<Task> acao, string oQue)
+    {
+        _enviando = true;
+        try
+        {
+            await acao();
+        }
+        catch (Exception erro) when (erro is ExcecaoApiAntifraude or HttpRequestException)
+        {
+            Alertas.Add($"Não foi possível {oQue}: {erro.Message}", Severity.Error);
+        }
+        finally
+        {
+            _enviando = false;
+        }
+    }
+
+    /// <summary>O caso desta tela mudou fora dela (expirou, outro analista decidiu, o cliente cancelou).</summary>
+    private void AoReceberAviso(AvisoFila aviso)
+    {
+        if (_caso is null || aviso.OperacaoId != _caso.Analise.OperacaoId || aviso.CasoNovo)
+        {
+            return;
+        }
+
+        _ = InvokeAsync(async () =>
+        {
+            await CarregarAsync();
+            StateHasChanged();
+        });
+    }
+
+    private void AoMudarAnalista() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Sessao.Mudou -= AoMudarAnalista;
+        _assinatura?.Dispose();
+    }
+}

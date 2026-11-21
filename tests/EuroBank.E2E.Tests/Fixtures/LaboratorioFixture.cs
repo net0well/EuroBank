@@ -7,8 +7,6 @@ using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using DotNet.Testcontainers.Networks;
 using EuroBank.Antifraude.Api;
-using EuroBank.Antifraude.Painel;
-using EuroBank.Antifraude.Painel.Clients;
 using EuroBank.Antifraude.Worker;
 using EuroBank.Contas.Api;
 using EuroBank.Contas.Worker;
@@ -19,6 +17,8 @@ using EuroBank.Simuladores.Cambio;
 using EuroBank.Transferencias.Api;
 using EuroBank.Transferencias.Infrastructure.Options;
 using EuroBank.Transferencias.Worker;
+using EuroBank.Web;
+using EuroBank.Web.Antifraude.Clients;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -107,7 +107,7 @@ public sealed class LaboratorioFixture : IAsyncLifetime
     private readonly RedisContainer _redis = new RedisBuilder("redis:8.10.3").Build();
     private readonly ActivityListener _ouvinteAtividades;
     private WebApplicationFactory<MarcadorAntifraudeApi> _antifraude = null!;
-    private readonly string _grupoPainel = $"eurobank-antifraude-painel-e2e-{Guid.NewGuid():N}";
+    private readonly string _grupoPainel = $"eurobank-web-e2e-{Guid.NewGuid():N}";
     private WebApplicationFactory<MarcadorContasApi> _contas = null!;
     private WebApplicationFactory<MarcadorExtratoWorker> _extrato = null!;
 
@@ -360,7 +360,7 @@ public sealed class LaboratorioFixture : IAsyncLifetime
 
         // O painel começa do fim do tópico: só vale esperar eventos depois de o consumer group receber as partições.
         Painel = Subir(
-            new WebApplicationFactory<MarcadorAntifraudePainel>(),
+            new WebApplicationFactory<MarcadorWeb>(),
             new()
             {
                 ["Antifraude:Endereco"] = _antifraude.Server.BaseAddress.ToString(),

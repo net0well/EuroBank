@@ -1,0 +1,118 @@
+@page "/"
+@using EuroBank.Web.Options
+@using Microsoft.Extensions.Options
+@implements IDisposable
+@inject ClienteAntifraude Antifraude
+@inject AvisosFila Avisos
+@inject IOptions<OpcoesFerramentas> Ferramentas
+
+<PageTitle>EuroBank</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Laboratório EuroBank</MudText>
+
+<MudGrid>
+    <MudItem xs="12" lg="7">
+        <MudCard Outlined="true">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Antifraude</MudText>
+                    <MudText Typo="Typo.caption">Últimas 24 horas</MudText>
+                </CardHeaderContent>
+                <CardHeaderActions>
+                    <MudButton Href="antifraude" Variant="Variant.Text" EndIcon="@Icons.Material.Filled.ArrowForward">Abrir</MudButton>
+                </CardHeaderActions>
+            </MudCardHeader>
+            <MudCardContent>
+                @if (_erro is not null)
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true">Não foi possível ler o antifraude: @_erro</MudAlert>
+                }
+                else if (_visao is null)
+                {
+                    <MudProgressLinear Indeterminate="true" />
+                }
+                else
+                {
+                    <MudGrid>
+                        <Indicador Titulo="Casos pendentes" Valor="@_visao.CasosPendentes.ToString(CultureInfo.InvariantCulture)" Href="antifraude/casos" />
+                        <Indicador Titulo="Análises" Valor="@_visao.Analises.ToString(CultureInfo.InvariantCulture)" />
+                        <Indicador Titulo="Taxa de revisão" Valor="@Formatos.Percentual(_visao.TaxaRevisao)" />
+                        <Indicador Titulo="Taxa de recusa" Valor="@Formatos.Percentual(_visao.TaxaRecusa)" />
+                        <Indicador Titulo="Modelo ativo" Valor="@(_visao.Drift.VersaoModelo is { } versao ? $"v{versao}" : "nenhum")" Href="antifraude/modelos" />
+                        <Indicador Titulo="Drift" Valor="@SituacaoDrift(_visao.Drift)" />
+                    </MudGrid>
+                }
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+
+    <MudItem xs="12" lg="5">
+        <MudCard Outlined="true">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Ferramentas do laboratório</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudList T="string" Dense="true">
+                    @foreach (var ferramenta in Lista())
+                    {
+                        <MudListItem T="string" Icon="@ferramenta.Icone" Href="@ferramenta.Endereco.ToString()" Target="_blank">
+                            <MudText Typo="Typo.body2"><b>@ferramenta.Nome</b>: @ferramenta.Descricao</MudText>
+                        </MudListItem>
+                    }
+                </MudList>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private VisaoGeral? _visao;
+    private string? _erro;
+    private IDisposable? _assinatura;
+
+    private sealed record Ferramenta(string Nome, string Descricao, Uri Endereco, string Icone);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _assinatura = Avisos.Assinar(AoReceberAviso);
+        await CarregarAsync();
+    }
+
+    /// <summary>Um caso entrou ou saiu da fila: os números mudaram.</summary>
+    private void AoReceberAviso(AvisoFila aviso) => _ = InvokeAsync(async () =>
+    {
+        await CarregarAsync();
+        StateHasChanged();
+    });
+
+    private async Task CarregarAsync()
+    {
+        try
+        {
+            _visao = await Antifraude.ObterVisaoGeralAsync(CancellationToken.None);
+            _erro = null;
+        }
+        catch (Exception erro) when (erro is ExcecaoApiAntifraude or HttpRequestException)
+        {
+            _erro = erro.Message;
+        }
+    }
+
+    /// <summary>Medido, o nível (Estavel, Moderado, Significativo); senão, a situação (sem modelo, aguardando...).</summary>
+    private static string SituacaoDrift(Drift drift) => drift.UltimaMedicao?.Nivel ?? drift.Situacao;
+
+    private IEnumerable<Ferramenta> Lista()
+    {
+        var opcoes = Ferramentas.Value;
+        yield return new("Kafbat UI", "tópicos, mensagens, consumer groups e conectores", opcoes.KafbatUi, Icons.Material.Filled.Hub);
+        yield return new("Grafana", "dashboards de cache, modelo e APIs (profile metricas)", opcoes.Grafana, Icons.Material.Filled.QueryStats);
+        yield return new("Prometheus", "as métricas cruas (profile metricas)", opcoes.Prometheus, Icons.Material.Filled.ShowChart);
+        yield return new("Jaeger", "traces de ponta a ponta", opcoes.Jaeger, Icons.Material.Filled.Timeline);
+        yield return new("Mailpit", "os e-mails das notificações e do alerta de drift", opcoes.Mailpit, Icons.Material.Filled.Mail);
+        yield return new("RedisInsight", "perfis do antifraude e cache do extrato", opcoes.RedisInsight, Icons.Material.Filled.Storage);
+    }
+
+    public void Dispose() => _assinatura?.Dispose();
+}

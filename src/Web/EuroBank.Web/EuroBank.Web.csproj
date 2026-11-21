@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Só os blocos comuns: a web fala com os contextos pela REST, pelo Kafka e por consultas de leitura, sem referenciar as camadas deles. -->
+    <ProjectReference Include="..\..\Shared\EuroBank.Shared.Web\EuroBank.Shared.Web.csproj" />
+    <ProjectReference Include="..\..\Shared\EuroBank.Shared.Messaging\EuroBank.Shared.Messaging.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MudBlazor" />
+    <PackageReference Include="WolverineFx.RuntimeCompilation" />
+  </ItemGroup>
+</Project>

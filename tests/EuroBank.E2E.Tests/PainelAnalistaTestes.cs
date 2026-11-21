@@ -1,8 +1,8 @@
 using System.Collections.Concurrent;
-using EuroBank.Antifraude.Painel.Clients;
-using EuroBank.Antifraude.Painel.Services;
-using EuroBank.Antifraude.Painel.TransferObjects;
 using EuroBank.E2E.Tests.Fixtures;
+using EuroBank.Web.Antifraude.Clients;
+using EuroBank.Web.Antifraude.Services;
+using EuroBank.Web.Antifraude.TransferObjects;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EuroBank.E2E.Tests;
