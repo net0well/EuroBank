@@ -1,5 +1,13 @@
 name: eurobank
 
+# Telemetria das aplicações .NET: traces no Jaeger (OTLP gRPC) e métricas no Prometheus do profile metricas (o receptor
+# OTLP dele só fala http/protobuf), a cada 5 s. Sem o profile, o envio das métricas falha em silêncio e nada mais muda.
+x-otel: &otel
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+  OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: http://prometheus:9090/api/v1/otlp/v1/metrics
+  OTEL_EXPORTER_OTLP_METRICS_PROTOCOL: http/protobuf
+  OTEL_METRIC_EXPORT_INTERVAL: "5000"
+
 services:
   # ---------------------------------------------------------------------------------------------------------
   # PostgreSQL com replicação lógica (wal_level=logical): é daqui que o Debezium lê as mudanças (WAL).
@@ -185,7 +193,7 @@ services:
       LimiteRequisicoes__PorSegundo: ${RATE_LIMIT_POR_SEGUNDO:-100}
       # true: insere e apaga a linha da outbox na mesma transação (o evento sai mesmo assim, pelo WAL).
       Outbox__ApagarAposGravar: ${OUTBOX_APAGAR_APOS_GRAVAR:-false}
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      <<: *otel
     healthcheck:
       test: ["CMD-SHELL", "curl -fs http://localhost:8080/health > /dev/null"]
       interval: 5s
@@ -208,7 +216,7 @@ services:
       ASPNETCORE_HTTP_PORTS: "8080"
       ConnectionStrings__Contas: "Host=postgres;Port=5432;Database=eurobank_contas;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
       Kafka__BootstrapServers: kafka:29092
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      <<: *otel
     healthcheck:
       test: ["CMD-SHELL", "curl -fs http://localhost:8080/health > /dev/null"]
       interval: 5s
@@ -243,7 +251,7 @@ services:
       # Rate limit por API key (janela deslizante de 1 s no Redis; 429 com Retry-After; com o Redis fora, deixa passar).
       LimiteRequisicoes__PorSegundo: ${RATE_LIMIT_POR_SEGUNDO:-100}
       Kafka__BootstrapServers: kafka:29092
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      <<: *otel
     healthcheck:
       test: ["CMD-SHELL", "curl -fs http://localhost:8080/health > /dev/null"]
       interval: 5s
@@ -280,7 +288,7 @@ services:
       Saga__PrazoConsulta: ${SAGA_PRAZO_CONSULTA:-00:00:15}
       # Igual na API e no worker: os dois começam sagas. false volta ao fluxo sem antifraude.
       Saga__AnaliseRiscoAtiva: ${SAGA_ANALISE_RISCO:-true}
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      <<: *otel
     healthcheck:
       test: ["CMD-SHELL", "curl -fs http://localhost:8080/health > /dev/null"]
       interval: 5s
@@ -316,7 +324,7 @@ services:
       Antifraude__Endereco: http://antifraude-api:8081
       Antifraude__ApiKey: ${ANTIFRAUDE_API_KEY}
       Antifraude__Estrategia: ${ANTIFRAUDE_ESTRATEGIA:-Retry}
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      <<: *otel
     healthcheck:
       test: ["CMD-SHELL", "curl -fs http://localhost:8080/health > /dev/null"]
       interval: 5s
@@ -448,7 +456,7 @@ services:
       # Rate limit por API key (janela deslizante de 1 s no Redis; 429 com Retry-After; com o Redis fora, deixa passar).
       LimiteRequisicoes__PorSegundo: ${RATE_LIMIT_POR_SEGUNDO:-100}
       Revisao__PrazoCaso: ${ANTIFRAUDE_PRAZO_REVISAO:-00:30:00}
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      <<: *otel
     healthcheck:
       test: ["CMD", "grpc_health_probe", "-addr=localhost:8081"]
       interval: 5s
@@ -474,7 +482,7 @@ services:
       ConnectionStrings__Antifraude: "Host=postgres;Port=5432;Database=eurobank_antifraude;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
       ConnectionStrings__Redis: "${REDIS_CONEXAO:-redis:6379}"
       Kafka__BootstrapServers: kafka:29092
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      <<: *otel
       # Drift do modelo ativo: PSI das análises das últimas 24 h contra o treino, a cada 5 min (mais curto nos exercícios).
       Drift__Intervalo: ${ANTIFRAUDE_DRIFT_INTERVALO:-00:05:00}
     healthcheck:
@@ -504,7 +512,7 @@ services:
       Antifraude__Endereco: http://antifraude-api:8080
       Antifraude__ApiKey: ${ANTIFRAUDE_API_KEY}
       Kafka__BootstrapServers: kafka:29092
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      <<: *otel
     healthcheck:
       test: ["CMD-SHELL", "curl -fs http://localhost:8080/health > /dev/null"]
       interval: 5s
@@ -553,7 +561,7 @@ services:
       Kafka__BootstrapServers: kafka:29092
       Smtp__Host: mailpit
       Smtp__Porta: "1025"
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      <<: *otel
     healthcheck:
       test: ["CMD-SHELL", "curl -fs http://localhost:8080/health > /dev/null"]
       interval: 5s
@@ -597,7 +605,7 @@ services:
       BancoExterno__TaxaSilencio: ${BANCO_EXTERNO_TAXA_SILENCIO:-0}
       BancoExterno__AtrasoFinal95Segundos: ${BANCO_EXTERNO_ATRASO_95:-300}
       BancoExterno__AtrasoDevolucaoSegundos: ${BANCO_EXTERNO_ATRASO_DEVOLUCAO:-10}
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      <<: *otel
     healthcheck:
       test: ["CMD-SHELL", "curl -fs http://localhost:8080/health > /dev/null"]
       interval: 5s
@@ -626,11 +634,67 @@ services:
       Kafka__BootstrapServers: kafka:29092
       Cambio__LatenciaMs: ${CAMBIO_LATENCIA_MS:-500}
       Cambio__ValidadeMinutos: ${CAMBIO_VALIDADE_MINUTOS:-10}
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      <<: *otel
     healthcheck:
       test: ["CMD-SHELL", "curl -fs http://localhost:8080/health > /dev/null"]
       interval: 5s
       timeout: 5s
+      retries: 30
+
+  # ---------------------------------------------------------------------------------------------------------
+  # Métricas sob demanda (profile metricas): docker compose --profile metricas up -d
+  # ---------------------------------------------------------------------------------------------------------
+
+  # Recebe por push, sem scrape: OTLP das aplicações (/api/v1/otlp/v1/metrics; service.name vira o label job) e
+  # remote write do k6 (/api/v1/write). Consultas em http://localhost:9090.
+  prometheus:
+    image: prom/prometheus:v3.16.0
+    profiles: ["metricas"]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.enable-otlp-receiver
+      - --web.enable-remote-write-receiver
+      - --storage.tsdb.retention.time=7d
+    ports:
+      - "${PROMETHEUS_PORTA:-9090}:9090"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Grafana em http://localhost:3000 (anônimo como Admin, só no laboratório), com o Prometheus como fonte e os
+  # dashboards prontos na pasta EuroBank: "Cache do Extrato" e "Antifraude: modelo e drift". O alerta de drift (PSI
+  # acima de 0,25) manda e-mail pelo Mailpit para analistas@eurobank.lab.
+  grafana:
+    image: grafana/grafana:13.2.6
+    profiles: ["metricas"]
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    ports:
+      - "${GRAFANA_PORTA:-3000}:3000"
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/dashboards/cache-extrato.json
+      GF_SMTP_ENABLED: "true"
+      GF_SMTP_HOST: mailpit:1025
+      GF_SMTP_FROM_ADDRESS: grafana@eurobank.lab
+      GF_SMTP_FROM_NAME: Grafana EuroBank
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/etc/grafana/dashboards:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health > /dev/null"]
+      interval: 5s
+      timeout: 3s
       retries: 30
 
   # Gerador de carga sob demanda (não sobe no "up"). Operações de Contas e sagas misturadas; no fim confere que
@@ -665,6 +729,34 @@ services:
     volumes:
       - ./infra/k6:/scripts:ro
     command: ["run", "/scripts/carga.js"]
+
+  # Comparação das estratégias de cache do Extrato (leitura logo após a escrita), sob demanda. Com o profile
+  # metricas no ar, as métricas vão ao Prometheus e aparecem no dashboard "Cache do Extrato"; o roteiro de uma rodada
+  # por estratégia está no cabeçalho de infra/k6/cache.js.
+  #   docker compose --profile carga run --rm k6-cache
+  k6-cache:
+    image: grafana/k6:2.3.0
+    profiles: ["carga"]
+    depends_on:
+      contas-api:
+        condition: service_healthy
+      extrato-worker:
+        condition: service_healthy
+    environment:
+      API_CONTAS: http://contas-api:8080
+      API_EXTRATO: http://extrato-worker:8080
+      API_KEY_CONTAS: ${CONTAS_API_KEY}
+      API_KEY_EXTRATO: ${EXTRATO_API_KEY}
+      # A mesma variável que escolhe a estratégia do extrato-worker: a tag das métricas não tem como divergir dela.
+      ESTRATEGIA: ${EXTRATO_CACHE_ESTRATEGIA:-WriteThrough}
+      VUS: ${K6_VUS:-4}
+      DURACAO: ${K6_DURACAO:-1m}
+      K6_PROMETHEUS_RW_SERVER_URL: http://prometheus:9090/api/v1/write
+      K6_PROMETHEUS_RW_TREND_STATS: "p(50),p(95),p(99),avg"
+      K6_PROMETHEUS_RW_PUSH_INTERVAL: 5s
+    volumes:
+      - ./infra/k6:/scripts:ro
+    command: ["run", "-o", "experimental-prometheus-rw", "/scripts/cache.js"]
 
 volumes:
   postgres-dados:

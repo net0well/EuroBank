@@ -1,0 +1,69 @@
+# Alerta de drift do modelo de fraude: o PSI de alguma feature (ou do score) acima de 0,25 na última medição do
+# worker do Antifraude, por 1 minuto. A notificação vai por e-mail (SMTP do Mailpit) para analistas@eurobank.lab.
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: analistas
+    receivers:
+      - uid: analistas-email
+        type: email
+        settings:
+          addresses: analistas@eurobank.lab
+          singleEmail: true
+
+policies:
+  - orgId: 1
+    receiver: analistas
+    group_by: ["alertname"]
+    group_wait: 10s
+    group_interval: 1m
+    repeat_interval: 4h
+
+groups:
+  - orgId: 1
+    name: antifraude
+    folder: EuroBank
+    interval: 30s
+    rules:
+      - uid: antifraude-drift-psi
+        title: Drift do modelo de fraude
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: max by (feature, versao) (antifraude_drift_psi)
+              instant: true
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.25]
+        for: 1m
+        # Sem medição (versão sem amostra suficiente, worker parado): não é drift.
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severidade: alta
+        annotations:
+          summary: "Drift em {{ $labels.feature }} (versão {{ $labels.versao }}): PSI {{ printf \"%.2f\" $values.B.Value }}"
+          description: >-
+            A distribuição de produção se afastou da do treino (PSI acima de 0,25). Veja o drift da versão no painel
+            do analista e considere retreinar com os rótulos recentes.

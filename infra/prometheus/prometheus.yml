@@ -1,0 +1,4 @@
+# Prometheus do laboratório: nada de scrape. As aplicações enviam por OTLP (--web.enable-otlp-receiver; service.name
+# vira o label job) e o k6 por remote write (--web.enable-remote-write-receiver); as flags estão no docker-compose.yml.
+global:
+  evaluation_interval: 15s
