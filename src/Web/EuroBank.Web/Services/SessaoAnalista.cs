@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage;
 namespace EuroBank.Web.Services;
 
 /// <summary>
-/// Quem está usando o painel: o nome que o analista digitou, guardado no navegador (sem login). Um por circuito; vai em
+/// Quem está usando a web: o nome que o analista digitou, guardado no navegador (sem login). Um por circuito; vai em
 /// cada ação (assumir, decidir, bloquear, confirmar fraude).
 /// </summary>
 public sealed class SessaoAnalista(ProtectedLocalStorage armazenamento)
@@ -27,7 +27,7 @@ public sealed class SessaoAnalista(ProtectedLocalStorage armazenamento)
         }
         catch (CryptographicException)
         {
-            // Gravado com uma chave que o painel não tem mais (o container foi recriado e as chaves do Data Protection
+            // Gravado com uma chave que a web não tem mais (o container foi recriado e as chaves do Data Protection
             // ficavam nele): o analista digita o nome de novo.
             Nome = null;
             await armazenamento.DeleteAsync(Chave);

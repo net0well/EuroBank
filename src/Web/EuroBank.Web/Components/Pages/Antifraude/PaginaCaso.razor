@@ -32,7 +32,7 @@ else
                 <MudSimpleTable Dense="true" Elevation="0">
                     <tbody>
                         <tr><td>Tipo</td><td>@analise.TipoOperacao</td></tr>
-                        <tr><td>Valor</td><td class="painel-numero">@Formatos.Valor(analise.Valor, analise.Moeda)</td></tr>
+                        <tr><td>Valor</td><td class="web-numero">@Formatos.Valor(analise.Valor, analise.Moeda)</td></tr>
                         <tr><td>Destino</td><td>@(analise.IbanDestino ?? "-")</td></tr>
                         <tr><td>Conta</td><td>@analise.ContaId</td></tr>
                         <tr><td>Operação</td><td>@analise.OperacaoId</td></tr>
@@ -106,7 +106,7 @@ else
                         <tbody>
                             @foreach (var (nome, valor) in features)
                             {
-                                <tr><td>@nome</td><td class="painel-numero" style="text-align: right">@Formatos.Decimal(valor, 4)</td></tr>
+                                <tr><td>@nome</td><td class="web-numero" style="text-align: right">@Formatos.Decimal(valor, 4)</td></tr>
                             }
                         </tbody>
                     </MudSimpleTable>

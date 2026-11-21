@@ -13,7 +13,7 @@
             {
                 <tr>
                     <td style="width: 12rem">@contribuicao.Feature</td>
-                    <td style="width: 6rem; text-align: right" class="painel-numero">@Formatos.Decimal(contribuicao.Valor, 2)</td>
+                    <td style="width: 6rem; text-align: right" class="web-numero">@Formatos.Decimal(contribuicao.Valor, 2)</td>
                     <td>
                         <MudProgressLinear Value="@Largura(contribuicao.Valor)" Color="@(contribuicao.Valor > 0 ? Color.Error : Color.Success)" Rounded="true" Size="Size.Medium" />
                     </td>

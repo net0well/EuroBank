@@ -93,7 +93,7 @@ dois sistemas precisam ficar consistentes sem compartilhar uma transação:
 | Segurança | Uma API key por API (`X-Api-Key`; no gRPC, o metadata `x-api-key`), com `/health`, Swagger, reflection e `grpc.health.v1` abertos, e rate limit por API key nas rotas REST das quatro APIs (janela deslizante no Redis, 429 com `Retry-After`) |
 | Infraestrutura | Docker Compose com PostgreSQL em replicação lógica, Kafka em modo KRaft, Kafka Connect, Kafbat UI, Jaeger, Mailpit, Redis e RedisInsight, com os databases, os tópicos e os conectores criados automaticamente; profiles `treino` (treino do modelo), `ha` (duas réplicas do Redis e três sentinels), `metricas` (Prometheus e Grafana) e `carga` (k6) |
 | Observabilidade | Serilog estruturado e OpenTelemetry, com o `traceparent` levado pela outbox até o consumidor e de volta nas respostas da saga; métricas do ASP.NET Core e dos medidores do EuroBank (cache do extrato, modelo e drift) por OTLP no Prometheus, três dashboards no Grafana e o alerta de drift por e-mail |
-| Testes | 946 testes: unitários, de integração com Testcontainers e ponta a ponta com Debezium real, incluindo cada caminho das sagas, os e-mails no Mailpit, as decisões do antifraude no meio da saga e em Contas, cada uso do Redis com ele ligado e fora do ar, o treino de um modelo de verdade, promovido e trocado sem reiniciar, as telas do painel com bUnit e os Dockerfiles e o compose conferidos contra os projetos |
+| Testes | 958 testes: unitários, de integração com Testcontainers e ponta a ponta com Debezium real, incluindo cada caminho das sagas, os e-mails no Mailpit, as decisões do antifraude no meio da saga e em Contas, cada uso do Redis com ele ligado e fora do ar, o treino de um modelo de verdade, promovido e trocado sem reiniciar, as telas do painel com bUnit e os Dockerfiles e o compose conferidos contra os projetos |
 | Carga | Script k6 que mistura operações de Contas com sagas externas e de câmbio e, no fim, confere que todas as sagas terminaram, que o Extrato convergiu e que nenhum dinheiro sumiu, moeda a moeda; respeita o 429 esperando o `Retry-After`; e um cenário que compara as estratégias de cache (leituras desatualizadas, latência e tempo até o extrato mostrar a escrita) no Grafana |
 
 ## Como funciona
@@ -722,6 +722,13 @@ Problemas reais encontrados durante a construção, cada um com um teste que o r
     projeção domina. O cache mudou a latência da leitura (p95 de 10 ms sem cache, 6,5 ms com write-through), não a
     frescura. As leituras desatualizadas ficaram perto de 90% em todas, porque o k6 relê a cada 50 ms durante esse
     meio segundo: o número diz mais sobre o intervalo da releitura do que sobre a estratégia.
+38. **A imagem do painel saía sem o `blazor.web.js`.** Os testes do painel passavam (bUnit e o E2E hospedam a
+    aplicação em processo) e o container ficava saudável, mas o navegador abria uma tela em branco: o script do
+    Blazor respondia 404. No .NET 10 ele vem de um pacote que o SDK só referencia quando vê arquivos `.razor` na
+    restauração, e o Dockerfile restaura só com o `.csproj`, para aproveitar o cache das camadas. A imagem de SDK em
+    cache também era antiga (10.0.302), anterior a esse pacote, e nada a barrava, porque os Dockerfiles não copiavam o
+    `global.json`. Agora o projeto declara `RequiresAspNetWebAssets` e todo Dockerfile copia o `global.json` (um SDK
+    abaixo de 10.0.400 falha no build, em vez de publicar uma imagem quebrada), com um teste para cada um.
 
 ## Arquitetura
 
@@ -871,6 +878,9 @@ Swagger, use o botão Authorize. Os roteiros `.http` e o k6 já enviam as chaves
 
 Roteiros de requisições prontos: [`http/contas.http`](http/contas.http), [`http/extrato.http`](http/extrato.http),
 [`http/transferencias.http`](http/transferencias.http) e [`http/antifraude.http`](http/antifraude.http).
+
+As imagens são construídas com o SDK 10.0.400 ou mais recente (o `global.json` vai para o build). Se o build reclamar
+que não acha esse SDK, a imagem `mcr.microsoft.com/dotnet/sdk:10.0` em cache está antiga: `docker compose build --pull`.
 
 Para recomeçar do zero (apaga os dados do laboratório): `docker compose down -v`.
 

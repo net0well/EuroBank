@@ -55,10 +55,10 @@
     <RowTemplate>
         <MudTd DataLabel="Versão"><MudLink Href="@($"antifraude/modelos/{context.Versao}")">@context.Versao</MudLink></MudTd>
         <MudTd DataLabel="Status"><MudChip T="string" Color="Formatos.CorStatusModelo(context.Status)" Size="Size.Small">@context.Status</MudChip></MudTd>
-        <MudTd DataLabel="AUC-PR" Style="text-align: right" Class="painel-numero">@Formatos.Decimal(context.AucPr)</MudTd>
-        <MudTd DataLabel="Precisão" Style="text-align: right" Class="painel-numero">@Formatos.Decimal(context.Precisao)</MudTd>
-        <MudTd DataLabel="Recall" Style="text-align: right" Class="painel-numero">@Formatos.Decimal(context.Recall)</MudTd>
-        <MudTd DataLabel="Limiar" Style="text-align: right" Class="painel-numero">@Formatos.Decimal(context.LimiarRecomendado, 2)</MudTd>
+        <MudTd DataLabel="AUC-PR" Style="text-align: right" Class="web-numero">@Formatos.Decimal(context.AucPr)</MudTd>
+        <MudTd DataLabel="Precisão" Style="text-align: right" Class="web-numero">@Formatos.Decimal(context.Precisao)</MudTd>
+        <MudTd DataLabel="Recall" Style="text-align: right" Class="web-numero">@Formatos.Decimal(context.Recall)</MudTd>
+        <MudTd DataLabel="Limiar" Style="text-align: right" Class="web-numero">@Formatos.Decimal(context.LimiarRecomendado, 2)</MudTd>
         <MudTd DataLabel="Meta">@(context.MetaAtingida ? "atingida" : "não atingida")</MudTd>
         <MudTd DataLabel="Treinada em">@Formatos.Data(context.TreinadaEm)</MudTd>
         <MudTd>

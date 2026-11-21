@@ -1,14 +1,14 @@
-/* Ajustes do painel por cima do MudBlazor. */
-.painel-nome {
+/* Ajustes da web por cima do MudBlazor. */
+.web-nome {
     min-width: 14rem;
     background-color: var(--mud-palette-surface);
     border-radius: 4px;
 }
 
-.painel-numero {
+.web-numero {
     font-variant-numeric: tabular-nums;
 }
 
-.painel-clicavel {
+.web-clicavel {
     cursor: pointer;
 }

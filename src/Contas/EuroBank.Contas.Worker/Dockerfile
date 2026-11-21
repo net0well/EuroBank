@@ -5,7 +5,9 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 # Restaura primeiro só com os .csproj, para aproveitar o cache de camadas.
-COPY Directory.Build.props Directory.Packages.props ./
+# global.json fixa a versão mínima do SDK: uma imagem de SDK antiga em cache falha aqui, em vez de publicar sem
+# os assets que as versões novas trazem (o blazor.web.js, por exemplo).
+COPY global.json Directory.Build.props Directory.Packages.props ./
 COPY src/Shared/EuroBank.Shared/EuroBank.Shared.csproj src/Shared/EuroBank.Shared/
 COPY src/Shared/EuroBank.Shared.Web/EuroBank.Shared.Web.csproj src/Shared/EuroBank.Shared.Web/
 COPY src/Shared/EuroBank.Shared.Persistence/EuroBank.Shared.Persistence.csproj src/Shared/EuroBank.Shared.Persistence/

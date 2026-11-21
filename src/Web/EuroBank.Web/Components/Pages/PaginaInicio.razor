@@ -34,12 +34,12 @@
                 else
                 {
                     <MudGrid>
-                        <Indicador Titulo="Casos pendentes" Valor="@_visao.CasosPendentes.ToString(CultureInfo.InvariantCulture)" Href="antifraude/casos" />
-                        <Indicador Titulo="Análises" Valor="@_visao.Analises.ToString(CultureInfo.InvariantCulture)" />
-                        <Indicador Titulo="Taxa de revisão" Valor="@Formatos.Percentual(_visao.TaxaRevisao)" />
-                        <Indicador Titulo="Taxa de recusa" Valor="@Formatos.Percentual(_visao.TaxaRecusa)" />
-                        <Indicador Titulo="Modelo ativo" Valor="@(_visao.Drift.VersaoModelo is { } versao ? $"v{versao}" : "nenhum")" Href="antifraude/modelos" />
-                        <Indicador Titulo="Drift" Valor="@SituacaoDrift(_visao.Drift)" />
+                        <Indicador Md="4" Titulo="Casos pendentes" Valor="@_visao.CasosPendentes.ToString(CultureInfo.InvariantCulture)" Href="antifraude/casos" />
+                        <Indicador Md="4" Titulo="Análises" Valor="@_visao.Analises.ToString(CultureInfo.InvariantCulture)" />
+                        <Indicador Md="4" Titulo="Taxa de revisão" Valor="@Formatos.Percentual(_visao.TaxaRevisao)" />
+                        <Indicador Md="4" Titulo="Taxa de recusa" Valor="@Formatos.Percentual(_visao.TaxaRecusa)" />
+                        <Indicador Md="4" Titulo="Modelo ativo" Valor="@(_visao.Drift.VersaoModelo is { } versao ? $"v{versao}" : "nenhum")" Href="antifraude/modelos" />
+                        <Indicador Md="4" Titulo="Drift" Valor="@Formatos.ResumoDrift(_visao.Drift.Situacao, _visao.Drift.UltimaMedicao?.Nivel)" />
                     </MudGrid>
                 }
             </MudCardContent>
@@ -99,9 +99,6 @@
             _erro = erro.Message;
         }
     }
-
-    /// <summary>Medido, o nível (Estavel, Moderado, Significativo); senão, a situação (sem modelo, aguardando...).</summary>
-    private static string SituacaoDrift(Drift drift) => drift.UltimaMedicao?.Nivel ?? drift.Situacao;
 
     private IEnumerable<Ferramenta> Lista()
     {

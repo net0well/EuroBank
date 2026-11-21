@@ -33,7 +33,7 @@
     <RowTemplate>
         <MudTd DataLabel="Score"><MudChip T="string" Color="CorScore(context.ScoreFinal)" Size="Size.Small">@context.ScoreFinal</MudChip></MudTd>
         <MudTd DataLabel="Situação"><MudChip T="string" Color="Formatos.CorDecisao(context.Estado)" Size="Size.Small" Variant="Variant.Outlined">@context.Estado</MudChip></MudTd>
-        <MudTd DataLabel="Valor" Style="text-align: right" Class="painel-numero">@Formatos.Valor(context.Valor, context.Moeda)</MudTd>
+        <MudTd DataLabel="Valor" Style="text-align: right" Class="web-numero">@Formatos.Valor(context.Valor, context.Moeda)</MudTd>
         <MudTd DataLabel="Destino">@(context.IbanDestino ?? context.TipoOperacao)</MudTd>
         <MudTd DataLabel="Analista">@(context.Analista ?? "-")</MudTd>
         <MudTd DataLabel="Aberto em">@Formatos.Data(context.AbertoEm)</MudTd>

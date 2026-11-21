@@ -2,6 +2,11 @@
 
   <PropertyGroup>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <!--
+      O blazor.web.js vem de um pacote que o SDK só referencia quando vê arquivos .razor na restauração. O Dockerfile
+      restaura só com o .csproj (para aproveitar o cache das camadas), e a imagem saía sem o script: tela em branco.
+    -->
+    <RequiresAspNetWebAssets>true</RequiresAspNetWebAssets>
   </PropertyGroup>
 
   <ItemGroup>

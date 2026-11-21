@@ -4,7 +4,7 @@ using MudBlazor;
 namespace EuroBank.Web.Components.Shared;
 
 /// <summary>
-/// Como o painel mostra números, datas e estados. Cultura invariante, como o resto do laboratório (o container não
+/// Como a web mostra números, datas e estados. Cultura invariante, como o resto do laboratório (o container não
 /// tem as culturas instaladas): ponto decimal e datas em UTC.
 /// </summary>
 public static class Formatos
@@ -40,6 +40,21 @@ public static class Formatos
     };
 
     /// <summary>O nível do drift (Estavel, Moderado, Significativo).</summary>
+    /// <summary>O drift num relance: o nível, quando medido; senão, a situação em palavras.</summary>
+    public static string ResumoDrift(string situacao, string? nivel) => nivel switch
+    {
+        "Estavel" => "estável",
+        "Moderado" => "moderado",
+        "Significativo" => "significativo",
+        _ => situacao switch
+        {
+            "SemModeloAtivo" => "sem modelo",
+            "AguardandoMedicao" => "aguardando",
+            "AmostraInsuficiente" => "amostra pequena",
+            _ => situacao,
+        },
+    };
+
     public static Color CorNivelDrift(string? nivel) => nivel switch
     {
         "Estavel" => Color.Success,

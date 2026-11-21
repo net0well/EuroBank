@@ -46,8 +46,8 @@ else
                 <MudSimpleTable Dense="true" Elevation="0">
                     <thead><tr><th></th><th>Sinalizada</th><th>Não sinalizada</th></tr></thead>
                     <tbody>
-                        <tr><td>Fraude</td><td class="painel-numero">@metricas.Matriz.VerdadeirosPositivos</td><td class="painel-numero">@metricas.Matriz.FalsosNegativos</td></tr>
-                        <tr><td>Normal</td><td class="painel-numero">@metricas.Matriz.FalsosPositivos</td><td class="painel-numero">@metricas.Matriz.VerdadeirosNegativos</td></tr>
+                        <tr><td>Fraude</td><td class="web-numero">@metricas.Matriz.VerdadeirosPositivos</td><td class="web-numero">@metricas.Matriz.FalsosNegativos</td></tr>
+                        <tr><td>Normal</td><td class="web-numero">@metricas.Matriz.FalsosPositivos</td><td class="web-numero">@metricas.Matriz.VerdadeirosNegativos</td></tr>
                     </tbody>
                 </MudSimpleTable>
             </MudPaper>
@@ -56,10 +56,10 @@ else
                 <MudSimpleTable Dense="true" Elevation="0">
                     <tbody>
                         <tr><td>Semente</td><td>@dados.Semente</td></tr>
-                        <tr><td>Sintéticas</td><td class="painel-numero">@dados.LinhasSinteticas (@dados.FraudesSinteticas fraudes)</td></tr>
-                        <tr><td>Rótulos reais</td><td class="painel-numero">@dados.RotulosReais (@dados.FraudesReais fraudes)</td></tr>
+                        <tr><td>Sintéticas</td><td class="web-numero">@dados.LinhasSinteticas (@dados.FraudesSinteticas fraudes)</td></tr>
+                        <tr><td>Rótulos reais</td><td class="web-numero">@dados.RotulosReais (@dados.FraudesReais fraudes)</td></tr>
                         <tr><td>Teste temporal</td><td>@dados.LinhasTeste linhas, de @dados.CorteTeste.UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) a @dados.FimTeste.UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)</td></tr>
-                        <tr><td>Arquivo</td><td class="painel-numero">@(_modelo.TamanhoArquivo / 1024) KB</td></tr>
+                        <tr><td>Arquivo</td><td class="web-numero">@(_modelo.TamanhoArquivo / 1024) KB</td></tr>
                         <tr><td>Treinada em</td><td>@Formatos.Data(_modelo.TreinadaEm)</td></tr>
                         <tr><td>Ativada em</td><td>@Formatos.Data(_modelo.AtivadaEm)</td></tr>
                     </tbody>

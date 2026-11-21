@@ -23,7 +23,7 @@
 </html>
 
 @code {
-    // Todo o painel é interativo no servidor, sem pré-renderização: as telas carregam uma vez, já com o circuito, e o
+    // Toda a web é interativa no servidor, sem pré-renderização: as telas carregam uma vez, já com o circuito, e o
     // nome do analista (guardado no navegador) está disponível desde o começo.
     private static readonly IComponentRenderMode ModoInterativo = new InteractiveServerRenderMode(prerender: false);
 }

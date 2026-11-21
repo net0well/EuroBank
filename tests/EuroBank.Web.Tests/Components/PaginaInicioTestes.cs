@@ -23,7 +23,7 @@ public sealed class PaginaInicioTestes : TestesDeTela
 
         tela.WaitForAssertion(() => tela.Markup.ShouldContain("Casos pendentes"));
         tela.Markup.ShouldContain("v2");
-        tela.Markup.ShouldContain("Significativo");
+        tela.Markup.ShouldContain("significativo");
         tela.Find("a[href='antifraude']").ShouldNotBeNull();
     }
 
@@ -34,7 +34,7 @@ public sealed class PaginaInicioTestes : TestesDeTela
 
         var tela = RenderizarTela<PaginaInicio>();
 
-        tela.WaitForAssertion(() => tela.Markup.ShouldContain("SemModeloAtivo"));
+        tela.WaitForAssertion(() => tela.Markup.ShouldContain("sem modelo"));
         tela.Markup.ShouldContain("nenhum");
     }
 

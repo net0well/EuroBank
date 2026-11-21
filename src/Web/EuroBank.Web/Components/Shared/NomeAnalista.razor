@@ -5,7 +5,7 @@
 @if (_editando || !Sessao.Identificado)
 {
     <MudTextField T="string" @bind-Value="_nome" Placeholder="Seu nome" Variant="Variant.Outlined" Margin="Margin.Dense"
-                  Class="painel-nome" Immediate="true" OnKeyUp="AoTeclarAsync" Adornment="Adornment.End"
+                  Class="web-nome" Immediate="true" OnKeyUp="AoTeclarAsync" Adornment="Adornment.End"
                   AdornmentIcon="@Icons.Material.Filled.Check" OnAdornmentClick="SalvarAsync" aria-label="Nome do analista" />
 }
 else
