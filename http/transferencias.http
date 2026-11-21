@@ -51,6 +51,23 @@ Content-Type: application/json
 ###
 @transferenciaId = {{externa.response.body.id}}
 
+### Com a origem do cliente (opcional): o antifraude confere dispositivo novo, país habitual e viagem impossível
+POST {{api}}/transferencias-externas
+X-Api-Key: {{apiKey}}
+Idempotency-Key: roteiro-origem-001
+X-Dispositivo-Id: celular-da-ana
+X-Localizacao: 48.8566,2.3522,FR
+Content-Type: application/json
+
+{
+  "contaOrigemId": "{{contaOrigemId}}",
+  "ibanDestino": "DE89370400440532013000",
+  "bic": "DEUTDEFF",
+  "nomeBeneficiario": "Bruno Externo",
+  "valor": 50.00,
+  "descricao": "Jantar"
+}
+
 ### Repetir o mesmo pedido com a mesma Idempotency-Key devolve a mesma transferência
 POST {{api}}/transferencias-externas
 X-Api-Key: {{apiKey}}

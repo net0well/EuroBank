@@ -17,4 +17,13 @@ public static class ChavesPerfil
 
     /// <summary>Set de IBANs (normalizados) para os quais a conta já transferiu.</summary>
     public static string Beneficiarios(Guid contaId) => $"antifraude:{{{contaId}}}:beneficiarios";
+
+    /// <summary>Set dos dispositivos das operações aprovadas.</summary>
+    public static string Dispositivos(Guid contaId) => $"antifraude:{{{contaId}}}:dispositivos";
+
+    /// <summary>
+    /// Sorted set: score = momento da operação (Unix ms), membro = "análise|latitude|longitude|país" (a análise torna o
+    /// membro único).
+    /// </summary>
+    public static string Localizacoes(Guid contaId) => $"antifraude:{{{contaId}}}:localizacoes";
 }

@@ -28,6 +28,9 @@ namespace EuroBank.Transferencias.Domain.Entities;
 public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
 {
     private readonly List<PassoTransferencia> _historico = [];
+    private double? _latitude;
+    private double? _longitude;
+    private string? _paisLocalizacao;
 
     // Valores persistidos só como números; a moeda de cada um está numa coluna própria.
     private decimal _valor;
@@ -153,6 +156,13 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
 
     public IReadOnlyList<PassoTransferencia> Historico => _historico.AsReadOnly();
 
+    /// <summary>O dispositivo do cliente (header X-Dispositivo-Id), quando informado; vai para a análise de risco.</summary>
+    public string? DispositivoId { get; private set; }
+
+    /// <summary>Onde o cliente estava ao pedir (header X-Localizacao), quando informado; vai para a análise de risco.</summary>
+    public Localizacao? Localizacao =>
+        _latitude is { } latitude && _longitude is { } longitude && _paisLocalizacao is { } pais ? new Localizacao(latitude, longitude, pais) : null;
+
     public bool EstaNaHora(DateTimeOffset agora) => Estado == EstadoTransferencia.Agendada && ExecutarEmEfetivo <= agora;
 
     public bool MesmoPedido(string hashDoPedido) => string.Equals(HashDoPedido, hashDoPedido, StringComparison.Ordinal);
@@ -216,6 +226,15 @@ public sealed class Transferencia : RaizDeAgregado<TransferenciaId>
         }
 
         return transferencia;
+    }
+
+    /// <summary>De onde o cliente pediu (os headers da requisição); chamado logo depois de criar a transferência.</summary>
+    public void InformarOrigem(string? dispositivoId, Localizacao? localizacao)
+    {
+        DispositivoId = dispositivoId;
+        _latitude = localizacao?.Latitude;
+        _longitude = localizacao?.Longitude;
+        _paisLocalizacao = localizacao?.Pais;
     }
 
     /// <summary>Entre contas EuroBank de moedas diferentes: sempre passa pelo câmbio.</summary>

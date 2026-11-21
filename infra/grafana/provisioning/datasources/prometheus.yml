@@ -1,0 +1,14 @@
+# O Prometheus do profile metricas, com uid fixo: os dashboards e o alerta de drift o referenciam por ele.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      # O intervalo de envio das aplicações (OTEL_METRIC_EXPORT_INTERVAL): o $__rate_interval nunca fica menor que 4x.
+      timeInterval: 5s

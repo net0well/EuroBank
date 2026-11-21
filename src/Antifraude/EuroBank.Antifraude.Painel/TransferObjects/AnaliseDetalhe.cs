@@ -10,6 +10,8 @@ public sealed record AnaliseDetalhe(
     string Moeda,
     string? IbanDestino,
     DateTimeOffset Momento,
+    string? DispositivoId,
+    string? Localizacao,
     string Decisao,
     int ScoreFinal,
     int VersaoConfiguracao,

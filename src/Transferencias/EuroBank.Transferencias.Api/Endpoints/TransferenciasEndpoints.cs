@@ -1,4 +1,5 @@
 using EuroBank.Shared.TransferObjects;
+using EuroBank.Shared.Web.Http;
 using EuroBank.Transferencias.Api.TransferObjects;
 using EuroBank.Transferencias.Application.Commands;
 using EuroBank.Transferencias.Application.Queries;
@@ -67,9 +68,11 @@ public static class TransferenciasEndpoints
     private static async Task<IResult> SolicitarExternaAsync(
         [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey,
         TransferenciaExternaRequisicao requisicao,
+        HttpRequest pedido,
         IMessageBus barramento,
         CancellationToken cancellationToken)
     {
+        var origem = OrigemRequisicao.Ler(pedido);
         var transferencia = await barramento.InvokeAsync<TransferenciaDto>(
             new SolicitarTransferenciaExterna(
                 idempotencyKey,
@@ -82,7 +85,9 @@ public static class TransferenciasEndpoints
                 requisicao.Descricao,
                 requisicao.EmailNotificacao,
                 requisicao.MoedaDoValor,
-                requisicao.MoedaDestino),
+                requisicao.MoedaDestino,
+                origem.DispositivoId,
+                origem.Localizacao),
             cancellationToken);
 
         return TypedResults.Accepted($"/transferencias/{transferencia.Id}", transferencia);
@@ -91,9 +96,11 @@ public static class TransferenciasEndpoints
     private static async Task<IResult> SolicitarCambioAsync(
         [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey,
         TransferenciaCambioRequisicao requisicao,
+        HttpRequest pedido,
         IMessageBus barramento,
         CancellationToken cancellationToken)
     {
+        var origem = OrigemRequisicao.Ler(pedido);
         var transferencia = await barramento.InvokeAsync<TransferenciaDto>(
             new SolicitarTransferenciaCambio(
                 idempotencyKey,
@@ -103,7 +110,9 @@ public static class TransferenciasEndpoints
                 requisicao.MoedaDoValor,
                 requisicao.ExecutarEm,
                 requisicao.Descricao,
-                requisicao.EmailNotificacao),
+                requisicao.EmailNotificacao,
+                origem.DispositivoId,
+                origem.Localizacao),
             cancellationToken);
 
         return TypedResults.Accepted($"/transferencias/{transferencia.Id}", transferencia);

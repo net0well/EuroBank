@@ -27,6 +27,7 @@ using Npgsql;
 using Testcontainers.Kafka;
 using Testcontainers.PostgreSql;
 using Testcontainers.Redis;
+using OpcoesAntifraudeContas = EuroBank.Contas.Infrastructure.Options.OpcoesAntifraude;
 
 [assembly: AssemblyFixture(typeof(EuroBank.E2E.Tests.Fixtures.LaboratorioFixture))]
 
@@ -181,6 +182,9 @@ public sealed class LaboratorioFixture : IAsyncLifetime
     /// <summary>Ligado, as chamadas do worker de Transferências ao antifraude falham como se ele estivesse fora do ar.</summary>
     public bool AntifraudeForaDoAr { get; set; }
 
+    /// <summary>O mesmo para a API de Contas (saque e transferência interna).</summary>
+    public bool AntifraudeForaDoArParaContas { get; set; }
+
     /// <summary>API HTTP do Mailpit (mensagens recebidas pelo SMTP).</summary>
     public HttpClient Mailpit { get; private set; } = null!;
 
@@ -225,6 +229,9 @@ public sealed class LaboratorioFixture : IAsyncLifetime
         await _connect.StartAsync();
         await RegistrarConectoresAsync();
 
+        // O antifraude sobe antes de Contas: o saque e a transferência interna passam por ele.
+        await SubirAntifraudeAsync();
+
         _contas = new WebApplicationFactory<MarcadorContasApi>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Development");
@@ -233,6 +240,13 @@ public sealed class LaboratorioFixture : IAsyncLifetime
             builder.UseSetting("ConnectionStrings:Redis", _redis.GetConnectionString());
             builder.UseSetting("LimiteRequisicoes:PorSegundo", LimiteE2E);
             builder.UseSetting("OTEL_SDK_DISABLED", "true");
+            builder.UseSetting("Antifraude:Ativo", "true");
+            builder.UseSetting("Antifraude:Endereco", _antifraude.Server.BaseAddress.ToString());
+            builder.UseSetting("Antifraude:ApiKey", ApiKeyAntifraude);
+            builder.ConfigureServices(services => services.Configure<HttpClientFactoryOptions>(
+                OpcoesAntifraudeContas.NomeCliente,
+                opcoes => opcoes.HttpMessageHandlerBuilderActions.Add(construtor =>
+                    construtor.PrimaryHandler = new InterruptorAntifraude(() => AntifraudeForaDoArParaContas, _antifraude.Server.CreateHandler()))));
         });
         Contas = _contas.CreateClient();
         Contas.DefaultRequestHeaders.Add("X-Api-Key", "chave-e2e-contas");
@@ -258,8 +272,6 @@ public sealed class LaboratorioFixture : IAsyncLifetime
             ["Kafka:BootstrapServers"] = BootstrapKafka,
             ["Kafka:GrupoConsumidor"] = $"eurobank-contas-worker-e2e-{Guid.NewGuid():N}",
         });
-
-        await SubirAntifraudeAsync();
 
         var transferencias = Subir(new WebApplicationFactory<MarcadorTransferenciasApi>(), new(ConfiguracaoSaga)
         {

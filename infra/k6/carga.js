@@ -1,6 +1,6 @@
 // Gerador de carga do EuroBank: operações de Contas misturadas a sagas de Transferencias.
-//   export SEPA_HORARIO_DE_CORTE=false SAGA_ANALISE_RISCO=false
-//   docker compose up -d transferencias-api transferencias-worker
+//   export SEPA_HORARIO_DE_CORTE=false SAGA_ANALISE_RISCO=false CONTAS_ANALISE_RISCO=false
+//   docker compose up -d contas-api transferencias-api transferencias-worker
 //   docker compose --profile carga run --rm k6
 //   K6_VUS=20 K6_DURACAO=2m docker compose --profile carga run --rm k6
 //   K6_FINAIS_LENTOS=true docker compose --profile carga run --rm k6     (inclui os finais 98 e 95: ~7 min de espera)
@@ -21,6 +21,7 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Counter } from 'k6/metrics';
+import { api } from './limite.js';
 
 const API_CONTAS = __ENV.API_CONTAS || 'http://localhost:5100';
 const API_EXTRATO = __ENV.API_EXTRATO || 'http://localhost:5200';
@@ -48,30 +49,8 @@ const sagasPendentes = new Counter('sagas_pendentes');
 const transferenciasAgendadas = new Counter('transferencias_agendadas');
 const moedasQueNaoFecham = new Counter('moedas_que_nao_fecham');
 const sagasIniciadas = new Counter('sagas_iniciadas');
-const respostas429 = new Counter('respostas_429');
 
-const TENTATIVAS_429 = 20;
-
-/** Envia e, enquanto a API responder 429, espera o Retry-After e repete (até TENTATIVAS_429 vezes). */
-function respeitandoLimite(enviar) {
-  let resposta = enviar();
-  for (let tentativa = 1; resposta.status === 429 && tentativa <= TENTATIVAS_429; tentativa++) {
-    respostas429.add(1);
-    sleep(Number(resposta.headers['Retry-After'] || 1));
-    resposta = enviar();
-  }
-  return resposta;
-}
-
-/** O http do k6 com o 429 tratado; no lote, só as respostas 429 são repetidas, uma a uma. */
-const api = {
-  get: (url, params) => respeitandoLimite(() => http.get(url, params)),
-  post: (url, corpo, params) => respeitandoLimite(() => http.post(url, corpo, params)),
-  batch: (pedidos) => http.batch(pedidos).map((resposta, i) =>
-    resposta.status === 429 ? respeitandoLimite(() => http.request(...pedidos[i])) : resposta),
-};
-
-// 429 também é esperado: respeitandoLimite espera o Retry-After e repete (o total fica em respostas_429).
+// 429 também é esperado: o api de limite.js espera o Retry-After e repete (o total fica em respostas_429).
 http.setResponseCallback(http.expectedStatuses(200, 201, 202, 409, 422, 429));
 
 export const options = {

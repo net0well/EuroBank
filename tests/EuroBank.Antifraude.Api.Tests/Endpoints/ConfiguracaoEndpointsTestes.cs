@@ -23,9 +23,9 @@ public sealed class ConfiguracaoEndpointsTestes(AntifraudeFixture antifraude) : 
     }
 
     [Fact]
-    public async Task Regras_ListaAsNove_EConsultaPorCodigo()
+    public async Task Regras_ListaAsDoze_EConsultaPorCodigo()
     {
-        (await _analista.GetAsync("/regras")).GetArrayLength().ShouldBe(9);
+        (await _analista.GetAsync("/regras")).GetArrayLength().ShouldBe(12);
 
         var velocidade = await _analista.GetAsync("/regras/velocidade");
         velocidade.GetProperty("codigo").GetString().ShouldBe("Velocidade");

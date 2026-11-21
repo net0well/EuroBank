@@ -31,6 +31,11 @@ public sealed class TransferenciaConfiguration : IEntityTypeConfiguration<Transf
             .IsRequired();
         builder.Property(transferencia => transferencia.Bic).HasColumnName("bic").HasMaxLength(11);
         builder.Property(transferencia => transferencia.NomeBeneficiario).HasColumnName("nome_beneficiario").HasMaxLength(140);
+        builder.Property(transferencia => transferencia.DispositivoId).HasColumnName("dispositivo_id").HasMaxLength(100);
+        builder.Ignore(transferencia => transferencia.Localizacao);
+        builder.Property<double?>("_latitude").HasColumnName("latitude");
+        builder.Property<double?>("_longitude").HasColumnName("longitude");
+        builder.Property<string?>("_paisLocalizacao").HasColumnName("pais_localizacao").HasMaxLength(2);
         builder.Property(transferencia => transferencia.MoedaDestino).HasColumnName("moeda_destino").HasConversion<string>().HasMaxLength(3);
         builder.Property(transferencia => transferencia.MoedaDoValor).HasColumnName("moeda_do_valor").HasConversion<string>().HasMaxLength(3);
 

@@ -1,0 +1,11 @@
+# Os dashboards de infra/grafana/dashboards, na pasta EuroBank. Mudanças pela UI não ficam: edite o JSON.
+apiVersion: 1
+
+providers:
+  - name: eurobank
+    folder: EuroBank
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    options:
+      path: /etc/grafana/dashboards

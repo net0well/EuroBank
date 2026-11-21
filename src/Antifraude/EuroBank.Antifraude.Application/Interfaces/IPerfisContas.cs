@@ -14,4 +14,10 @@ public interface IPerfisContas
 
     /// <summary>Aplica a atualização de forma atômica; false quando a versão já foi aplicada (repetido ou atrasado).</summary>
     Task<bool> AplicarAsync(AtualizacaoPerfil atualizacao, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Guarda o dispositivo e a localização de uma operação aprovada (idempotente: a mesma análise de novo não muda
+    /// nada). As localizações mais antigas que a retenção saem.
+    /// </summary>
+    Task RegistrarUsoAsync(UsoConta uso, CancellationToken cancellationToken);
 }

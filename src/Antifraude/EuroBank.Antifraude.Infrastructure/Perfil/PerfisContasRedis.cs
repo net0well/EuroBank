@@ -4,6 +4,7 @@ using EuroBank.Antifraude.Application.TransferObjects;
 using EuroBank.Antifraude.Domain.Policies;
 using EuroBank.Antifraude.Domain.ValueObjects;
 using EuroBank.Antifraude.Features.Policies;
+using EuroBank.Shared.ValueObjects;
 using StackExchange.Redis;
 
 namespace EuroBank.Antifraude.Infrastructure.Perfil;
@@ -64,6 +65,30 @@ public sealed class PerfisContasRedis(IConnectionMultiplexer redis) : IPerfisCon
         return (int)resultado == 1;
     }
 
+    public async Task RegistrarUsoAsync(UsoConta uso, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(uso);
+        var banco = redis.GetDatabase();
+        var transacao = banco.CreateTransaction();
+        var tarefas = new List<Task>();
+        if (uso.DispositivoId is { } dispositivo)
+        {
+            tarefas.Add(transacao.SetAddAsync(ChavesPerfil.Dispositivos(uso.ContaId), dispositivo));
+        }
+
+        if (uso.Localizacao is { } localizacao)
+        {
+            var chave = ChavesPerfil.Localizacoes(uso.ContaId);
+            var membro = string.Create(
+                CultureInfo.InvariantCulture, $"{uso.AnaliseId}|{localizacao.Latitude}|{localizacao.Longitude}|{localizacao.Pais}");
+            tarefas.Add(transacao.SortedSetAddAsync(chave, membro, uso.Momento.ToUnixTimeMilliseconds()));
+            tarefas.Add(transacao.SortedSetRemoveRangeByScoreAsync(chave, double.NegativeInfinity, (uso.Momento - Retencao).ToUnixTimeMilliseconds()));
+        }
+
+        await transacao.ExecuteAsync();
+        await Task.WhenAll(tarefas);
+    }
+
     public async Task<PerfilConta> ObterAsync(Guid contaId, DateTimeOffset agora, CancellationToken cancellationToken)
     {
         var lote = redis.GetDatabase().CreateBatch();
@@ -73,11 +98,14 @@ public sealed class PerfisContasRedis(IConnectionMultiplexer redis) : IPerfisCon
         var beneficiarios = lote.SetMembersAsync(ChavesPerfil.Beneficiarios(contaId));
         var entradas = lote.SortedSetRangeByScoreWithScoresAsync(
             ChavesPerfil.Entradas(contaId), start: (agora - Retencao).ToUnixTimeMilliseconds());
+        var dispositivos = lote.SetMembersAsync(ChavesPerfil.Dispositivos(contaId));
+        var localizacoes = lote.SortedSetRangeByScoreWithScoresAsync(
+            ChavesPerfil.Localizacoes(contaId), start: (agora - Retencao).ToUnixTimeMilliseconds());
         lote.Execute();
-        await Task.WhenAll(dados, saidas, beneficiarios, entradas);
+        await Task.WhenAll(dados, saidas, beneficiarios, entradas, dispositivos, localizacoes);
 
         var campos = dados.Result.ToDictionary(campo => campo.Name.ToString(), campo => campo.Value.ToString(), StringComparer.Ordinal);
-        if (campos.Count == 0)
+        if (campos.Count == 0 && dispositivos.Result.Length == 0 && localizacoes.Result.Length == 0)
         {
             return PerfilConta.Vazio(contaId);
         }
@@ -88,7 +116,17 @@ public sealed class PerfisContasRedis(IConnectionMultiplexer redis) : IPerfisCon
             campos.TryGetValue("saldo", out var saldo) ? decimal.Parse(saldo, CultureInfo.InvariantCulture) : null,
             saidas.Result.Select(LerSaida).ToList(),
             beneficiarios.Result.Select(membro => membro.ToString()).ToHashSet(StringComparer.Ordinal),
-            entradas.Result.Select(LerEntrada).ToList());
+            entradas.Result.Select(LerEntrada).ToList(),
+            dispositivos.Result.Select(membro => membro.ToString()).ToHashSet(StringComparer.Ordinal),
+            localizacoes.Result.Select(LerLocalizacao).ToList());
+    }
+
+    private static LocalizacaoConta LerLocalizacao(SortedSetEntry entrada)
+    {
+        var partes = entrada.Element.ToString().Split('|');
+        return new LocalizacaoConta(
+            DateTimeOffset.FromUnixTimeMilliseconds((long)entrada.Score),
+            new Localizacao(double.Parse(partes[1], CultureInfo.InvariantCulture), double.Parse(partes[2], CultureInfo.InvariantCulture), partes[3]));
     }
 
     private static SaidaConta LerSaida(SortedSetEntry entrada)

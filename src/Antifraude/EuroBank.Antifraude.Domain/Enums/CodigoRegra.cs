@@ -1,6 +1,6 @@
 namespace EuroBank.Antifraude.Domain.Enums;
 
-/// <summary>As regras do motor. Dispositivo e localização (viagem impossível, dispositivo novo, país) vêm depois.</summary>
+/// <summary>As regras do motor (e o sinal do modelo de ML, que não é uma regra da tabela).</summary>
 public enum CodigoRegra
 {
     ListaBloqueio = 1,
@@ -18,4 +18,8 @@ public enum CodigoRegra
     /// com o peso da configuração de decisão.
     /// </summary>
     ModeloFraude = 10,
+
+    DispositivoNovo = 11,
+    PaisDiferenteDoHabitual = 12,
+    ViagemImpossivel = 13,
 }

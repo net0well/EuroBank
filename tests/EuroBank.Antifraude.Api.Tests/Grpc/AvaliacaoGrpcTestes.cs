@@ -27,7 +27,7 @@ public sealed class AvaliacaoGrpcTestes(AntifraudeFixture antifraude)
         resultado.ScoreFinal.ShouldBe(0);
         Guid.TryParse(resultado.AnaliseId, out _).ShouldBeTrue();
         resultado.CasoId.ShouldBeEmpty();
-        resultado.Sinais.Count.ShouldBe(9);
+        resultado.Sinais.Count.ShouldBe(12);
         resultado.Sinais.ShouldAllBe(sinal => !sinal.Disparou);
         resultado.DecididaEm.ShouldNotBeNull();
         resultado.VersaoConfiguracao.ShouldBeGreaterThanOrEqualTo(1);

@@ -24,6 +24,8 @@ public static class Exemplos
             "EUR",
             "FR1420041010050500013M02606",
             Agora,
+            "celular-da-ana",
+            "48.8566,2.3522,FR",
             "EmRevisao",
             57,
             2,

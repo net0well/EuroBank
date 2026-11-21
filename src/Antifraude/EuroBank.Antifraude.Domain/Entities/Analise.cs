@@ -25,6 +25,10 @@ public sealed class Analise : RaizDeAgregado<AnaliseId>
     private Moeda _moeda;
     private string? _ibanDestino;
     private DateTimeOffset _momento;
+    private string? _dispositivoId;
+    private double? _latitude;
+    private double? _longitude;
+    private string? _paisLocalizacao;
 
     private Analise()
     {
@@ -36,7 +40,10 @@ public sealed class Analise : RaizDeAgregado<AnaliseId>
     public Guid ContaId { get; private set; }
 
     public ContextoOperacao Contexto =>
-        new(OperacaoId, _tipoOperacao, ContaId, Dinheiro.De(_valor, _moeda), _ibanDestino, _momento);
+        new(OperacaoId, _tipoOperacao, ContaId, Dinheiro.De(_valor, _moeda), _ibanDestino, _momento, _dispositivoId, Localizacao);
+
+    private Localizacao? Localizacao =>
+        _latitude is { } latitude && _longitude is { } longitude && _paisLocalizacao is { } pais ? new Localizacao(latitude, longitude, pais) : null;
 
     public IReadOnlyList<SinalRegra> Sinais => _sinais.AsReadOnly();
 
@@ -82,6 +89,10 @@ public sealed class Analise : RaizDeAgregado<AnaliseId>
             _moeda = contexto.Valor.Moeda,
             _ibanDestino = contexto.IbanDestino,
             _momento = contexto.Momento,
+            _dispositivoId = contexto.DispositivoId,
+            _latitude = contexto.Localizacao?.Latitude,
+            _longitude = contexto.Localizacao?.Longitude,
+            _paisLocalizacao = contexto.Localizacao?.Pais,
             _sinais = [.. resultado.Sinais],
             ScoreFinal = resultado.ScoreFinal,
             Decisao = resultado.Decisao,
@@ -133,6 +144,7 @@ public sealed class Analise : RaizDeAgregado<AnaliseId>
         DecididaEm = agora;
         Analista = analista;
         Justificativa = justificativa;
-        Registrar(new AnaliseDecidida(Id, OperacaoId, ContaId, decisao, origem, ScoreFinal, analista, justificativa, agora));
+        Registrar(new AnaliseDecidida(
+            Id, OperacaoId, ContaId, decisao, origem, ScoreFinal, analista, justificativa, agora, _momento, _dispositivoId, Localizacao));
     }
 }

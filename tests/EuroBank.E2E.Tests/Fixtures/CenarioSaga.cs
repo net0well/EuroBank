@@ -79,6 +79,16 @@ public sealed class CenarioSaga(LaboratorioFixture lab)
                 emailNotificacao: emailNotificacao),
             HttpStatusCode.Accepted);
 
+    /// <summary>Externa com a origem do cliente nos headers X-Dispositivo-Id e X-Localizacao.</summary>
+    public async Task<TransferenciaE2E> SolicitarDeOrigemComSucessoAsync(Guid contaId, string finalIban, decimal valor, string dispositivo, string localizacao) =>
+        await LerAsync(
+            await EnviarAsync(
+                "/transferencias-externas",
+                new { contaOrigemId = contaId, ibanDestino = Iban(finalIban), bic = "DEUTDEFF", nomeBeneficiario = "Bruno Externo", valor },
+                Guid.CreateVersion7().ToString(),
+                new Dictionary<string, string> { ["X-Dispositivo-Id"] = dispositivo, ["X-Localizacao"] = localizacao }),
+            HttpStatusCode.Accepted);
+
     /// <summary>Externa em EUR para um IBAN qualquer (o de um país de risco, por exemplo).</summary>
     public async Task<TransferenciaE2E> SolicitarParaIbanComSucessoAsync(Guid contaId, string ibanDestino, string bic, decimal valor) =>
         await LerAsync(
@@ -100,13 +110,19 @@ public sealed class CenarioSaga(LaboratorioFixture lab)
     /// Envia o pedido; se Transferencias ainda não conhece a conta (o ContaAberta ainda está a caminho da projeção),
     /// espera e repete com a mesma Idempotency-Key, como um cliente faria.
     /// </summary>
-    private async Task<HttpResponseMessage> EnviarAsync(string rota, object corpo, string idempotencyKey)
+    private async Task<HttpResponseMessage> EnviarAsync(
+        string rota, object corpo, string idempotencyKey, IReadOnlyDictionary<string, string>? cabecalhos = null)
     {
         var fim = DateTime.UtcNow.AddSeconds(30);
         while (true)
         {
             var requisicao = new HttpRequestMessage(HttpMethod.Post, rota) { Content = JsonContent.Create(corpo) };
             requisicao.Headers.Add("Idempotency-Key", idempotencyKey);
+            foreach (var (nome, valor) in cabecalhos ?? new Dictionary<string, string>())
+            {
+                requisicao.Headers.Add(nome, valor);
+            }
+
             var resposta = await lab.Transferencias.SendAsync(requisicao, Ct);
             if (DateTime.UtcNow > fim || !await ContaAindaNaoProjetadaAsync(resposta))
             {

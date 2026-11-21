@@ -58,6 +58,21 @@ public static class CatalogoRegras
             null,
             new Dictionary<string, decimal> { ["minimoSaidas"] = 10m }),
         new(CodigoRegra.PaisDeRisco, TipoRegra.Peso, "País do IBAN de destino na lista de países de risco", 30, null, SemParametros),
+        new(CodigoRegra.DispositivoNovo, TipoRegra.Peso, "Dispositivo nunca usado pela conta numa operação aprovada", 15, null, SemParametros),
+        new(
+            CodigoRegra.PaisDiferenteDoHabitual,
+            TipoRegra.Peso,
+            "País da localização diferente do habitual (o mais frequente nas operações aprovadas de 30 dias)",
+            15,
+            null,
+            new Dictionary<string, decimal> { ["minimoOperacoes"] = 3m }),
+        new(
+            CodigoRegra.ViagemImpossivel,
+            TipoRegra.Dura,
+            "Distância da última operação aprovada sobre o tempo acima da velocidade de um avião",
+            0,
+            EfeitoRegraDura.Revisar,
+            new Dictionary<string, decimal> { ["velocidadeMaximaKmH"] = 900m, ["distanciaMinimaKm"] = 100m }),
     ];
 
     public static DefinicaoRegra Definicao(CodigoRegra codigo) => Definicoes.Single(definicao => definicao.Codigo == codigo);

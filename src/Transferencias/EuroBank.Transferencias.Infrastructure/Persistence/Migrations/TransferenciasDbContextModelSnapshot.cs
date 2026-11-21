@@ -154,6 +154,11 @@ namespace EuroBank.Transferencias.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(140)")
                         .HasColumnName("descricao");
 
+                    b.Property<string>("DispositivoId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("dispositivo_id");
+
                     b.Property<string>("EmailNotificacao")
                         .HasMaxLength(254)
                         .HasColumnType("character varying(254)")
@@ -275,6 +280,19 @@ namespace EuroBank.Transferencias.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("_cotacaoValidaAte")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("cotacao_valida_ate");
+
+                    b.Property<double?>("_latitude")
+                        .HasColumnType("double precision")
+                        .HasColumnName("latitude");
+
+                    b.Property<double?>("_longitude")
+                        .HasColumnType("double precision")
+                        .HasColumnName("longitude");
+
+                    b.Property<string>("_paisLocalizacao")
+                        .HasMaxLength(2)
+                        .HasColumnType("character varying(2)")
+                        .HasColumnName("pais_localizacao");
 
                     b.Property<decimal>("_tarifa")
                         .HasPrecision(18, 2)

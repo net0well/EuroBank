@@ -28,7 +28,7 @@ public sealed class SolicitarTransferenciaExternaManipulador(
                     ?? throw new ExcecaoContaOrigemDesconhecida(comando.ContaOrigemId);
                 var moedaDestino = LerOu(comando.MoedaDestino, origem.Moeda);
 
-                return Transferencia.SolicitarExterna(
+                var transferencia = Transferencia.SolicitarExterna(
                     origem,
                     IbanDestino.Criar(comando.IbanDestino),
                     comando.Bic,
@@ -42,6 +42,8 @@ public sealed class SolicitarTransferenciaExternaManipulador(
                     comando.ExecutarEm,
                     agora,
                     sepa);
+                transferencia.InformarOrigem(comando.DispositivoId, comando.Localizacao);
+                return transferencia;
             },
             cancellationToken);
     }

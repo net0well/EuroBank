@@ -1,8 +1,11 @@
+using EuroBank.Shared.ValueObjects;
+
 namespace EuroBank.Antifraude.Infrastructure.Outbox.TransferObjects;
 
 /// <summary>
 /// Evento AnaliseDecidida (eurobank.antifraude.eventos, chave = id da operação). Decisao: Aprovada, Recusada,
-/// Expirada ou Cancelada; Origem: Motor, Analista, Expiracao ou Cliente.
+/// Expirada ou Cancelada; Origem: Motor, Analista, Expiracao ou Cliente. MomentoOperacao, DispositivoId e Localizacao
+/// descrevem a operação (o worker do antifraude aprende os das aprovadas).
 /// </summary>
 public sealed record AnaliseDecididaMensagem(
     Guid AnaliseId,
@@ -13,4 +16,7 @@ public sealed record AnaliseDecididaMensagem(
     int ScoreFinal,
     string? Analista,
     string? Justificativa,
-    DateTimeOffset OcorridoEm);
+    DateTimeOffset OcorridoEm,
+    DateTimeOffset MomentoOperacao,
+    string? DispositivoId,
+    Localizacao? Localizacao);

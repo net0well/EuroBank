@@ -3,6 +3,7 @@ using EuroBank.Contas.Application.Commands;
 using EuroBank.Contas.Application.Queries;
 using EuroBank.Contas.Application.TransferObjects;
 using EuroBank.Shared.TransferObjects;
+using EuroBank.Shared.Web.Http;
 using Wolverine;
 
 namespace EuroBank.Contas.Api.Endpoints;
@@ -78,12 +79,19 @@ public static class ContasEndpoints
         ExecutarAsync(barramento, new Depositar(id, requisicao.Valor), cancellationToken);
 
     private static Task<IResult> SacarAsync(
-        Guid id, ValorRequisicao requisicao, IMessageBus barramento, CancellationToken cancellationToken) =>
-        ExecutarAsync(barramento, new Sacar(id, requisicao.Valor), cancellationToken);
+        Guid id, ValorRequisicao requisicao, HttpRequest pedido, IMessageBus barramento, CancellationToken cancellationToken)
+    {
+        var origem = OrigemRequisicao.Ler(pedido);
+        return ExecutarAsync(barramento, new Sacar(id, requisicao.Valor, origem.DispositivoId, origem.Localizacao), cancellationToken);
+    }
 
     private static Task<IResult> TransferirAsync(
-        Guid id, TransferenciaRequisicao requisicao, IMessageBus barramento, CancellationToken cancellationToken) =>
-        ExecutarAsync(barramento, new Transferir(id, requisicao.IbanDestino, requisicao.Valor), cancellationToken);
+        Guid id, TransferenciaRequisicao requisicao, HttpRequest pedido, IMessageBus barramento, CancellationToken cancellationToken)
+    {
+        var origem = OrigemRequisicao.Ler(pedido);
+        return ExecutarAsync(
+            barramento, new Transferir(id, requisicao.IbanDestino, requisicao.Valor, origem.DispositivoId, origem.Localizacao), cancellationToken);
+    }
 
     private static Task<IResult> BloquearAsync(Guid id, IMessageBus barramento, CancellationToken cancellationToken) =>
         ExecutarAsync(barramento, new BloquearConta(id), cancellationToken);

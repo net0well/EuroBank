@@ -80,10 +80,23 @@ namespace EuroBank.Antifraude.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("versao_configuracao");
 
+                    b.Property<string>("_dispositivoId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("dispositivo_id");
+
                     b.Property<string>("_ibanDestino")
                         .HasMaxLength(34)
                         .HasColumnType("character varying(34)")
                         .HasColumnName("iban_destino");
+
+                    b.Property<double?>("_latitude")
+                        .HasColumnType("double precision")
+                        .HasColumnName("latitude");
+
+                    b.Property<double?>("_longitude")
+                        .HasColumnType("double precision")
+                        .HasColumnName("longitude");
 
                     b.Property<string>("_moeda")
                         .IsRequired()
@@ -94,6 +107,11 @@ namespace EuroBank.Antifraude.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("_momento")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("momento");
+
+                    b.Property<string>("_paisLocalizacao")
+                        .HasMaxLength(2)
+                        .HasColumnType("character varying(2)")
+                        .HasColumnName("pais_localizacao");
 
                     b.Property<string>("_sinais")
                         .IsRequired()

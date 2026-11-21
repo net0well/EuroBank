@@ -215,6 +215,8 @@ public sealed class ConsultaAntifraude(AntifraudeDbContext contexto) : IConsulta
             operacao.Valor.Moeda.ToString(),
             operacao.IbanDestino,
             operacao.Momento,
+            operacao.DispositivoId,
+            operacao.Localizacao?.ToString(),
             analise.Decisao.ToString(),
             analise.ScoreFinal,
             analise.VersaoConfiguracao,

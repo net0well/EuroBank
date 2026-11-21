@@ -29,6 +29,10 @@ public sealed class AvaliacaoRiscoGrpc(AntifraudeService.AntifraudeServiceClient
             Moeda = transferencia.MoedaOrigem.ToString(),
             IbanDestino = transferencia.IbanDestino.Valor,
             Momento = Timestamp.FromDateTimeOffset(agora),
+            DispositivoId = transferencia.DispositivoId ?? string.Empty,
+            Localizacao = transferencia.Localizacao is { } localizacao
+                ? new Localizacao { Latitude = localizacao.Latitude, Longitude = localizacao.Longitude, Pais = localizacao.Pais }
+                : null,
         };
 
         ResultadoAvaliacao resposta;

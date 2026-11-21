@@ -30,7 +30,10 @@ public sealed class MapeadorMensagensOutbox : IMapeadorMensagensOutbox
                 e.ScoreFinal,
                 e.Analista,
                 e.Justificativa,
-                e.OcorridoEm),
+                e.OcorridoEm,
+                e.MomentoOperacao,
+                e.DispositivoId,
+                e.Localizacao),
             e,
             traceparent),
         CasoAberto e => Criar(

@@ -6,7 +6,7 @@ namespace EuroBank.Antifraude.Worker.Observability;
 /// <summary>
 /// Métricas OpenTelemetry do drift (medidor EuroBank.Antifraude.Drift), da última medição: o PSI de cada feature e do
 /// score (tags feature e versao) e o tamanho da amostra. Sem versão ativa ou com amostra insuficiente, sem PSI. O
-/// alerta no Grafana (fase de métricas) olha antifraude.drift.psi acima de 0,25.
+/// alerta de drift do Grafana olha antifraude.drift.psi acima de 0,25.
 /// </summary>
 public sealed class TelemetriaDrift
 {
