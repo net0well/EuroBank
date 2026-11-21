@@ -1,0 +1,101 @@
+@page "/antifraude/simulador"
+@inject ClienteAntifraude Antifraude
+@inject ISnackbar Alertas
+
+<PageTitle>Simulador</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-2">Simulador</MudText>
+<MudText Typo="Typo.body2" Class="mb-4">
+    Uma avaliação hipotética com as mesmas regras, o mesmo perfil da conta e o mesmo modelo, sem gravar análise nem abrir
+    caso. Uma conta que o antifraude não conhece é avaliada como nova.
+</MudText>
+
+<MudPaper Outlined="true" Class="pa-3 mb-4">
+    <MudGrid>
+        <MudItem xs="12" md="4"><MudTextField T="string" @bind-Value="_conta" Label="Conta (id)" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+        <MudItem xs="12" md="2">
+            <MudSelect T="string" @bind-Value="_tipo" Label="Tipo" Variant="Variant.Outlined" Dense="true">
+                <MudSelectItem T="string" Value="@("TIPO_OPERACAO_EXTERNA")">Externa</MudSelectItem>
+                <MudSelectItem T="string" Value="@("TIPO_OPERACAO_CAMBIO")">Câmbio</MudSelectItem>
+                <MudSelectItem T="string" Value="@("TIPO_OPERACAO_SAQUE")">Saque</MudSelectItem>
+                <MudSelectItem T="string" Value="@("TIPO_OPERACAO_TRANSFERENCIA_INTERNA")">Transferência interna</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" md="2"><MudNumericField T="decimal" @bind-Value="_valor" Label="Valor" Min="0.01m" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+        <MudItem xs="6" md="1">
+            <MudSelect T="string" @bind-Value="_moeda" Label="Moeda" Variant="Variant.Outlined" Dense="true">
+                @foreach (var moeda in Moedas)
+                {
+                    <MudSelectItem T="string" Value="moeda">@moeda</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="3"><MudTextField T="string" @bind-Value="_iban" Label="IBAN de destino (vazio num saque)" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+    </MudGrid>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-2" OnClick="SimularAsync" Disabled="@(_simulando || !Guid.TryParse(_conta, out _))">Simular</MudButton>
+</MudPaper>
+
+@if (_resultado is { } resultado)
+{
+    var decisao = Formatos.DecisaoDoProto(resultado.Decisao);
+    <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Class="mb-3">
+        <MudChip T="string" Color="Formatos.CorDecisao(decisao)">@decisao</MudChip>
+        <MudChip T="string" Variant="Variant.Outlined">score @resultado.ScoreFinal</MudChip>
+        <MudText Typo="Typo.caption">configuração versão @resultado.VersaoConfiguracao</MudText>
+    </MudStack>
+    <MudGrid>
+        <MudItem xs="12" md="7">
+            <MudPaper Outlined="true" Class="pa-3"><TabelaSinais Sinais="resultado.Sinais ?? []" /></MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="5">
+            @if (resultado.Modelo is { } modelo)
+            {
+                <div class="mb-3"><ExplicacaoModelo Pontuacao="modelo" Titulo="Modelo ativo" /></div>
+            }
+            @if (resultado.Challenger is { } challenger)
+            {
+                <ExplicacaoModelo Pontuacao="challenger" Titulo="Challenger (sombra)" Sombra="true" />
+            }
+            @if (resultado.Modelo is null && resultado.Challenger is null)
+            {
+                <MudAlert Severity="Severity.Info" Dense="true">Sem modelo carregado: só as regras pontuaram.</MudAlert>
+            }
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    private static readonly string[] Moedas = ["EUR", "USD", "GBP", "BRL"];
+
+    private string? _conta;
+    private string _tipo = "TIPO_OPERACAO_EXTERNA";
+    private decimal _valor = 1_000m;
+    private string _moeda = "EUR";
+    private string? _iban = "DE89370400440532013000";
+    private bool _simulando;
+    private ResultadoSimulacao? _resultado;
+
+    private async Task SimularAsync()
+    {
+        _simulando = true;
+        try
+        {
+            var solicitacao = new SolicitacaoSimulacao(
+                Guid.CreateVersion7().ToString(),
+                _tipo,
+                _conta!.Trim(),
+                ValorDecimal.De(_valor),
+                _moeda,
+                string.IsNullOrWhiteSpace(_iban) ? null : _iban.Trim());
+            _resultado = await Antifraude.SimularAsync(solicitacao, CancellationToken.None);
+        }
+        catch (Exception erro) when (erro is ExcecaoApiAntifraude or HttpRequestException)
+        {
+            Alertas.Add($"Não foi possível simular: {erro.Message}", Severity.Error);
+        }
+        finally
+        {
+            _simulando = false;
+        }
+    }
+}

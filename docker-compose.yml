@@ -491,14 +491,18 @@ services:
       timeout: 5s
       retries: 30
 
-  # Painel do analista (Blazor Server, MudBlazor) em http://localhost:5500: fila de casos em tempo real, decisão,
-  # regras, limiares e listas, modelos (métricas, curva, champion e challenger, promoção), simulador e visão geral.
+  # ---------------------------------------------------------------------------------------------------------
+  # Web
+  # ---------------------------------------------------------------------------------------------------------
+
+  # EuroBank.Web (Blazor Server, MudBlazor) em http://localhost:5500, as funcionalidades web do laboratório: o início
+  # e o antifraude (fila de casos em tempo real, decisão, regras, limiares e listas, modelos, simulador e visão geral).
   # Fala com a REST do antifraude pelo servidor (a API key não vai ao navegador) e ouve eurobank.antifraude.eventos num
   # consumer group próprio por instância, sem inbox: o evento só faz a fila recarregar.
-  antifraude-painel:
+  web:
     build:
       context: .
-      dockerfile: src/Antifraude/EuroBank.Antifraude.Painel/Dockerfile
+      dockerfile: src/Web/EuroBank.Web/Dockerfile
     ports:
       - "5500:8080"
     depends_on:
@@ -512,6 +516,11 @@ services:
       Antifraude__Endereco: http://antifraude-api:8080
       Antifraude__ApiKey: ${ANTIFRAUDE_API_KEY}
       Kafka__BootstrapServers: kafka:29092
+      # Os links do início abrem no navegador: as portas do host, com as configuráveis vindas do .env.
+      Ferramentas__Grafana: http://localhost:${GRAFANA_PORTA:-3000}
+      Ferramentas__Prometheus: http://localhost:${PROMETHEUS_PORTA:-9090}
+      Ferramentas__Mailpit: http://localhost:${MAILPIT_PORTA_UI:-8025}
+      Ferramentas__RedisInsight: http://localhost:${REDISINSIGHT_PORTA:-5540}
       <<: *otel
     healthcheck:
       test: ["CMD-SHELL", "curl -fs http://localhost:8080/health > /dev/null"]

@@ -1,0 +1,47 @@
+@implements IDisposable
+@inject SessaoAnalista Sessao
+
+@* O nome vai em cada ação do analista; sem nome, as ações pedem que ele se identifique. *@
+@if (_editando || !Sessao.Identificado)
+{
+    <MudTextField T="string" @bind-Value="_nome" Placeholder="Seu nome" Variant="Variant.Outlined" Margin="Margin.Dense"
+                  Class="web-nome" Immediate="true" OnKeyUp="AoTeclarAsync" Adornment="Adornment.End"
+                  AdornmentIcon="@Icons.Material.Filled.Check" OnAdornmentClick="SalvarAsync" aria-label="Nome do analista" />
+}
+else
+{
+    <MudButton Variant="Variant.Text" Color="Color.Inherit" StartIcon="@Icons.Material.Filled.Person" OnClick="Editar">
+        @Sessao.Nome
+    </MudButton>
+}
+
+@code {
+    private bool _editando;
+    private string? _nome;
+
+    protected override void OnInitialized() => Sessao.Mudou += AoMudar;
+
+    private void Editar()
+    {
+        _nome = Sessao.Nome;
+        _editando = true;
+    }
+
+    private async Task AoTeclarAsync(KeyboardEventArgs tecla)
+    {
+        if (tecla.Key == "Enter")
+        {
+            await SalvarAsync();
+        }
+    }
+
+    private async Task SalvarAsync()
+    {
+        await Sessao.DefinirAsync(_nome);
+        _editando = false;
+    }
+
+    private void AoMudar() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Sessao.Mudou -= AoMudar;
+}

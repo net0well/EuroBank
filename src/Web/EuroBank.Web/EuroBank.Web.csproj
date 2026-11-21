@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <!--
+      O blazor.web.js vem de um pacote que o SDK só referencia quando vê arquivos .razor na restauração. O Dockerfile
+      restaura só com o .csproj (para aproveitar o cache das camadas), e a imagem saía sem o script: tela em branco.
+    -->
+    <RequiresAspNetWebAssets>true</RequiresAspNetWebAssets>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Só os blocos comuns: a web fala com os contextos pela REST, pelo Kafka e por consultas de leitura, sem referenciar as camadas deles. -->
+    <ProjectReference Include="..\..\Shared\EuroBank.Shared.Web\EuroBank.Shared.Web.csproj" />
+    <ProjectReference Include="..\..\Shared\EuroBank.Shared.Messaging\EuroBank.Shared.Messaging.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MudBlazor" />
+    <PackageReference Include="WolverineFx.RuntimeCompilation" />
+  </ItemGroup>
+</Project>
